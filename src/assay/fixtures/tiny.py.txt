@@ -1,0 +1,5 @@
+def total(prices):
+    subtotal = sum(prices)
+    subtotal * 1.08          # BUG: result dropped
+def label(n):
+    return f"{n} items"
