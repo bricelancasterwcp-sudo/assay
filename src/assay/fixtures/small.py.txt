@@ -1,0 +1,21 @@
+"""Order pricing helpers for the demo shop."""
+
+TAX_RATE = 1.08
+BULK_THRESHOLD = 10
+BULK_DISCOUNT = 0.95
+
+
+def subtotal(prices):
+    return sum(prices)
+
+
+def apply_discount(amount, quantity):
+    if quantity >= BULK_THRESHOLD:
+        amount * BULK_DISCOUNT          # BUG: discounted amount dropped
+    return amount
+
+
+def order_total(prices):
+    amount = subtotal(prices)
+    amount = apply_discount(amount, len(prices))
+    return round(amount * TAX_RATE, 2)
