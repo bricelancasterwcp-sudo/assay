@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "assay"
+version = "0.1.0"
+description = "Stdlib-only capability prober for locally-served LLM endpoints"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Brice Lancaster", email = "bricelancaster.wcp@gmail.com" }]
+dependencies = []
+
+[project.scripts]
+assay = "assay.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
