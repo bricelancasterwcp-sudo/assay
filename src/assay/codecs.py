@@ -52,8 +52,31 @@ _WHOLE_FILE_DIRECTIVE = (
 
 
 @dataclass(frozen=True)
+class CodecDirectives:
+    """The presentation given to the model, per codec. Landing is a
+    property of model x codec x directive x sampler (live validation,
+    2026-08-12: qwen landed 0/15 under the built-in minimal directive
+    where robigo's full-envelope presentation measured 100% on the same
+    daemon) — so a consumer may supply the directive its application
+    actually sends, and the profile's lens records which was used."""
+    search_replace: str
+    whole_file: str
+    json_object: str
+
+
+@dataclass(frozen=True)
 class Landing:
-    lands: float | None  # None only when n == 0 (unmeasured, never fake zero)
+    """Both landing lenses per cell, measured over the same replies.
+
+    ``lands`` is byte-equality with the expected file (v1's lens: strict,
+    measures compliance-with-incidentals on whole_file). ``lands_applies``
+    is applies-and-parses (robigo stage 2's lens: the edit applied and
+    the result is syntactically valid Python — semantic rightness is the
+    caller's tests' job). For ``json_object`` the two lenses coincide by
+    construction (validation IS the landing) and carry the same value.
+    Both are None only when n == 0 — unmeasured, never fake zero."""
+    lands: float | None
+    lands_applies: float | None
     n: int
 
 
@@ -162,47 +185,74 @@ def validate_json_object(reply: str) -> bool:
     return all(isinstance(tag, str) for tag in tags)
 
 
-def _build_prompt(codec: str, filename: str, instruction: str, original: str) -> str:
+DEFAULT_DIRECTIVES = CodecDirectives(
+    search_replace=_SEARCH_REPLACE_DIRECTIVE,
+    whole_file=_WHOLE_FILE_DIRECTIVE,
+    json_object=JSON_PROMPT,
+)
+DEFAULT_PRESENTATION = "default-v1"
+
+
+def _build_prompt(codec: str, filename: str, instruction: str,
+                  original: str, directives: CodecDirectives) -> str:
     if codec == "json_object":
-        return JSON_PROMPT
-    directive = (
-        _SEARCH_REPLACE_DIRECTIVE
-        if codec == "search_replace"
-        else _WHOLE_FILE_DIRECTIVE
-    )
+        return directives.json_object
+    directive = getattr(directives, codec)
     return f"{instruction}\n\n{directive}\n\nHere is `{filename}`:\n{original}"
 
 
-def _lands(codec: str, reply_text: str, original: str, expected: str) -> bool:
+def _parses_as_python(text: str) -> bool:
+    try:
+        compile(text, "<fixture>", "exec")
+    except SyntaxError:
+        return False
+    return True
+
+
+def _score(codec: str, reply_text: str, original: str,
+           expected: str) -> tuple[bool, bool]:
+    """(byte_equality_landed, applies_and_parses_landed) for one reply."""
     if codec == "json_object":
-        return validate_json_object(reply_text)
+        ok = validate_json_object(reply_text)
+        return ok, ok
     if codec == "search_replace":
         applied = apply_search_replace(original, reply_text)
     else:
         applied = apply_whole_file(reply_text)
-    return applied is not None and landing_equal(applied, expected)
+    if applied is None:
+        return False, False
+    return (landing_equal(applied, expected), _parses_as_python(applied))
 
 
-def _cell(landed: int, attempted: int) -> Landing:
+def _cell(landed: int, landed_applies: int, attempted: int) -> Landing:
     if attempted == 0:
-        return Landing(lands=None, n=0)  # unmeasured: None, never fake zero
-    return Landing(lands=landed / attempted, n=attempted)
+        # unmeasured: None, never fake zero
+        return Landing(lands=None, lands_applies=None, n=0)
+    return Landing(lands=landed / attempted,
+                   lands_applies=landed_applies / attempted, n=attempted)
 
 
 def probe_codecs(
-    backend, meter, *, n_per_cell: int, seed_base: int = 500
+    backend, meter, *, n_per_cell: int, seed_base: int = 500,
+    directives: CodecDirectives | None = None,
 ) -> dict[str, dict[str, Landing]]:
-    """Landing rate per codec x size grade (spec §7).
+    """Landing rates per codec x size grade (spec §7), both lenses.
 
-    Every cell is measured with `n_per_cell` seeded probes. Budget
-    exhaustion mid-run stops the matrix: completed and partial cells
-    report what was measured; unattempted cells stay
-    ``Landing(lands=None, n=0)``. Infrastructure errors propagate;
-    a bad reply is data (a non-landing), never an exception.
+    Every cell is measured with `n_per_cell` seeded probes; each reply
+    is scored under byte-equality AND applies-and-parses (see Landing).
+    ``directives`` substitutes the consumer's own presentation for the
+    built-in one — the caller records which was used (run.py stamps
+    provenance and the verdict lens). Budget exhaustion mid-run stops
+    the matrix: completed and partial cells report what was measured;
+    unattempted cells stay ``Landing(None, None, 0)``. Infrastructure
+    errors propagate; a bad reply is data (a non-landing), never an
+    exception.
     """
+    directives = directives or DEFAULT_DIRECTIVES
     by_grade = {entry[0]: entry for entry in fixtures.EXPECTED}
     results: dict[str, dict[str, Landing]] = {
-        codec: {grade: Landing(lands=None, n=0) for grade in GRADES}
+        codec: {grade: Landing(lands=None, lands_applies=None, n=0)
+                for grade in GRADES}
         for codec in CODECS
     }
     seed = seed_base
@@ -214,8 +264,10 @@ def probe_codecs(
             if exhausted:
                 break
             _, filename, instruction, original, expected = by_grade[grade]
-            prompt = _build_prompt(codec, filename, instruction, original)
+            prompt = _build_prompt(codec, filename, instruction, original,
+                                   directives)
             landed = 0
+            landed_applies = 0
             attempted = 0
             for _ in range(n_per_cell):
                 try:
@@ -228,7 +280,8 @@ def probe_codecs(
                 )
                 seed += 1
                 attempted += 1
-                if _lands(codec, reply.text, original, expected):
-                    landed += 1
-            results[codec][grade] = _cell(landed, attempted)
+                exact, applies = _score(codec, reply.text, original, expected)
+                landed += int(exact)
+                landed_applies += int(applies)
+            results[codec][grade] = _cell(landed, landed_applies, attempted)
     return results

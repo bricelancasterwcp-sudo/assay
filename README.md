@@ -11,6 +11,19 @@ lands 0% of search/replace edits is not "dumb"; it is unusable *through
 that codec*, and an application that knows this before shipping work to
 it can choose another format or another model.
 
+
+## v0.2 (v1.1): the lens is part of the verdict
+
+The first live validation measured the same model at 0% and 100% edit
+landing under two different instruments — so as of v0.2, every verdict
+names its lens (landing definition, presentation, sampler), codec cells
+carry **both** landing lenses (`lands` = byte-equality,
+`lands_applies` = applies-and-parses), `patch_editing` is judged under
+applies-and-parses, consumers can supply their own codec directives
+(`--directives`, `CodecDirectives`) so the landing rate predicts their
+application's actual prompt shape, and geometry reads the post-load
+serving state. Profile schema version is now **2**.
+
 ## Why it exists
 
 Three findings, all measured live against real local endpoints, motivated

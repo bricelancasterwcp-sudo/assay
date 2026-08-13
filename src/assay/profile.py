@@ -19,7 +19,7 @@ from assay.codecs import Landing
 from assay.envelope import Envelope
 from assay.geometry import Geometry
 
-PROFILE_VERSION = 1
+PROFILE_VERSION = 2
 
 _FAMILIES = ("geometry", "ceiling", "envelope", "codecs")
 _GRADE_FOR_VERDICTS = "small"
@@ -41,7 +41,7 @@ class Profile:
     ceiling: Ceiling | None
     envelope: Envelope | None
     codecs: dict[str, dict[str, Landing]] | None
-    verdicts: dict[str, str]
+    verdicts: dict[str, dict]
     provenance: dict  # started/finished/mode/seeds/budget/spent/calibration/dropped
 
     def __post_init__(self) -> None:
@@ -100,15 +100,19 @@ def _codecs_from(
 
 
 def _small_landing(
-    codecs: dict[str, dict[str, Landing]] | None, codec: str
+    codecs: dict[str, dict[str, Landing]] | None, codec: str,
+    *, lens: str = "byte_equality",
 ) -> float | None:
-    """The .small landing rate, or None wherever it was not measured."""
+    """The .small landing rate under the named lens, or None wherever it
+    was not measured."""
     if codecs is None:
         return None
     cell = codecs.get(codec, {}).get(_GRADE_FOR_VERDICTS)
     if cell is None:
         return None
-    return cell.lands  # None when the cell exists but n == 0
+    if lens == "applies_and_parses":
+        return cell.lands_applies  # None when the cell exists but n == 0
+    return cell.lands
 
 
 def _truncates_below_4k(ceiling: Ceiling | None) -> bool:
@@ -149,25 +153,57 @@ def compute_verdicts(
     ceiling: Ceiling | None,
     envelope: Envelope | None,
     codecs: dict[str, dict[str, Landing]] | None,
-) -> dict[str, str]:
-    """Spec §8 verdict rules. Unmeasured inputs -> "unmeasured", never worse.
+    *,
+    presentation: str = "default-v1",
+) -> dict[str, dict]:
+    """Spec §8 verdict rules, v2: every verdict NAMES ITS LENS.
 
-    ``geometry`` and ``envelope`` inform no v1 verdict but are part of
-    the stable signature (applications read the raw numbers anyway).
+    The 2026-08-12 live validation measured the same model at 0% and
+    100% edit landing under two instruments; a verdict quoted without
+    its lens is not a model property. Each entry is
+    ``{"verdict": ..., "lens": {...}}`` where the lens states the
+    landing definition, the presentation (``default-v1`` or the
+    consumer's ``custom`` directive), the pinned sampler, and — for
+    long_context — the evidence class.
+
+    ``patch_editing`` is judged under the **applies-and-parses** lens:
+    an application accepting a patch validates the result by running
+    it, so byte-equality's compliance-with-incidentals is the wrong
+    predictor there. The raw byte-equality column stays in
+    ``codecs`` for consumers who want the stricter number.
+
+    Unmeasured inputs -> "unmeasured", never worse. ``geometry`` and
+    ``envelope`` inform no verdict but are part of the stable signature.
     """
-    del geometry, envelope  # no v1 verdict consumes them
+    del geometry, envelope  # no verdict consumes them
+    sampler = {"temperature": 0.2}
     patch_rates = [
         rate
         for codec in ("search_replace", "whole_file")
-        if (rate := _small_landing(codecs, codec)) is not None
+        if (rate := _small_landing(codecs, codec,
+                                   lens="applies_and_parses")) is not None
     ]
+    counts = None if ceiling is None else ceiling.counts_available
     return {
-        "structured_extraction": _ladder(
-            _small_landing(codecs, "json_object"),
-            ready_blocked=_truncates_below_4k(ceiling),
-        ),
-        "patch_editing": _ladder(max(patch_rates) if patch_rates else None),
-        "long_context": _long_context(ceiling),
+        "structured_extraction": {
+            "verdict": _ladder(
+                _small_landing(codecs, "json_object"),
+                ready_blocked=_truncates_below_4k(ceiling),
+            ),
+            "lens": {"landing": "json_valid_required_keys",
+                     "presentation": presentation, **sampler},
+        },
+        "patch_editing": {
+            "verdict": _ladder(max(patch_rates) if patch_rates else None),
+            "lens": {"landing": "applies_and_parses",
+                     "presentation": presentation, **sampler},
+        },
+        "long_context": {
+            "verdict": _long_context(ceiling),
+            "lens": {"evidence": ("counts+canary" if counts
+                                  else "canary_only" if counts is not None
+                                  else "unmeasured")},
+        },
     }
 
 
@@ -247,7 +283,12 @@ def render_table(profile: Profile) -> str:
         *_render_codecs(profile.codecs),
         "",
         "verdicts   "
-        + " | ".join(f"{name}: {verdict}" for name, verdict in profile.verdicts.items()),
+        + " | ".join(f"{name}: {entry['verdict']}"
+                     for name, entry in profile.verdicts.items()),
+        "lenses     "
+        + " | ".join(
+            f"{name}: " + ",".join(f"{k}={v}" for k, v in entry["lens"].items())
+            for name, entry in profile.verdicts.items()),
     ]
     dropped = profile.provenance.get("dropped") or []
     if dropped:

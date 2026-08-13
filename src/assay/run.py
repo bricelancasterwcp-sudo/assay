@@ -23,7 +23,7 @@ from assay.backends.ollama import OllamaNative
 from assay.backends.openai_compat import OpenAICompat
 from assay.budget import Budget, BudgetMeter
 from assay.ceiling import Calibration, Ceiling, calibrate, probe_ceiling
-from assay.codecs import probe_codecs
+from assay.codecs import CodecDirectives, DEFAULT_PRESENTATION, probe_codecs
 from assay.envelope import probe_envelope
 from assay.errors import BudgetExhausted
 from assay.geometry import free_vram_mib, plan_window
@@ -93,6 +93,7 @@ def probe(
     backend: str | None = None,
     record: Path | None = None,
     window_cap: int | None = None,
+    directives: CodecDirectives | None = None,
     _backend_override: Backend | None = None,
 ) -> Profile:
     """Run the full probe suite against one endpoint; return a Profile.
@@ -101,6 +102,9 @@ def probe(
     ``record`` wraps the backend in a CallRecorder writing a transcript.
     ``window_cap`` is the user's context cap: it bounds both geometry's
     user_cap term and the ceiling ladder (spec §5).
+    ``directives`` substitutes the consumer's own codec presentation for
+    the built-in one; the profile's provenance and verdict lenses record
+    which was used (landing is a property of the instrument, v1.1).
     """
     if mode not in MODE_PARAMS:
         raise ValueError(f"unknown mode: {mode!r} (expected 'quick' or 'full')")
@@ -120,16 +124,6 @@ def probe(
 
     info = active.model_info()  # InfrastructureError propagates (spec §3)
 
-    # Geometry is pure arithmetic over metadata: no model calls, no budget.
-    geometry = plan_window(
-        info, vram_free_mib=free_vram_mib(), user_cap=window_cap
-    )
-    if geometry is None:
-        dropped.append(
-            "geometry: kv arithmetic or training_ctx unavailable "
-            f"(source={info.source})"
-        )
-
     calibration: Calibration | None = None
     ceiling: Ceiling | None = None
     envelope = None
@@ -138,6 +132,29 @@ def probe(
 
     try:
         calibration = calibrate(active, meter, seed=params.seeds[0])
+    except BudgetExhausted as exc:
+        budget_death = exc
+
+    # Geometry reads AFTER calibration's first live call (v1.1, live
+    # validation finding 3): a cold model's weights are not yet resident,
+    # so a pre-load VRAM reading double-counts them and reports
+    # usable_window 0. Post-calibration, model_info's `loaded` flag and
+    # the VRAM reading describe the serving state the probes actually
+    # ran against. If calibration never ran, the pre-load info is used
+    # and the weaker evidence is what it honestly is.
+    geometry_info = active.model_info() if calibration is not None else info
+    geometry = plan_window(
+        geometry_info, vram_free_mib=free_vram_mib(), user_cap=window_cap
+    )
+    if geometry is None:
+        dropped.append(
+            "geometry: kv arithmetic or training_ctx unavailable "
+            f"(source={geometry_info.source})"
+        )
+
+    try:
+        if budget_death is not None:
+            raise budget_death
         ceiling = probe_ceiling(
             active,
             meter,
@@ -179,7 +196,9 @@ def probe(
     if budget_death is not None:
         dropped.append("codecs: skipped, budget exhausted earlier")
     else:
-        codecs = probe_codecs(active, meter, n_per_cell=params.codecs_n_per_cell)
+        codecs = probe_codecs(active, meter,
+                              n_per_cell=params.codecs_n_per_cell,
+                              directives=directives)
         if all(
             cell.n == 0 for grades in codecs.values() for cell in grades.values()
         ):
@@ -231,11 +250,17 @@ def probe(
         ceiling=ceiling,
         envelope=envelope,
         codecs=codecs,
-        verdicts=compute_verdicts(geometry, ceiling, envelope, codecs),
+        verdicts=compute_verdicts(
+            geometry, ceiling, envelope, codecs,
+            presentation=("custom" if directives is not None
+                          else DEFAULT_PRESENTATION),
+        ),
         provenance={
             "started": started,
             "finished": _utc_now(),
             "mode": mode,
+            "presentation": ("custom" if directives is not None
+                             else DEFAULT_PRESENTATION),
             "temperature": PROBE_TEMPERATURE,
             "seeds": list(params.seeds),
             "budget": {

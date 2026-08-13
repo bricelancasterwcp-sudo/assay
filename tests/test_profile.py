@@ -63,9 +63,9 @@ def make_codecs(
     smalls = {"search_replace": sr_small, "whole_file": wf_small, "json_object": jo_small}
     return {
         codec: {
-            "tiny": Landing(lands=1.0, n=5),
-            "small": Landing(lands=smalls[codec], n=5),
-            "medium": Landing(lands=0.5, n=5),
+            "tiny": Landing(lands=1.0, lands_applies=1.0, n=5),
+            "small": Landing(lands=smalls[codec], lands_applies=smalls[codec], n=5),
+            "medium": Landing(lands=0.5, lands_applies=0.5, n=5),
         }
         for codec in _CODECS
     }
@@ -91,9 +91,9 @@ def make_profile(*, provenance_dropped: tuple[str, ...] = (), **overrides) -> Pr
         envelope=make_envelope(),
         codecs=make_codecs(),
         verdicts={
-            "structured_extraction": "ready",
-            "patch_editing": "ready",
-            "long_context": "risky",
+            "structured_extraction": {"verdict": "ready", "lens": {"landing": "test"}},
+            "patch_editing": {"verdict": "ready", "lens": {"landing": "test"}},
+            "long_context": {"verdict": "risky", "lens": {"landing": "test"}},
         },
         provenance={
             "started": "2026-08-12T21:00:00Z",
@@ -152,15 +152,15 @@ def test_every_profile_field_is_wired_into_the_payload():
 def test_verdict_boundaries_structured_extraction(jo_small, expected):
     codecs = make_codecs(jo_small=jo_small)
     verdicts = compute_verdicts(None, honest_ceiling(), None, codecs)
-    assert verdicts["structured_extraction"] == expected
+    assert verdicts["structured_extraction"]["verdict"] == expected
 
 
 def test_structured_extraction_ready_blocked_by_truncation_below_4k():
     codecs = make_codecs(jo_small=0.95)
     low = make_ceiling(max_verified=1024, first_failure=2048, mode="silent_truncation")
-    assert compute_verdicts(None, low, None, codecs)["structured_extraction"] == "risky"
+    assert compute_verdicts(None, low, None, codecs)["structured_extraction"]["verdict"] == "risky"
     high = make_ceiling(max_verified=8000, first_failure=8192, mode="silent_truncation")
-    assert compute_verdicts(None, high, None, codecs)["structured_extraction"] == "ready"
+    assert compute_verdicts(None, high, None, codecs)["structured_extraction"]["verdict"] == "ready"
 
 
 @pytest.mark.parametrize(
@@ -176,7 +176,7 @@ def test_structured_extraction_ready_blocked_by_truncation_below_4k():
 def test_verdict_boundaries_patch_editing(sr_small, wf_small, expected):
     codecs = make_codecs(sr_small=sr_small, wf_small=wf_small)
     verdicts = compute_verdicts(None, honest_ceiling(), None, codecs)
-    assert verdicts["patch_editing"] == expected
+    assert verdicts["patch_editing"]["verdict"] == expected
 
 
 @pytest.mark.parametrize(
@@ -195,24 +195,27 @@ def test_verdict_boundaries_long_context(max_verified, first_failure, mode, expe
         max_verified=max_verified, first_failure=first_failure, mode=mode
     )
     verdicts = compute_verdicts(None, ceiling, None, None)
-    assert verdicts["long_context"] == expected
+    assert verdicts["long_context"]["verdict"] == expected
 
 
 def test_unmeasured_inputs_yield_unmeasured_not_unusable():
     verdicts = compute_verdicts(None, None, None, None)
-    assert verdicts == {
+    assert {name: entry["verdict"] for name, entry in verdicts.items()} == {
         "structured_extraction": "unmeasured",
         "patch_editing": "unmeasured",
         "long_context": "unmeasured",
     }
+    # v1.1: every verdict names its lens, even when unmeasured.
+    for entry in verdicts.values():
+        assert "lens" in entry and entry["lens"]
     # A codec matrix whose cells were never measured is just as None.
     unmeasured_cells = {
-        codec: {grade: Landing(lands=None, n=0) for grade in _GRADES}
+        codec: {grade: Landing(lands=None, lands_applies=None, n=0) for grade in _GRADES}
         for codec in _CODECS
     }
     verdicts = compute_verdicts(None, None, None, unmeasured_cells)
-    assert verdicts["structured_extraction"] == "unmeasured"
-    assert verdicts["patch_editing"] == "unmeasured"
+    assert verdicts["structured_extraction"]["verdict"] == "unmeasured"
+    assert verdicts["patch_editing"]["verdict"] == "unmeasured"
 
 
 # --- dropped naming --------------------------------------------------------
@@ -236,9 +239,9 @@ def test_all_none_families_construct_when_all_named():
         envelope=None,
         codecs=None,
         verdicts={
-            "structured_extraction": "unmeasured",
-            "patch_editing": "unmeasured",
-            "long_context": "unmeasured",
+            "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
+            "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
+            "long_context": {"verdict": "unmeasured", "lens": {"evidence": "unmeasured"}},
         },
         provenance_dropped=tuple(f"{family}: budget exhausted" for family in _FAMILIES),
     )
@@ -255,9 +258,9 @@ def test_render_table_names_unmeasured_not_zero():
         envelope=None,
         codecs=None,
         verdicts={
-            "structured_extraction": "unmeasured",
-            "patch_editing": "unmeasured",
-            "long_context": "unmeasured",
+            "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
+            "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
+            "long_context": {"verdict": "unmeasured", "lens": {"evidence": "unmeasured"}},
         },
         provenance_dropped=tuple(f"{family}: budget exhausted" for family in _FAMILIES),
     )
@@ -268,3 +271,26 @@ def test_render_table_names_unmeasured_not_zero():
     assert "None" not in rendered
     # Measured values DO render.
     assert "0.97" in render_table(make_profile())
+
+
+def test_patch_verdict_is_judged_under_the_applies_lens():
+    # v1.1: byte-equality says unusable (0.0), applies-and-parses says
+    # ready (0.95) — patch_editing must follow the applies lens and SAY
+    # so. The 2026-08-12 measurement (same model, 0% vs 100% under two
+    # instruments) is why the lens is part of the verdict.
+    codecs = {
+        codec: {
+            grade: Landing(lands=0.0, lands_applies=0.95, n=5)
+            for grade in _GRADES
+        }
+        for codec in _CODECS
+    }
+    verdicts = compute_verdicts(None, None, None, codecs)
+    assert verdicts["patch_editing"]["verdict"] == "ready"
+    assert verdicts["patch_editing"]["lens"]["landing"] == "applies_and_parses"
+
+
+def test_custom_presentation_is_named_in_every_codec_lens():
+    verdicts = compute_verdicts(None, None, None, None, presentation="custom")
+    assert verdicts["structured_extraction"]["lens"]["presentation"] == "custom"
+    assert verdicts["patch_editing"]["lens"]["presentation"] == "custom"

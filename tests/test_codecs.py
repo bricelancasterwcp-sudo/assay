@@ -2,7 +2,9 @@
 
 import pytest
 
+from assay import fixtures
 from assay.codecs import (
+    CodecDirectives,
     apply_search_replace,
     apply_whole_file,
     landing_equal,
@@ -232,12 +234,12 @@ def test_landing_by_grade_matrix():
     backend = ScriptedBackend(grade_matrix_script)
     result = probe_codecs(backend, make_meter(), n_per_cell=3)
 
-    assert result["search_replace"]["tiny"] == Landing(lands=1.0, n=3)
-    assert result["search_replace"]["small"] == Landing(lands=0.0, n=3)
-    assert result["search_replace"]["medium"] == Landing(lands=0.0, n=3)
+    assert result["search_replace"]["tiny"] == Landing(lands=1.0, lands_applies=1.0, n=3)
+    assert result["search_replace"]["small"] == Landing(lands=0.0, lands_applies=0.0, n=3)
+    assert result["search_replace"]["medium"] == Landing(lands=0.0, lands_applies=0.0, n=3)
     for grade in ("tiny", "small", "medium"):
-        assert result["whole_file"][grade] == Landing(lands=1.0, n=3)
-        assert result["json_object"][grade] == Landing(lands=1.0, n=3)
+        assert result["whole_file"][grade] == Landing(lands=1.0, lands_applies=1.0, n=3)
+        assert result["json_object"][grade] == Landing(lands=1.0, lands_applies=1.0, n=3)
 
 
 def test_zero_cell_is_none_not_zero():
@@ -249,12 +251,12 @@ def test_zero_cell_is_none_not_zero():
     meter = make_meter(max_calls=2)
     result = probe_codecs(backend, meter, n_per_cell=2)
 
-    assert result["search_replace"]["tiny"] == Landing(lands=0.0, n=2)  # measured
+    assert result["search_replace"]["tiny"] == Landing(lands=0.0, lands_applies=0.0, n=2)  # measured
     assert result["search_replace"]["small"].lands is None
     assert result["search_replace"]["small"].n == 0
     for codec in ("whole_file", "json_object"):
         for grade in ("tiny", "small", "medium"):
-            assert result[codec][grade] == Landing(lands=None, n=0)
+            assert result[codec][grade] == Landing(lands=None, lands_applies=None, n=0)
 
 
 def test_partial_cell_reports_what_was_measured():
@@ -264,8 +266,8 @@ def test_partial_cell_reports_what_was_measured():
     meter = make_meter(max_calls=1)  # dies mid-first-cell
     result = probe_codecs(backend, meter, n_per_cell=3)
 
-    assert result["search_replace"]["tiny"] == Landing(lands=1.0, n=1)
-    assert result["search_replace"]["small"] == Landing(lands=None, n=0)
+    assert result["search_replace"]["tiny"] == Landing(lands=1.0, lands_applies=1.0, n=1)
+    assert result["search_replace"]["small"] == Landing(lands=None, lands_applies=None, n=0)
 
 
 def test_probe_never_sends_format_forcing():
@@ -306,3 +308,39 @@ def test_probe_charges_the_meter_per_call():
 
     assert meter.spent.calls == len(backend.calls) == 9  # 3 codecs x 3 grades
     assert meter.spent.prompt_tokens > 0
+
+
+def test_lenses_diverge_on_semantically_valid_but_not_byte_equal_reply():
+    # The 2026-08-12 qwen finding as a regression test: a whole_file
+    # reply that fixes the defect but editorializes a comment is valid
+    # Python (applies-and-parses lands) while failing byte-equality.
+    tiny = [f for f in fixtures.EXPECTED if f[0] == "tiny"][0]
+    _, _, _, original, expected = tiny
+    editorialized = expected.replace("return subtotal * 1.08",
+                                     "return subtotal * 1.08  # fixed")
+    assert editorialized != expected
+    from assay.budget import Budget, BudgetMeter
+    from assay.codecs import probe_codecs
+    backend = ScriptedBackend(lambda p: editorialized)
+    meter = BudgetMeter(Budget(max_calls=999, max_prompt_tokens=10**9))
+    result = probe_codecs(backend, meter, n_per_cell=2)
+    cell = result["whole_file"]["tiny"]
+    assert cell.lands == 0.0
+    assert cell.lands_applies == 1.0
+
+
+def test_custom_directives_reach_the_wire_verbatim():
+    marker = "REPLY-IN-THE-STYLE-OF-THE-CONSUMER-APP"
+    custom = CodecDirectives(
+        search_replace=f"{marker} sr", whole_file=f"{marker} wf",
+        json_object=f"{marker} jo",
+    )
+    from assay.budget import Budget, BudgetMeter
+    from assay.codecs import probe_codecs
+    backend = ScriptedBackend(lambda p: "not a valid reply")
+    meter = BudgetMeter(Budget(max_calls=999, max_prompt_tokens=10**9))
+    probe_codecs(backend, meter, n_per_cell=1, directives=custom)
+    prompts = [c["prompt"] for c in backend.calls]
+    assert all(marker in p for p in prompts), "custom directive missing"
+    # And the built-in texts must NOT appear anywhere.
+    assert not any("character for character" in p for p in prompts)

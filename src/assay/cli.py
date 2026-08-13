@@ -23,6 +23,7 @@ from pathlib import Path
 
 from assay.backends import detect_backend
 from assay.budget import Budget, BudgetMeter
+from assay.codecs import CodecDirectives
 from assay.ceiling import calibrate, probe_ceiling
 from assay.codecs import probe_codecs
 from assay.envelope import probe_envelope
@@ -93,7 +94,29 @@ def _build_parser() -> argparse.ArgumentParser:
             "--window-cap", type=int,
             help="user context cap: bounds geometry and the ceiling ladder",
         )
+        sub.add_argument(
+            "--directives", type=Path, metavar="JSON",
+            help="consumer-supplied codec presentation: a JSON object with "
+                 "search_replace/whole_file/json_object directive strings; "
+                 "the profile's lens records presentation=custom",
+        )
     return parser
+
+
+def _load_directives(path: Path | None) -> CodecDirectives | None:
+    if path is None:
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    missing = {"search_replace", "whole_file", "json_object"} - set(payload)
+    if missing:
+        raise SystemExit(
+            f"--directives file is missing keys: {', '.join(sorted(missing))}"
+        )
+    return CodecDirectives(
+        search_replace=payload["search_replace"],
+        whole_file=payload["whole_file"],
+        json_object=payload["json_object"],
+    )
 
 
 def _budget_for(args: argparse.Namespace) -> Budget:
@@ -162,6 +185,7 @@ def _run_probe(args: argparse.Namespace, budget: Budget) -> int:
         backend=args.backend,
         record=args.record,
         window_cap=args.window_cap,
+        directives=_load_directives(args.directives),
     )
     print(render_table(profile))
     if args.json_path is not None:

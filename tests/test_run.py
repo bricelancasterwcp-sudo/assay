@@ -62,11 +62,16 @@ def test_full_pipeline_produces_complete_profile():
             assert cell.lands == 1.0, (codec, grade)
             assert cell.n == 5
 
-    assert profile.verdicts == {
+    assert {n: e["verdict"] for n, e in profile.verdicts.items()} == {
         "structured_extraction": "ready",
         "patch_editing": "ready",
         "long_context": "ready",
     }
+    # v1.1 lens contract: patch_editing is judged applies-and-parses,
+    # the presentation is the default, and provenance records it.
+    assert profile.verdicts["patch_editing"]["lens"]["landing"] == "applies_and_parses"
+    assert profile.verdicts["patch_editing"]["lens"]["presentation"] == "default-v1"
+    assert profile.provenance["presentation"] == "default-v1"
 
     # Provenance carries the real meter, not a value that merely looks
     # like a measurement.
@@ -104,9 +109,9 @@ def test_budget_death_mid_pipeline_yields_named_nones():
     assert any(entry.startswith("codecs:") for entry in dropped)
 
     # Verdicts partially unmeasured: measured ceiling still speaks.
-    assert profile.verdicts["long_context"] == "ready"
-    assert profile.verdicts["structured_extraction"] == "unmeasured"
-    assert profile.verdicts["patch_editing"] == "unmeasured"
+    assert profile.verdicts["long_context"]["verdict"] == "ready"
+    assert profile.verdicts["structured_extraction"]["verdict"] == "unmeasured"
+    assert profile.verdicts["patch_editing"]["verdict"] == "unmeasured"
 
     assert profile.provenance["spent"]["calls"] == _CALLS_THROUGH_CEILING
 
@@ -197,3 +202,42 @@ def test_ceiling_without_per_request_ctx_is_stated_in_dropped():
 def test_budget_is_required():
     with pytest.raises(TypeError):
         probe(_URL, "fake-model", _backend_override=ScriptedBackend())
+
+
+def test_geometry_reads_the_post_load_serving_state():
+    # v1.1, live-validation finding 3: a cold model's pre-load VRAM
+    # reading double-counts its weights (granite/codegemma read
+    # "usable window 0"). Geometry must be computed from a model_info
+    # fetched AFTER calibration's first live call. The fake reports a
+    # different training_ctx once any generate has happened, so the
+    # geometry value itself proves which reading was used.
+    class ColdThenLoaded(ScriptedBackend):
+        def __init__(self):
+            super().__init__()
+            self.generated = False
+            self.info_calls = 0
+
+        def generate(self, *a, **k):
+            self.generated = True
+            return super().generate(*a, **k)
+
+        def model_info(self):
+            self.info_calls += 1
+            info = super().model_info()
+            import dataclasses
+            if self.generated:
+                return dataclasses.replace(info, training_ctx=4096, loaded=True)
+            return dataclasses.replace(info, loaded=False)
+
+    backend = ColdThenLoaded()
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", _backend_override=backend,
+    )
+    assert backend.info_calls == 2
+    # 4096 can only have come from the post-calibration model_info.
+    assert profile.geometry is not None
+    assert profile.geometry.usable_window <= 4096
+    # The identity fields still come from the pre-load info.
+    assert profile.model["training_ctx"] == 32768
