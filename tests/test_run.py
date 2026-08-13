@@ -13,7 +13,7 @@ _VRAM_MIB = 14558
 # Quick mode against ScriptedBackend, call by call: 2 calibration,
 # 5 ladder sizes (1024..16384, one seed, no bisection when clean),
 # 10 envelope, 3 codecs x 3 grades x 5 = 45 codec probes.
-_QUICK_CALLS_TOTAL = 2 + 5 + 10 + 45
+_QUICK_CALLS_TOTAL = 2 + 5 + 10 + 45 + 2  # +2 = speed (decode, prefill)
 _CALLS_THROUGH_CEILING = 2 + 5
 
 
@@ -66,7 +66,12 @@ def test_full_pipeline_produces_complete_profile():
         "structured_extraction": "ready",
         "patch_editing": "ready",
         "long_context": "ready",
+        "chat_speed": "ready",
+        "agent_speed": "ready",
     }
+    assert profile.speed is not None
+    assert profile.speed.decode_tps == 16.0
+    assert profile.speed.evidence == "server_timings"
     # v1.1 lens contract: patch_editing is judged applies-and-parses,
     # the presentation is the default, and provenance records it.
     assert profile.verdicts["patch_editing"]["lens"]["landing"] == "applies_and_parses"
@@ -241,3 +246,31 @@ def test_geometry_reads_the_post_load_serving_state():
     assert profile.geometry.usable_window <= 4096
     # The identity fields still come from the pre-load info.
     assert profile.model["training_ctx"] == 32768
+
+
+def test_declared_tier_requires_explicit_emulation_marking():
+    # Ruled 2026-08-13: emulated tiers are allowed but ALWAYS marked.
+    with pytest.raises(ValueError, match="emulated"):
+        probe(_URL, "fake-model",
+              budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+              mode="quick", tier="average-gamer-8gb",
+              _backend_override=ScriptedBackend())
+
+
+def test_tier_and_emulation_travel_in_provenance():
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", tier="average-gamer-8gb", emulated=True,
+        _backend_override=ScriptedBackend(),
+    )
+    assert profile.provenance["tier"] == "average-gamer-8gb"
+    assert profile.provenance["emulated"] is True
+    # Undeclared stays honestly undeclared, never defaulted.
+    bare = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", _backend_override=ScriptedBackend(),
+    )
+    assert bare.provenance["tier"] is None
+    assert bare.provenance["emulated"] is None

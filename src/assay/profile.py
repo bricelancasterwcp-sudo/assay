@@ -18,15 +18,26 @@ from assay.ceiling import CallEvidence, Ceiling
 from assay.codecs import Landing
 from assay.envelope import Envelope
 from assay.geometry import Geometry
+from assay.speed import Speed
 
 PROFILE_VERSION = 2
 
-_FAMILIES = ("geometry", "ceiling", "envelope", "codecs")
+_FAMILIES = ("geometry", "ceiling", "envelope", "codecs", "speed")
 _GRADE_FOR_VERDICTS = "small"
 _READY_THRESHOLD = 0.9
 _RISKY_THRESHOLD = 0.6
 _LONG_CONTEXT_TOKENS = 16384
 _TRUNCATION_GUARD_TOKENS = 4096
+# Speed floors (v1.2): tok/s a verdict is judged against. Defaults are
+# provisional until sanity-checked on live hardware; every speed verdict
+# carries its floors in the lens, so a different operator's floors are
+# always visible. Decode = chat usability; prefill = agent usability
+# (agent loops are prefill-dominated: they re-read context constantly).
+_CHAT_READY_TPS = 8.0
+_CHAT_RISKY_TPS = 4.0
+_AGENT_READY_TPS = 200.0
+_AGENT_RISKY_TPS = 80.0
+
 _HONEST_MODES = frozenset({"hard_error", "none_up_to_cap"})
 _LYING_MODES = frozenset({"silent_truncation", "missing_stats"})
 
@@ -41,6 +52,7 @@ class Profile:
     ceiling: Ceiling | None
     envelope: Envelope | None
     codecs: dict[str, dict[str, Landing]] | None
+    speed: Speed | None
     verdicts: dict[str, dict]
     provenance: dict  # started/finished/mode/seeds/budget/spent/calibration/dropped
 
@@ -67,6 +79,7 @@ class Profile:
             ceiling=_ceiling_from(payload["ceiling"]),
             envelope=_envelope_from(payload["envelope"]),
             codecs=_codecs_from(payload["codecs"]),
+            speed=_speed_from(payload["speed"]),
             verdicts=payload["verdicts"],
             provenance=payload["provenance"],
         )
@@ -86,6 +99,10 @@ def _ceiling_from(payload: dict | None) -> Ceiling | None:
 
 def _envelope_from(payload: dict | None) -> Envelope | None:
     return None if payload is None else Envelope(**payload)
+
+
+def _speed_from(payload: dict | None) -> Speed | None:
+    return None if payload is None else Speed(**payload)
 
 
 def _codecs_from(
@@ -148,11 +165,22 @@ def _long_context(ceiling: Ceiling | None) -> str:
     return "unmeasured"
 
 
+def _speed_ladder(rate: float | None, ready: float, risky: float) -> str:
+    if rate is None:
+        return "unmeasured"
+    if rate >= ready:
+        return "ready"
+    if rate >= risky:
+        return "risky"
+    return "unusable"
+
+
 def compute_verdicts(
     geometry: Geometry | None,
     ceiling: Ceiling | None,
     envelope: Envelope | None,
     codecs: dict[str, dict[str, Landing]] | None,
+    speed: Speed | None = None,
     *,
     presentation: str = "default-v1",
 ) -> dict[str, dict]:
@@ -203,6 +231,26 @@ def compute_verdicts(
             "lens": {"evidence": ("counts+canary" if counts
                                   else "canary_only" if counts is not None
                                   else "unmeasured")},
+        },
+        "chat_speed": {
+            "verdict": _speed_ladder(
+                None if speed is None else speed.decode_tps,
+                _CHAT_READY_TPS, _CHAT_RISKY_TPS),
+            "lens": {"metric": "decode_tps",
+                     "floor_ready": _CHAT_READY_TPS,
+                     "floor_risky": _CHAT_RISKY_TPS,
+                     "evidence": ("unmeasured" if speed is None
+                                  else speed.evidence)},
+        },
+        "agent_speed": {
+            "verdict": _speed_ladder(
+                None if speed is None else speed.prefill_tps,
+                _AGENT_READY_TPS, _AGENT_RISKY_TPS),
+            "lens": {"metric": "prefill_tps",
+                     "floor_ready": _AGENT_READY_TPS,
+                     "floor_risky": _AGENT_RISKY_TPS,
+                     "evidence": ("unmeasured" if speed is None
+                                  else speed.evidence)},
         },
     }
 
@@ -282,6 +330,10 @@ def render_table(profile: Profile) -> str:
         _render_envelope(profile.envelope),
         *_render_codecs(profile.codecs),
         "",
+        ("speed      unmeasured" if profile.speed is None else
+         f"speed      decode {_show(profile.speed.decode_tps)} tok/s | "
+         f"prefill {_show(profile.speed.prefill_tps)} tok/s "
+         f"({profile.speed.evidence})"),
         "verdicts   "
         + " | ".join(f"{name}: {entry['verdict']}"
                      for name, entry in profile.verdicts.items()),

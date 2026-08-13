@@ -11,7 +11,7 @@ from assay.envelope import Envelope
 from assay.geometry import Geometry
 from assay.profile import Profile, compute_verdicts, render_table
 
-_FAMILIES = ("geometry", "ceiling", "envelope", "codecs")
+_FAMILIES = ("geometry", "ceiling", "envelope", "codecs", "speed")
 _GRADES = ("tiny", "small", "medium")
 _CODECS = ("search_replace", "whole_file", "json_object")
 
@@ -57,6 +57,12 @@ def make_envelope() -> Envelope:
     return Envelope(fidelity=0.97, n=30, failures={"prose": 1, "shape": 0, "refusal": 0})
 
 
+def make_speed():
+    from assay.speed import Speed
+    return Speed(decode_tps=16.0, prefill_tps=1024.0,
+                 evidence="server_timings", n_decode=1, n_prefill=1)
+
+
 def make_codecs(
     *, sr_small: float = 0.9, wf_small: float = 0.8, jo_small: float = 0.95
 ) -> dict[str, dict[str, Landing]]:
@@ -90,6 +96,7 @@ def make_profile(*, provenance_dropped: tuple[str, ...] = (), **overrides) -> Pr
         ceiling=make_ceiling(),
         envelope=make_envelope(),
         codecs=make_codecs(),
+        speed=make_speed(),
         verdicts={
             "structured_extraction": {"verdict": "ready", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "ready", "lens": {"landing": "test"}},
@@ -204,6 +211,8 @@ def test_unmeasured_inputs_yield_unmeasured_not_unusable():
         "structured_extraction": "unmeasured",
         "patch_editing": "unmeasured",
         "long_context": "unmeasured",
+        "chat_speed": "unmeasured",
+        "agent_speed": "unmeasured",
     }
     # v1.1: every verdict names its lens, even when unmeasured.
     for entry in verdicts.values():
@@ -238,6 +247,7 @@ def test_all_none_families_construct_when_all_named():
         ceiling=None,
         envelope=None,
         codecs=None,
+        speed=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
@@ -257,6 +267,7 @@ def test_render_table_names_unmeasured_not_zero():
         ceiling=None,
         envelope=None,
         codecs=None,
+        speed=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
@@ -294,3 +305,27 @@ def test_custom_presentation_is_named_in_every_codec_lens():
     verdicts = compute_verdicts(None, None, None, None, presentation="custom")
     assert verdicts["structured_extraction"]["lens"]["presentation"] == "custom"
     assert verdicts["patch_editing"]["lens"]["presentation"] == "custom"
+
+
+@pytest.mark.parametrize("tps,expected", [
+    (8.0, "ready"), (7.99, "risky"), (4.0, "risky"), (3.99, "unusable"),
+])
+def test_chat_speed_floor_boundaries(tps, expected):
+    from assay.speed import Speed
+    speed = Speed(decode_tps=tps, prefill_tps=1000.0,
+                  evidence="server_timings", n_decode=1, n_prefill=1)
+    verdicts = compute_verdicts(None, None, None, None, speed)
+    assert verdicts["chat_speed"]["verdict"] == expected
+    assert verdicts["chat_speed"]["lens"]["floor_ready"] == 8.0
+
+
+@pytest.mark.parametrize("tps,expected", [
+    (200.0, "ready"), (199.0, "risky"), (80.0, "risky"), (79.0, "unusable"),
+])
+def test_agent_speed_floor_boundaries(tps, expected):
+    from assay.speed import Speed
+    speed = Speed(decode_tps=16.0, prefill_tps=tps,
+                  evidence="wall_clock_counts", n_decode=1, n_prefill=1)
+    verdicts = compute_verdicts(None, None, None, None, speed)
+    assert verdicts["agent_speed"]["verdict"] == expected
+    assert verdicts["agent_speed"]["lens"]["evidence"] == "wall_clock_counts"

@@ -94,6 +94,22 @@ def _build_parser() -> argparse.ArgumentParser:
             "--window-cap", type=int,
             help="user context cap: bounds geometry and the ceiling ladder",
         )
+        marking = sub.add_mutually_exclusive_group()
+        marking.add_argument(
+            "--emulated", dest="emulated", action="store_const", const=True,
+            help="mark this profile as measured on EMULATED tier hardware",
+        )
+        marking.add_argument(
+            "--real-hardware", dest="emulated", action="store_const", const=False,
+            help="mark this profile as measured on real tier hardware",
+        )
+        sub.set_defaults(emulated=None)
+        sub.add_argument(
+            "--tier", metavar="NAME",
+            help="operator-declared hardware tier (e.g. average-gamer-8gb); "
+                 "REQUIRES --emulated or --real-hardware — an unmarked "
+                 "emulated number could masquerade as real hardware",
+        )
         sub.add_argument(
             "--directives", type=Path, metavar="JSON",
             help="consumer-supplied codec presentation: a JSON object with "
@@ -186,6 +202,8 @@ def _run_probe(args: argparse.Namespace, budget: Budget) -> int:
         record=args.record,
         window_cap=args.window_cap,
         directives=_load_directives(args.directives),
+        tier=args.tier,
+        emulated=args.emulated,
     )
     print(render_table(profile))
     if args.json_path is not None:

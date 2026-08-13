@@ -29,6 +29,7 @@ from assay.errors import BudgetExhausted
 from assay.geometry import free_vram_mib, plan_window
 from assay.profile import PROFILE_VERSION, Profile, compute_verdicts
 from assay.replay import CallRecorder
+from assay.speed import Speed, probe_speed
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,8 @@ def probe(
     record: Path | None = None,
     window_cap: int | None = None,
     directives: CodecDirectives | None = None,
+    tier: str | None = None,
+    emulated: bool | None = None,
     _backend_override: Backend | None = None,
 ) -> Profile:
     """Run the full probe suite against one endpoint; return a Profile.
@@ -108,6 +111,12 @@ def probe(
     """
     if mode not in MODE_PARAMS:
         raise ValueError(f"unknown mode: {mode!r} (expected 'quick' or 'full')")
+    if tier is not None and emulated is None:
+        # The marking rule (ruled 2026-08-13): a tier-labelled profile
+        # must say whether the hardware was emulated. No default — an
+        # unmarked emulated number could masquerade as real hardware.
+        raise ValueError("a declared tier requires an explicit "
+                         "emulated=True/False")
     params = MODE_PARAMS[mode]
     started = _utc_now()
 
@@ -193,6 +202,8 @@ def probe(
             envelope = None
             dropped.append("envelope: budget exhausted before any probe completed")
 
+    speed: Speed | None = None
+
     if budget_death is not None:
         dropped.append("codecs: skipped, budget exhausted earlier")
     else:
@@ -223,6 +234,14 @@ def probe(
             ):
                 budget_death = BudgetExhausted("budget exhausted during codec probes")
 
+    if budget_death is not None:
+        dropped.append("speed: skipped, budget exhausted earlier")
+    else:
+        speed = probe_speed(active, meter, calibration=calibration)
+        if speed.n_decode == 0 and speed.n_prefill == 0:
+            speed = None
+            dropped.append("speed: budget exhausted before any probe completed")
+
     if (
         budget_death is not None
         and geometry is None
@@ -250,8 +269,9 @@ def probe(
         ceiling=ceiling,
         envelope=envelope,
         codecs=codecs,
+        speed=speed,
         verdicts=compute_verdicts(
-            geometry, ceiling, envelope, codecs,
+            geometry, ceiling, envelope, codecs, speed,
             presentation=("custom" if directives is not None
                           else DEFAULT_PRESENTATION),
         ),
@@ -259,6 +279,8 @@ def probe(
             "started": started,
             "finished": _utc_now(),
             "mode": mode,
+            "tier": tier,
+            "emulated": emulated,
             "presentation": ("custom" if directives is not None
                              else DEFAULT_PRESENTATION),
             "temperature": PROBE_TEMPERATURE,

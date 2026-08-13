@@ -11,6 +11,15 @@ from assay.codecs import JSON_PROMPT
 from assay.errors import InfrastructureError
 
 # The fake's fixed "tokenizer" rate; calibration should measure ~this.
+import random as _random
+
+from assay.ceiling import build_filler as _build_filler
+
+# The speed prefill probe sends bare filler built from seed 900; its word
+# sequence is deterministic even though its length varies with the
+# calibrated chars-per-token, so the first words identify it.
+_SPEED_FILLER_PREFIX = _build_filler(_random.Random(900), 8, 3.0)[:20]
+
 CHARS_PER_TOKEN = 4
 
 _FULL_CAPS = BackendCaps(
@@ -72,10 +81,21 @@ class ScriptedBackend:
             tokens_in=max(1, len(prompt) // CHARS_PER_TOKEN),
             tokens_out=max(1, len(text) // CHARS_PER_TOKEN),
             stop_reason="stop",
-            raw={"scripted": True},
+            raw={
+                "scripted": True,
+                # Deterministic server timings for the speed probes:
+                # decode 16 tok/s, prefill 1024 tok/s.
+                "eval_count": 64, "eval_duration": 4_000_000_000,
+                "prompt_eval_count": 2048,
+                "prompt_eval_duration": 2_000_000_000,
+            },
         )
 
     def _reply_text(self, prompt: str, seed: int) -> str:
+        if prompt.startswith("Count upward from one"):
+            return "1\n2\n3\n4"
+        if prompt.startswith(_SPEED_FILLER_PREFIX):
+            return "ok"
         if prompt.startswith("Begin your reply with exactly the word ASSAY-"):
             return f"ASSAY-{seed} acknowledged."
         if prompt == JSON_PROMPT:

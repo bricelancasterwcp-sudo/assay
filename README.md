@@ -12,6 +12,21 @@ that codec*, and an application that knows this before shipping work to
 it can choose another format or another model.
 
 
+
+## v0.3 (v1.2): speed is a capability, tiers are declared
+
+Two new measurements per profile — **decode tok/s** (chat usability)
+and **prefill tok/s** (agent usability: agent loops are
+prefill-dominated) — taken from the server's own timings where the
+backend reports them, with wall-clock fallbacks whose weaker evidence
+class is named. Two new verdicts, `chat_speed` and `agent_speed`, judge
+them against stated floors that travel in the lens. Profiles also carry
+an operator-declared hardware **tier** with a mandatory
+emulated/real-hardware marking (`--tier` requires `--emulated` or
+`--real-hardware`) — an emulated number can never masquerade as a
+real-hardware one. This is the instrument layer for a per-tier consumer
+hardware capability matrix.
+
 ## v0.2 (v1.1): the lens is part of the verdict
 
 The first live validation measured the same model at 0% and 100% edit
