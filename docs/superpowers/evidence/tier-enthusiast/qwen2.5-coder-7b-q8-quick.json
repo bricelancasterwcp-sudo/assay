@@ -1,0 +1,197 @@
+{
+  "assay_profile_version": 2,
+  "probe_version": "0.3.0",
+  "endpoint": {
+    "kind": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "autodetected": true
+  },
+  "model": {
+    "name": "qwen2.5-coder:7b-instruct-q8_0",
+    "quant": "Q8_0",
+    "weights_bytes": 8098539207,
+    "training_ctx": 32768
+  },
+  "geometry": {
+    "kv_kib_per_token": 56,
+    "vram_free_mib": 6263,
+    "usable_window": 32768,
+    "limited_by": "training_ctx",
+    "source": "api_show"
+  },
+  "ceiling": {
+    "max_verified": 16384,
+    "first_failure": null,
+    "failure_mode": "none_up_to_cap",
+    "counts_available": true,
+    "evidence": [
+      {
+        "est_tokens": 1024,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=960 stop_reason=length"
+      },
+      {
+        "est_tokens": 2048,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1871 stop_reason=length"
+      },
+      {
+        "est_tokens": 4096,
+        "seed": 0,
+        "signal": "attention_loss",
+        "detail": "tokens_in=3697 stop_reason=stop"
+      },
+      {
+        "est_tokens": 8192,
+        "seed": 0,
+        "signal": "attention_loss",
+        "detail": "tokens_in=7305 stop_reason=stop"
+      },
+      {
+        "est_tokens": 16384,
+        "seed": 0,
+        "signal": "attention_loss",
+        "detail": "tokens_in=14609 stop_reason=stop"
+      }
+    ]
+  },
+  "envelope": {
+    "fidelity": 1.0,
+    "n": 10,
+    "failures": {
+      "prose": 0,
+      "shape": 0,
+      "refusal": 0
+    }
+  },
+  "codecs": {
+    "search_replace": {
+      "tiny": {
+        "lands": 0.0,
+        "lands_applies": 0.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.0,
+        "lands_applies": 0.8,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.0,
+        "lands_applies": 0.0,
+        "n": 5
+      }
+    },
+    "whole_file": {
+      "tiny": {
+        "lands": 0.0,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.0,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.0,
+        "lands_applies": 1.0,
+        "n": 5
+      }
+    },
+    "json_object": {
+      "tiny": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      }
+    }
+  },
+  "speed": {
+    "decode_tps": 76.40258431741454,
+    "prefill_tps": 7736.26843166981,
+    "evidence": "server_timings",
+    "n_decode": 1,
+    "n_prefill": 1
+  },
+  "verdicts": {
+    "structured_extraction": {
+      "verdict": "ready",
+      "lens": {
+        "landing": "json_valid_required_keys",
+        "presentation": "default-v1",
+        "temperature": 0.2
+      }
+    },
+    "patch_editing": {
+      "verdict": "ready",
+      "lens": {
+        "landing": "applies_and_parses",
+        "presentation": "default-v1",
+        "temperature": 0.2
+      }
+    },
+    "long_context": {
+      "verdict": "ready",
+      "lens": {
+        "evidence": "counts+canary"
+      }
+    },
+    "chat_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "decode_tps",
+        "floor_ready": 8.0,
+        "floor_risky": 4.0,
+        "evidence": "server_timings"
+      }
+    },
+    "agent_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "prefill_tps",
+        "floor_ready": 200.0,
+        "floor_risky": 80.0,
+        "evidence": "server_timings"
+      }
+    }
+  },
+  "provenance": {
+    "started": "2026-08-13T22:38:07Z",
+    "finished": "2026-08-13T22:39:42Z",
+    "mode": "quick",
+    "tier": "enthusiast-16gb",
+    "emulated": false,
+    "presentation": "default-v1",
+    "temperature": 0.2,
+    "seeds": [
+      0
+    ],
+    "budget": {
+      "max_calls": 80,
+      "max_prompt_tokens": 120000
+    },
+    "spent": {
+      "calls": 64,
+      "prompt_tokens": 42065
+    },
+    "calibration": {
+      "chars_per_token": 5.861313868613139,
+      "counts_available": true,
+      "deterministic": true
+    },
+    "dropped": []
+  }
+}
