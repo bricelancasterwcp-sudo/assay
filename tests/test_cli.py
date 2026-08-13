@@ -55,17 +55,24 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
     assert payload["assay_profile_version"] == 1
     assert payload["ceiling"]["failure_mode"] == "none_up_to_cap"
     assert payload["verdicts"]["long_context"] == "ready"
-    # The documented quick default budget was applied and honestly spent.
+    # The documented quick default budget was applied...
     assert payload["provenance"]["budget"] == {
-        "max_calls": 60,
+        "max_calls": 80,
         "max_prompt_tokens": 120_000,
     }
-    assert payload["provenance"]["spent"]["calls"] == 60
+    # ...and it COVERS the whole quick suite (2 calibration + 5 ladder +
+    # 10 envelope + 45 codecs = 62): the run must never exhaust the
+    # default budget on a well-behaved endpoint (spec §12 criterion 1).
+    assert payload["provenance"]["spent"]["calls"] == 62
+    for codec in ("search_replace", "whole_file", "json_object"):
+        for grade in ("tiny", "small", "medium"):
+            assert payload["codecs"][codec][grade]["n"] == 5, (codec, grade)
+    assert payload["provenance"]["dropped"] == []
 
     # Human table on stdout; recording actually wrote a transcript.
     assert "assay profile" in capsys.readouterr().out
     rows = record.read_text(encoding="utf-8").strip().splitlines()
-    assert len(rows) == 60
+    assert len(rows) == 62
     assert json.loads(rows[0])["outcome"] == "reply"
 
 

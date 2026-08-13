@@ -283,6 +283,20 @@ def test_probe_never_sends_format_forcing():
         assert set(call["kwargs"]) <= {"seed", "max_tokens", "num_ctx"}
 
 
+def test_probe_seeds_are_distinct_and_derived_from_seed_base():
+    """An n_per_cell cell must be n DIFFERENT samples: on a
+    deterministic endpoint, repeated (prompt, seed) pairs would measure
+    once and report n=5 — a value that looks like a measurement but is
+    not (spec §10)."""
+    from assay.codecs import probe_codecs
+
+    backend = ScriptedBackend(grade_matrix_script)
+    probe_codecs(backend, make_meter(), n_per_cell=2, seed_base=500)
+
+    seeds = [call["kwargs"]["seed"] for call in backend.calls]
+    assert seeds == list(range(500, 500 + 18))  # 3 codecs x 3 grades x 2
+
+
 def test_probe_charges_the_meter_per_call():
     from assay.codecs import probe_codecs
 

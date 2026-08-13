@@ -10,7 +10,7 @@ Exit codes (the robigo taxonomy, minus model-outcome codes):
   2  budget exhausted before ANY family completed
   4  infrastructure failure before any measurement
 
-The CLI supplies documented budget defaults (quick: 60 calls / 120k
+The CLI supplies documented budget defaults (quick: 80 calls / 120k
 prompt tokens; full: 250 / 500k); the library requires an explicit
 Budget — consent to burn GPU time is never implicit.
 """
@@ -32,8 +32,13 @@ from assay.profile import render_table
 from assay.replay import CallRecorder
 from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 
+# The quick default must cover the WORST-case quick suite, not just the
+# clean one: 2 calibration + 5 ladder + ~7 bisection + 10 envelope +
+# 45 codec calls ≈ 69, plus margin. A default below the suite's own
+# call count would exhaust mid-codecs on every run and report
+# unmeasured cells (spec §12 criterion 1).
 DEFAULT_BUDGETS = {
-    "quick": Budget(max_calls=60, max_prompt_tokens=120_000),
+    "quick": Budget(max_calls=80, max_prompt_tokens=120_000),
     "full": Budget(max_calls=250, max_prompt_tokens=500_000),
 }
 

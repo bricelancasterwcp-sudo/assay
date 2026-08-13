@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from fakes import ScriptedBackend
+from fakes import MetadataFreeBackend, ScriptedBackend
 
 from assay import Budget, Profile, probe
 
@@ -139,6 +139,59 @@ def test_budget_death_in_ceiling_stops_later_families_from_spending():
     dropped = profile.provenance["dropped"]
     assert "envelope: skipped, budget exhausted earlier" in dropped
     assert "codecs: skipped, budget exhausted earlier" in dropped
+
+
+def test_budget_death_mid_codecs_names_unmeasured_cells_in_dropped():
+    # 17 calls reach codecs (2 calibration + 5 ladder + 10 envelope);
+    # 20 codec calls complete 4 cells, then the meter dies. Spec §8:
+    # every UNMEASURED cell (Landing(None, 0)) must be NAMED in
+    # dropped — a None measurement with dropped == [] tells a consumer
+    # nothing was dropped.
+    profile = probe(
+        _URL,
+        "fake-model",
+        budget=Budget(max_calls=_CALLS_THROUGH_CEILING + 10 + 20, max_prompt_tokens=1_000_000),
+        mode="quick",
+        _backend_override=ScriptedBackend(),
+    )
+
+    assert profile.codecs is not None
+    cells = {
+        (codec, grade): cell
+        for codec, grades in profile.codecs.items()
+        for grade, cell in grades.items()
+    }
+    unmeasured = sorted(key for key, cell in cells.items() if cell.n == 0)
+    assert unmeasured, "the budget must really have died mid-matrix"
+    dropped = profile.provenance["dropped"]
+    for codec, grade in unmeasured:
+        assert (
+            f"codecs: {codec}.{grade} budget exhausted before any probe completed"
+            in dropped
+        )
+    # Measured cells (n > 0) are measurements, never named as dropped.
+    for (codec, grade), cell in cells.items():
+        if cell.n > 0:
+            assert not any(f"{codec}.{grade}" in entry for entry in dropped)
+
+
+def test_ceiling_without_per_request_ctx_is_stated_in_dropped():
+    # A backend that cannot widen num_ctx per request (openai_compat
+    # shape): the ceiling still measures, but the profile must state
+    # that the ladder ran in the server's configured window.
+    profile = probe(
+        _URL,
+        "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=1_000_000),
+        mode="quick",
+        _backend_override=MetadataFreeBackend(),
+    )
+
+    assert profile.ceiling is not None
+    assert any(
+        entry.startswith("ceiling: per_request_ctx unavailable")
+        for entry in profile.provenance["dropped"]
+    )
 
 
 def test_budget_is_required():

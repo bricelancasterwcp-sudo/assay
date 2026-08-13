@@ -90,6 +90,15 @@ def test_refusal_classified(text):
     assert result.failures == {"prose": 0, "shape": 0, "refusal": 1}
 
 
+def test_valid_line_beside_refusal_marker_counts_prose_not_refusal():
+    # Plan Task 8: refusal requires NO valid line. A reply carrying both
+    # a refusal marker and the exact expected line is extractable
+    # chattiness — the prose-before-refusal precedence.
+    backend = ScriptedBackend(["I'm sorry about earlier.\nALPHA 0"])
+    result = probe_envelope(backend, ample_meter(), n=1)
+    assert result.failures == {"prose": 1, "shape": 0, "refusal": 0}
+
+
 def test_wrong_shape_without_markers_is_shape():
     backend = ScriptedBackend(["BANANA 99"])
     result = probe_envelope(backend, ample_meter(), n=1)

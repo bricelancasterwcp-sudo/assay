@@ -75,7 +75,7 @@ from assay import Budget, probe
 profile = probe(
     "http://127.0.0.1:11434",
     "qwen2.5-coder:7b-instruct-q8_0",
-    budget=Budget(max_calls=60, max_prompt_tokens=120_000),
+    budget=Budget(max_calls=80, max_prompt_tokens=120_000),
     mode="quick",
 )
 print(profile.to_json())
@@ -83,7 +83,7 @@ print(profile.to_json())
 
 `budget` is a **required** argument: a library consumer burning a user's
 GPU time must say how much. There is no silent default. The CLI supplies
-documented defaults — quick: 60 calls / 120k prompt tokens; full: 250
+documented defaults — quick: 80 calls / 120k prompt tokens; full: 250
 calls / 500k — overridable with `--max-calls` / `--max-prompt-tokens`.
 
 ## The profile

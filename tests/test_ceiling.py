@@ -77,6 +77,17 @@ class TestClassifyCall:
         )
         assert signal == "canary_loss"
 
+    def test_absent_canary_and_count_free_reply_is_canary_loss_despite_calibration(self):
+        # Calibration measured counts, but THIS reply carries none (an
+        # OpenAI-compat server that reports usage on small prompts and
+        # omits it while silently front-truncating large ones): nothing
+        # verifies the rung — never "ok".
+        reply = _reply("I summarized the passage instead.")
+        signal = classify_call(
+            reply, sent_est=8192, canary=CANARY, counts_available=True
+        )
+        assert signal == "canary_loss"
+
     def test_canary_present_and_counts_fine_is_ok(self):
         reply = _reply(f"{CANARY} understood.", tokens_in=1000, tokens_out=3, stop_reason="stop")
         signal = classify_call(
@@ -224,6 +235,69 @@ class DeadBackend(_FakeBackend):
         raise InfrastructureError("connection reset")
 
 
+class DefaultCtxDaemonBackend(_FakeBackend):
+    """Real-Ollama shape: the flagship ~11.5k scenario (spec §12.1).
+
+    The serving window is options.num_ctx when the request carries it,
+    else the daemon DEFAULT (4096); the prompt is front-truncated into
+    that window; and the genuine serving-path ceiling is ~11.5k
+    (stats-free 200s past it). A ladder that never sends num_ctx
+    measures the default-window knob (~5k silent_truncation) instead
+    of the daemon ceiling.
+    """
+
+    DEFAULT_NUM_CTX = 4096
+    CEILING = 11500
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[tuple[int, int | None]] = []  # (sent_est, num_ctx)
+
+    def generate(self, prompt, *, seed, max_tokens, num_ctx=None) -> Reply:
+        self.prompts.append(prompt)
+        sent = round(len(prompt) / CPT)
+        self.requests.append((sent, num_ctx))
+        if sent > self.CEILING:
+            raise ContractViolation("200 with no prompt_eval_count")
+        window = num_ctx if num_ctx is not None else self.DEFAULT_NUM_CTX
+        kept = prompt[-int(window * CPT):]
+        word = f"ASSAY-{seed}"
+        text = f"{word} ok" if word in kept else "ok"
+        return Reply(
+            text=text,
+            tokens_in=min(sent, window),
+            tokens_out=3,
+            stop_reason="stop",
+            raw={},
+        )
+
+
+class MixedSignalBackend(_FakeBackend):
+    """Past the threshold, the failing signal depends on the seed:
+    listed seeds raise plain InfrastructureError (hard_error), all
+    others raise ContractViolation (missing_stats)."""
+
+    def __init__(self, hard_error_seeds=(0,), threshold=3000) -> None:
+        super().__init__()
+        self.hard_error_seeds = set(hard_error_seeds)
+        self.threshold = threshold
+
+    def generate(self, prompt, *, seed, max_tokens, num_ctx=None) -> Reply:
+        self.prompts.append(prompt)
+        sent = round(len(prompt) / CPT)
+        if sent > self.threshold:
+            if seed in self.hard_error_seeds:
+                raise InfrastructureError("HTTP 500")
+            raise ContractViolation("200 with no prompt_eval_count")
+        return Reply(
+            text=f"ASSAY-{seed} ok",
+            tokens_in=sent,
+            tokens_out=3,
+            stop_reason="stop",
+            raw={},
+        )
+
+
 # --- ladder + bisection ---------------------------------------------------
 
 
@@ -269,6 +343,82 @@ def test_honest_server_reports_none_up_to_cap():
     assert ceiling.failure_mode == "none_up_to_cap"
     assert ceiling.first_failure is None
     assert ceiling.max_verified == 16384
+    # BOTH seeds really probed every rung — the 2-seed dimension of the
+    # measurement (spec §5), not one seed asked twice.
+    for size in (1024, 2048, 4096, 8192, 16384):
+        assert {e.seed for e in ceiling.evidence if e.est_tokens == size} == {0, 1}
+
+
+def test_ladder_widens_num_ctx_past_the_daemon_default():
+    # Without per-request num_ctx the ladder measures the daemon's
+    # DEFAULT window (4096 → silent_truncation near ~5k), not the
+    # serving-path ceiling — the flagship ~11.5k missing_stats
+    # measurement would be unreproducible (spec §12.1).
+    backend = DefaultCtxDaemonBackend()
+    ceiling = probe_ceiling(
+        backend, _meter(), cap_tokens=16384, seeds=(0, 1), calibration=CAL
+    )
+    assert ceiling.failure_mode == "missing_stats"
+    assert ceiling.max_verified is not None
+    assert ceiling.max_verified <= 11500
+    assert ceiling.first_failure is not None
+    assert ceiling.first_failure > 11500
+    # Every call asked for a serving window covering prompt + reply.
+    assert backend.requests
+    for sent, num_ctx in backend.requests:
+        assert num_ctx is not None
+        assert num_ctx >= sent + 32
+
+
+def test_no_per_request_ctx_backend_is_never_sent_num_ctx():
+    class NoCtxHonestBackend(HonestBackend):
+        caps = BackendCaps(
+            reports_counts=True,
+            per_request_ctx=False,
+            truncate_control=False,
+            metadata_access=False,
+        )
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.num_ctxs: list[int | None] = []
+
+        def generate(self, prompt, *, seed, max_tokens, num_ctx=None) -> Reply:
+            self.num_ctxs.append(num_ctx)
+            return super().generate(prompt, seed=seed, max_tokens=max_tokens)
+
+    backend = NoCtxHonestBackend()
+    probe_ceiling(backend, _meter(), cap_tokens=4096, seeds=(0,), calibration=CAL)
+    assert backend.num_ctxs
+    assert all(num_ctx is None for num_ctx in backend.num_ctxs)
+
+
+def test_failure_mode_is_the_majority_across_seeds():
+    # seed 0 hard_error, seeds 1-2 missing_stats: the 2-1 majority wins
+    # (plan Task 7 step 7) — not the first failing signal.
+    ceiling = probe_ceiling(
+        MixedSignalBackend(hard_error_seeds=(0,)),
+        _meter(),
+        cap_tokens=16384,
+        seeds=(0, 1, 2),
+        calibration=CAL,
+    )
+    assert ceiling.first_failure is not None
+    assert ceiling.failure_mode == "missing_stats"
+
+
+def test_failure_mode_tie_breaks_toward_table_order():
+    # 1-1 tie between hard_error (seed 0) and missing_stats (seed 1):
+    # the decision-table order puts missing_stats first.
+    ceiling = probe_ceiling(
+        MixedSignalBackend(hard_error_seeds=(0,)),
+        _meter(),
+        cap_tokens=16384,
+        seeds=(0, 1),
+        calibration=CAL,
+    )
+    assert ceiling.first_failure is not None
+    assert ceiling.failure_mode == "missing_stats"
 
 
 def test_budget_exhaustion_mid_ladder_reports_partial_not_raise():
@@ -361,6 +511,23 @@ def test_calibrate_measures_chars_per_token_and_determinism():
     assert cal.chars_per_token == pytest.approx(4.0, rel=0.01)
     assert cal.deterministic is True
     assert meter.spent.calls == 2  # one probe + one repeat, both charged
+
+
+def test_calibrate_requests_a_covering_num_ctx_when_available():
+    class RecordingBackend(DeterministicCountingBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.num_ctxs: list[int | None] = []
+
+        def generate(self, prompt, *, seed, max_tokens, num_ctx=None) -> Reply:
+            self.num_ctxs.append(num_ctx)
+            return super().generate(prompt, seed=seed, max_tokens=max_tokens)
+
+    backend = RecordingBackend()
+    calibrate(backend, _meter(), seed=0)
+    assert len(backend.num_ctxs) == 2
+    # ~500-token probe + reply headroom, on a per_request_ctx backend.
+    assert all(num_ctx is not None and num_ctx >= 500 + 32 for num_ctx in backend.num_ctxs)
 
 
 def test_calibrate_without_counts_reports_none_not_a_guess():

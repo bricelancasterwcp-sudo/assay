@@ -111,6 +111,21 @@ def _canary_word(seed: int) -> str:
     return f"ASSAY-{seed}"
 
 
+def _request_ctx(backend: Backend, est_tokens: int) -> int | None:
+    """Per-request serving context for a probe of ``est_tokens``.
+
+    Against a daemon whose default window is small (Ollama: 4096), a
+    ladder that never sends num_ctx measures the DEFAULT, not the
+    serving-path ceiling (spec §3: "options.num_ctx when a probe needs
+    a specific serving context"). Headroom covers the reply plus
+    sizing slop so the probe's own num_ctx never truncates the prompt
+    it is measuring. None when the backend cannot set it per request.
+    """
+    if not backend.caps.per_request_ctx:
+        return None
+    return est_tokens + est_tokens // 4 + 64
+
+
 def _canary_prompt(seed: int, filler: str) -> str:
     # The instruction sits at the FRONT: Ollama front-truncates, so
     # truncation eats the canary — that absence is the signal.
@@ -142,7 +157,13 @@ def classify_call(
     canary: str,
     counts_available: bool,
 ) -> str:
-    """Spec §5 decision table, applied strictly in order."""
+    """Spec §5 decision table, applied strictly in order.
+
+    ``counts_available`` (the calibration-level flag) is kept for the
+    pinned interface, but the reply's OWN ``tokens_in`` governs: a
+    count-free reply can arrive even when calibration saw counts, and
+    it must never verify a rung.
+    """
     if isinstance(outcome, ContractViolation):
         return "missing_stats"
     if isinstance(outcome, InfrastructureError):
@@ -160,7 +181,10 @@ def classify_call(
         # The prompt demonstrably arrived whole; the MODEL dropped the
         # instruction. Evidence, not a failure.
         return "attention_loss"
-    if not canary_present and not counts_available:
+    if not canary_present and tokens_in is None:
+        # No canary and no count on THIS reply — whatever calibration
+        # measured, nothing verifies the prompt arrived whole. The
+        # ambiguous case, stated (spec §5); never "ok".
         return "canary_loss"
     return "ok"
 
@@ -176,9 +200,12 @@ def calibrate(backend: Backend, meter: BudgetMeter, *, seed: int) -> Calibration
         random.Random(seed), _CALIBRATION_EST_TOKENS, FALLBACK_CHARS_PER_TOKEN
     )
     prompt = _canary_prompt(seed, filler)
+    num_ctx = _request_ctx(backend, _CALIBRATION_EST_TOKENS)
     meter.charge(_CALIBRATION_EST_TOKENS)
     try:
-        first = backend.generate(prompt, seed=seed, max_tokens=_PROBE_MAX_TOKENS)
+        first = backend.generate(
+            prompt, seed=seed, max_tokens=_PROBE_MAX_TOKENS, num_ctx=num_ctx
+        )
     except InfrastructureError:
         return Calibration(
             chars_per_token=None, counts_available=False, deterministic=None
@@ -191,7 +218,9 @@ def calibrate(backend: Backend, meter: BudgetMeter, *, seed: int) -> Calibration
     )
     meter.charge(_CALIBRATION_EST_TOKENS)
     try:
-        second = backend.generate(prompt, seed=seed, max_tokens=_PROBE_MAX_TOKENS)
+        second = backend.generate(
+            prompt, seed=seed, max_tokens=_PROBE_MAX_TOKENS, num_ctx=num_ctx
+        )
     except InfrastructureError:
         return Calibration(
             chars_per_token=chars_per_token,
@@ -243,7 +272,12 @@ def probe_ceiling(
         prompt = _canary_prompt(seed, build_filler(random.Random(seed), size, chars_per_token))
         outcome: Reply | Exception
         try:
-            outcome = backend.generate(prompt, seed=seed, max_tokens=_PROBE_MAX_TOKENS)
+            outcome = backend.generate(
+                prompt,
+                seed=seed,
+                max_tokens=_PROBE_MAX_TOKENS,
+                num_ctx=_request_ctx(backend, size),
+            )
         except InfrastructureError as exc:
             outcome = exc
         signal = classify_call(

@@ -154,6 +154,14 @@ def probe(
         # The partial ceiling is kept (it reports what it verified), but
         # the meter is dry: no further family may start.
         budget_death = BudgetExhausted("budget exhausted during the ceiling ladder")
+    if ceiling is not None and not active.caps.per_request_ctx:
+        # The evidence class is weaker and must be stated (spec §5/§11):
+        # without options.num_ctx the ladder measured the server's own
+        # configured context window, not a per-probe widened one.
+        dropped.append(
+            "ceiling: per_request_ctx unavailable — ladder measured the "
+            "server's configured context window"
+        )
 
     if budget_death is not None:
         dropped.append("envelope: skipped, budget exhausted earlier")
@@ -176,6 +184,24 @@ def probe(
         ):
             codecs = None
             dropped.append("codecs: budget exhausted before any probe completed")
+        else:
+            # Spec §8 None rule: every UNMEASURED cell (n == 0) is named
+            # in dropped — a Landing(None, 0) with an empty dropped list
+            # would hide the budget death from consumers. Cells with
+            # n > 0 are measurements at their honest n and stay.
+            for codec, grades in codecs.items():
+                for grade, cell in grades.items():
+                    if cell.n == 0:
+                        dropped.append(
+                            f"codecs: {codec}.{grade} budget exhausted "
+                            "before any probe completed"
+                        )
+            if any(
+                cell.n < params.codecs_n_per_cell
+                for grades in codecs.values()
+                for cell in grades.values()
+            ):
+                budget_death = BudgetExhausted("budget exhausted during codec probes")
 
     if (
         budget_death is not None
