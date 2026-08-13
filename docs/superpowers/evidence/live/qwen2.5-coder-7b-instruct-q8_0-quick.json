@@ -1,0 +1,140 @@
+{
+  "assay_profile_version": 1,
+  "probe_version": "0.1.0",
+  "endpoint": {
+    "kind": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "autodetected": true
+  },
+  "model": {
+    "name": "qwen2.5-coder:7b-instruct-q8_0",
+    "quant": "Q8_0",
+    "weights_bytes": 8098539207,
+    "training_ctx": 32768
+  },
+  "geometry": {
+    "kv_kib_per_token": 56,
+    "vram_free_mib": 13684,
+    "usable_window": 32768,
+    "limited_by": "training_ctx",
+    "source": "api_show"
+  },
+  "ceiling": {
+    "max_verified": 16384,
+    "first_failure": null,
+    "failure_mode": "none_up_to_cap",
+    "counts_available": true,
+    "evidence": [
+      {
+        "est_tokens": 1024,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=960 stop_reason=stop"
+      },
+      {
+        "est_tokens": 2048,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1871 stop_reason=length"
+      },
+      {
+        "est_tokens": 4096,
+        "seed": 0,
+        "signal": "attention_loss",
+        "detail": "tokens_in=3697 stop_reason=stop"
+      },
+      {
+        "est_tokens": 8192,
+        "seed": 0,
+        "signal": "attention_loss",
+        "detail": "tokens_in=7305 stop_reason=stop"
+      },
+      {
+        "est_tokens": 16384,
+        "seed": 0,
+        "signal": "attention_loss",
+        "detail": "tokens_in=14609 stop_reason=stop"
+      }
+    ]
+  },
+  "envelope": {
+    "fidelity": 1.0,
+    "n": 10,
+    "failures": {
+      "prose": 0,
+      "shape": 0,
+      "refusal": 0
+    }
+  },
+  "codecs": {
+    "search_replace": {
+      "tiny": {
+        "lands": 0.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.0,
+        "n": 5
+      }
+    },
+    "whole_file": {
+      "tiny": {
+        "lands": 0.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.0,
+        "n": 5
+      }
+    },
+    "json_object": {
+      "tiny": {
+        "lands": 1.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 1.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 1.0,
+        "n": 5
+      }
+    }
+  },
+  "verdicts": {
+    "structured_extraction": "ready",
+    "patch_editing": "unusable",
+    "long_context": "ready"
+  },
+  "provenance": {
+    "started": "2026-08-13T00:13:16Z",
+    "finished": "2026-08-13T00:14:41Z",
+    "mode": "quick",
+    "seeds": [
+      0
+    ],
+    "budget": {
+      "max_calls": 80,
+      "max_prompt_tokens": 120000
+    },
+    "spent": {
+      "calls": 62,
+      "prompt_tokens": 39989
+    },
+    "calibration": {
+      "chars_per_token": 5.861313868613139,
+      "counts_available": true,
+      "deterministic": false
+    },
+    "dropped": []
+  }
+}

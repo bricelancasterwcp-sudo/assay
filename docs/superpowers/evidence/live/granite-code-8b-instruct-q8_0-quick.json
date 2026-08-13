@@ -1,0 +1,158 @@
+{
+  "assay_profile_version": 1,
+  "probe_version": "0.1.0",
+  "endpoint": {
+    "kind": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "autodetected": true
+  },
+  "model": {
+    "name": "granite-code:8b-instruct-q8_0",
+    "quant": "Q8_0",
+    "weights_bytes": 8565533673,
+    "training_ctx": 4096
+  },
+  "geometry": {
+    "kv_kib_per_token": 144,
+    "vram_free_mib": 5847,
+    "usable_window": 0,
+    "limited_by": "vram",
+    "source": "api_show"
+  },
+  "ceiling": {
+    "max_verified": 4096,
+    "first_failure": 4352,
+    "failure_mode": "hard_error",
+    "counts_available": true,
+    "evidence": [
+      {
+        "est_tokens": 1024,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1021 stop_reason=stop"
+      },
+      {
+        "est_tokens": 2048,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=2010 stop_reason=length"
+      },
+      {
+        "est_tokens": 4096,
+        "seed": 0,
+        "signal": "attention_loss",
+        "detail": "tokens_in=4011 stop_reason=stop"
+      },
+      {
+        "est_tokens": 8192,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      },
+      {
+        "est_tokens": 6144,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      },
+      {
+        "est_tokens": 5120,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      },
+      {
+        "est_tokens": 4608,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      },
+      {
+        "est_tokens": 4352,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      }
+    ]
+  },
+  "envelope": {
+    "fidelity": 0.9,
+    "n": 10,
+    "failures": {
+      "prose": 0,
+      "shape": 1,
+      "refusal": 0
+    }
+  },
+  "codecs": {
+    "search_replace": {
+      "tiny": {
+        "lands": 0.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.0,
+        "n": 5
+      }
+    },
+    "whole_file": {
+      "tiny": {
+        "lands": 0.2,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.4,
+        "n": 5
+      }
+    },
+    "json_object": {
+      "tiny": {
+        "lands": 0.2,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.2,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.0,
+        "n": 5
+      }
+    }
+  },
+  "verdicts": {
+    "structured_extraction": "unusable",
+    "patch_editing": "unusable",
+    "long_context": "unmeasured"
+  },
+  "provenance": {
+    "started": "2026-08-13T00:14:41Z",
+    "finished": "2026-08-13T00:16:48Z",
+    "mode": "quick",
+    "seeds": [
+      0
+    ],
+    "budget": {
+      "max_calls": 80,
+      "max_prompt_tokens": 120000
+    },
+    "spent": {
+      "calls": 65,
+      "prompt_tokens": 43829
+    },
+    "calibration": {
+      "chars_per_token": 5.5,
+      "counts_available": true,
+      "deterministic": true
+    },
+    "dropped": []
+  }
+}

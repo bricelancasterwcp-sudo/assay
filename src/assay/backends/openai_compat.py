@@ -13,7 +13,13 @@ import urllib.error
 import urllib.request
 from typing import Callable
 
-from assay.backends.base import BackendCaps, ModelInfo, Reply, validate_reply
+from assay.backends.base import (
+    PROBE_TEMPERATURE,
+    BackendCaps,
+    ModelInfo,
+    Reply,
+    validate_reply,
+)
 from assay.errors import ContractViolation, InfrastructureError
 
 HttpPost = Callable[[str, dict], tuple[int, dict]]
@@ -85,6 +91,7 @@ class OpenAICompat:
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
             "seed": seed,
+            "temperature": PROBE_TEMPERATURE,
         }
         status, body = self._http_post(url, payload)
         if status != 200:

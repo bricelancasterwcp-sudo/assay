@@ -18,6 +18,7 @@ from pathlib import Path
 
 from assay import __version__
 from assay.backends import Backend, detect_backend
+from assay.backends.base import PROBE_TEMPERATURE
 from assay.backends.ollama import OllamaNative
 from assay.backends.openai_compat import OpenAICompat
 from assay.budget import Budget, BudgetMeter
@@ -235,6 +236,7 @@ def probe(
             "started": started,
             "finished": _utc_now(),
             "mode": mode,
+            "temperature": PROBE_TEMPERATURE,
             "seeds": list(params.seeds),
             "budget": {
                 "max_calls": budget.max_calls,

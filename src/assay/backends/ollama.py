@@ -18,7 +18,13 @@ import urllib.request
 from functools import partial
 from typing import Callable
 
-from assay.backends.base import BackendCaps, ModelInfo, Reply, validate_reply
+from assay.backends.base import (
+    PROBE_TEMPERATURE,
+    BackendCaps,
+    ModelInfo,
+    Reply,
+    validate_reply,
+)
 from assay.errors import ContractViolation, InfrastructureError
 
 HttpPost = Callable[[str, dict], tuple[int, dict]]  # (url, payload) -> (status, body)
@@ -142,7 +148,11 @@ class OllamaNative:
         max_tokens: int,
         num_ctx: int | None = None,
     ) -> Reply:
-        options: dict = {"seed": seed, "num_predict": max_tokens}
+        options: dict = {
+            "seed": seed,
+            "num_predict": max_tokens,
+            "temperature": PROBE_TEMPERATURE,
+        }
         if num_ctx is not None:
             options["num_ctx"] = num_ctx
         payload = {

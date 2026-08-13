@@ -108,6 +108,7 @@ def test_usage_counts_extracted_when_present():
         "messages": [{"role": "user", "content": "prompt text"}],
         "max_tokens": 64,
         "seed": 7,
+        "temperature": 0.2,
     }
 
 
@@ -141,6 +142,7 @@ def test_num_ctx_is_not_sent_on_the_wire():
         "messages": [{"role": "user", "content": "p"}],
         "max_tokens": 8,
         "seed": 1,
+        "temperature": 0.2,
     }
 
 
@@ -276,3 +278,16 @@ def test_forced_unknown_kind_is_rejected(fake_ollama_module):
             "http://h:1/v1", "m", forced="vllm",
             http_post=forbidden_post, http_get=forbidden_get,
         )
+
+
+def test_generate_pins_the_probe_temperature():
+    # Same invariant as the ollama backend: the sampler is part of the
+    # instrument and must be pinned, not left to the server default.
+    post = RecordingPost(body=chat_body("ok"))
+    backend = OpenAICompat(
+        "http://x:8080/v1", "m", http_post=post, http_get=forbidden_get
+    )
+
+    backend.generate("anything", seed=0, max_tokens=8)
+
+    assert post.calls[0][1]["temperature"] == 0.2

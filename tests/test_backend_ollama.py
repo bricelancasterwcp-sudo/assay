@@ -206,3 +206,17 @@ def test_ps_sets_loaded_flag(ps_models, expected):
     backend = make_backend(transport)
 
     assert backend.model_info().loaded is expected
+
+
+def test_generate_pins_the_probe_temperature():
+    # An unpinned temperature leaves the daemon default (0.8) as an
+    # uncontrolled variable of the instrument. Measured live 2026-08-12:
+    # qwen at the default stripped indentation in 15/15 search_replace
+    # probes (0% landing) where robigo's 0.2-pinned probe measured 100%.
+    transport = FakeTransport(post_routes={"/api/generate": (200, GOOD_GENERATE_BODY)})
+    backend = make_backend(transport)
+
+    backend.generate("anything", seed=0, max_tokens=8)
+
+    _, payload = transport.post_calls[0]
+    assert payload["options"]["temperature"] == 0.2
