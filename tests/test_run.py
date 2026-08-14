@@ -74,7 +74,7 @@ def test_full_pipeline_produces_complete_profile():
     assert profile.speed.evidence == "server_timings"
     # v1.1 lens contract: patch_editing is judged applies-and-parses,
     # the presentation is the default, and provenance records it.
-    assert profile.verdicts["patch_editing"]["lens"]["landing"] == "applies_and_parses"
+    assert profile.verdicts["patch_editing"]["lens"]["landing"] == "applies_and_parses(python)"
     assert profile.verdicts["patch_editing"]["lens"]["presentation"] == "default-v1"
     assert profile.provenance["presentation"] == "default-v1"
 

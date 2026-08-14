@@ -1,57 +1,57 @@
-"""Inventory ledger for a small warehouse.
+DEFAULT_RESTOCK_LEVEL = 50
+LOW_STOCK = 10
 
-Tracks stock levels per SKU and computes restock reports. Quantities
-are plain integers; SKUs are opaque strings. The ledger never goes
-negative: withdrawals are capped at the available quantity, and the
-amount actually taken is reported back to the caller alongside the
-updated ledger so shortfalls are visible.
-"""
+class Item:
+    def __init__(self, name, count, price):
+        self.name = name
+        self.count = count
+        self.price = price
 
-LOW_STOCK_THRESHOLD = 5
-DEFAULT_RESTOCK_LEVEL = 20
+    def value(self):
+        return self.count * self.price
 
-
-def new_ledger():
-    return {}
-
-
-def deposit(ledger, sku, quantity):
-    if quantity < 0:
-        raise ValueError("deposit quantity must be non-negative")
-    updated = dict(ledger)
-    updated[sku] = updated.get(sku, 0) + quantity
-    return updated
+    def needs_restock(self):
+        return self.count < LOW_STOCK
 
 
-def withdraw(ledger, sku, quantity):
-    if quantity < 0:
-        raise ValueError("withdraw quantity must be non-negative")
-    available = ledger.get(sku, 0)
-    taken = min(available, quantity)
-    updated = dict(ledger)
-    updated[sku] = available - taken
-    return updated, taken
-
-
-def low_stock(ledger):
-    flagged = []
-    for sku in sorted(ledger):
-        if ledger[sku] <= LOW_STOCK_THRESHOLD:
-            flagged.append(sku)
-    return flagged
-
-
-def restock_amount(ledger, sku):
-    current = ledger.get(sku, 0)
+def restock_amount(current):
     if current >= DEFAULT_RESTOCK_LEVEL:
         return 0
-    DEFAULT_RESTOCK_LEVEL - current          # BUG: computed amount dropped
+    return DEFAULT_RESTOCK_LEVEL - current
 
 
-def restock_report(ledger):
-    report = {}
-    for sku in low_stock(ledger):
-        amount = restock_amount(ledger, sku)
-        if amount:
-            report[sku] = amount
-    return report
+def inventory_value(items):
+    total = 0
+    for item in items:
+        total = total + item.value()
+    return total
+
+
+def low_stock_names(items):
+    names = []
+    for item in items:
+        if item.needs_restock():
+            names.append(item.name)
+    return names
+
+
+def priciest(items):
+    best = None
+    for item in items:
+        if best is None or item.price > best.price:
+            best = item
+    return best
+
+
+def nth_cheapest(items, n):
+    ordered = sorted(items, key=lambda item: item.price)
+    return ordered[n - 1]
+
+
+def restock_report(items):
+    lines = []
+    for item in items:
+        needed = restock_amount(item.count)
+        if needed > 0:
+            lines.append(f"{item.name}: order {needed}")
+    return lines

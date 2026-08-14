@@ -298,7 +298,7 @@ def test_patch_verdict_is_judged_under_the_applies_lens():
     }
     verdicts = compute_verdicts(None, None, None, codecs)
     assert verdicts["patch_editing"]["verdict"] == "ready"
-    assert verdicts["patch_editing"]["lens"]["landing"] == "applies_and_parses"
+    assert verdicts["patch_editing"]["lens"]["landing"] == "applies_and_parses(python)"
 
 
 def test_custom_presentation_is_named_in_every_codec_lens():
@@ -329,3 +329,41 @@ def test_agent_speed_floor_boundaries(tps, expected):
     verdicts = compute_verdicts(None, None, None, None, speed)
     assert verdicts["agent_speed"]["verdict"] == expected
     assert verdicts["agent_speed"]["lens"]["evidence"] == "wall_clock_counts"
+
+
+def test_five_of_five_is_ready_but_provisional():
+    # Wilson 95% on 5/5 spans ~[0.57, 1.0]: ready and risky are
+    # indistinguishable at quick-mode n, and the verdict must SAY so
+    # (external review, 2026-08-13).
+    codecs = {
+        codec: {grade: Landing(lands=1.0, lands_applies=1.0, n=5)
+                for grade in _GRADES}
+        for codec in _CODECS
+    }
+    verdicts = compute_verdicts(None, None, None, codecs)
+    entry = verdicts["structured_extraction"]
+    assert entry["verdict"] == "ready"
+    assert entry["provisional"] is True
+    lo, hi = entry["interval95"]
+    assert 0.55 < lo < 0.58 and hi == 1.0
+
+
+def test_zero_of_five_is_unusable_and_not_provisional():
+    # 0/5 spans ~[0, 0.43], entirely below the risky floor: the rung is
+    # decided even at this n, and saying "provisional" would be noise.
+    codecs = {
+        codec: {grade: Landing(lands=0.0, lands_applies=0.0, n=5)
+                for grade in _GRADES}
+        for codec in _CODECS
+    }
+    verdicts = compute_verdicts(None, None, None, codecs)
+    entry = verdicts["structured_extraction"]
+    assert entry["verdict"] == "unusable"
+    assert entry["provisional"] is False
+
+
+def test_codec_lens_declares_the_fixture_set():
+    from assay.fixtures import FIXTURE_SET
+    verdicts = compute_verdicts(None, None, None, None)
+    assert verdicts["patch_editing"]["lens"]["fixtures"] == FIXTURE_SET
+    assert FIXTURE_SET == "codec-fixtures-v2"

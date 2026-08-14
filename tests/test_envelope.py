@@ -158,3 +158,21 @@ def test_prompt_is_exact_and_seeds_offset_from_base():
     assert "ARG must be the number 1." in prompts[1]
     assert prompts[2].endswith("Verb to use: CHARLIE")
     assert prompts[3].endswith("Verb to use: ALPHA")
+
+
+def _classify(text, expected):
+    from assay.envelope import _classify as real
+    return real(text, expected)
+
+
+def test_shape_failure_containing_cant_is_not_refusal():
+    # "can't" inside an ATTEMPT (a verb is present) is a shape failure
+    # by a model that tried — substring refusal matching misfiled these
+    # (external review, 2026-08-13).
+    assert _classify("I can't fit ALPHA 7 on one line, but here",
+                     "ALPHA 7") == "shape"
+
+
+def test_pure_refusal_still_classified():
+    assert _classify("I'm sorry, I cannot help with that.",
+                     "ALPHA 7") == "refusal"

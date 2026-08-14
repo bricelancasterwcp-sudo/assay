@@ -1,21 +1,28 @@
-"""Order pricing helpers for the demo shop."""
-
-TAX_RATE = 1.08
 BULK_THRESHOLD = 10
-BULK_DISCOUNT = 0.95
+BULK_DISCOUNT = 0.9
 
-
-def subtotal(prices):
-    return sum(prices)
-
-
-def apply_discount(amount, quantity):
+def line_cost(unit, quantity):
+    amount = unit * quantity
     if quantity >= BULK_THRESHOLD:
-        amount * BULK_DISCOUNT          # BUG: discounted amount dropped
+        return amount * BULK_DISCOUNT
     return amount
 
+def order_total(lines):
+    total = 0
+    for unit, quantity in lines:
+        total = total + line_cost(unit, quantity)
+    return total
 
-def order_total(prices):
-    amount = subtotal(prices)
-    amount = apply_discount(amount, len(prices))
-    return round(amount * TAX_RATE, 2)
+def cheapest(lines):
+    best = None
+    for unit, quantity in lines:
+        if best is None or unit < best:
+            best = unit
+    return best
+
+def positions_of(target, values):
+    found = []
+    for i in range(len(values)):
+        if values[i] == target:
+            found.append(i)
+    return found

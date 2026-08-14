@@ -16,11 +16,12 @@ from dataclasses import dataclass
 
 from assay.ceiling import CallEvidence, Ceiling
 from assay.codecs import Landing
+from assay.fixtures import FIXTURE_SET
 from assay.envelope import Envelope
 from assay.geometry import Geometry
 from assay.speed import Speed
 
-PROFILE_VERSION = 2
+PROFILE_VERSION = 3
 
 _FAMILIES = ("geometry", "ceiling", "envelope", "codecs", "speed")
 _GRADE_FOR_VERDICTS = "small"
@@ -165,6 +166,36 @@ def _long_context(ceiling: Ceiling | None) -> str:
     return "unmeasured"
 
 
+def wilson95(passes: int, n: int) -> tuple[float, float]:
+    """95% Wilson score interval for a binomial proportion. Reported so
+    a verdict near a threshold SAYS so: at n=5, 5/5 spans ~[0.57, 1.0] —
+    ready and risky are indistinguishable, and pretending otherwise is
+    the point-estimate overclaim this project bans elsewhere (external
+    review, 2026-08-13)."""
+    if n == 0:
+        return (0.0, 1.0)
+    z = 1.959963984540054
+    phat = passes / n
+    denom = 1 + z * z / n
+    centre = phat + z * z / (2 * n)
+    margin = z * ((phat * (1 - phat) + z * z / (4 * n)) / n) ** 0.5
+    return (max(0.0, (centre - margin) / denom),
+            min(1.0, (centre + margin) / denom))
+
+
+def _ladder_provisional(lands: float | None, lo: float, hi: float,
+                        *, ready_blocked: bool = False) -> tuple[str, bool]:
+    """(verdict, provisional): provisional when the interval endpoints
+    ladder to different rungs than each other — the data cannot tell
+    the achieved rung from its neighbours."""
+    verdict = _ladder(lands, ready_blocked=ready_blocked)
+    if lands is None:
+        return verdict, False
+    provisional = (_ladder(lo, ready_blocked=ready_blocked)
+                   != _ladder(hi, ready_blocked=ready_blocked))
+    return verdict, provisional
+
+
 def _speed_ladder(rate: float | None, ready: float, risky: float) -> str:
     if rate is None:
         return "unmeasured"
@@ -204,26 +235,51 @@ def compute_verdicts(
     ``envelope`` inform no verdict but are part of the stable signature.
     """
     del geometry, envelope  # no verdict consumes them
-    sampler = {"temperature": 0.2}
-    patch_rates = [
-        rate
-        for codec in ("search_replace", "whole_file")
-        if (rate := _small_landing(codecs, codec,
-                                   lens="applies_and_parses")) is not None
-    ]
+    sampler = {"temperature": 0.2, "fixtures": FIXTURE_SET}
+
+    def cell_of(codec):
+        if codecs is None:
+            return None
+        return codecs.get(codec, {}).get(_GRADE_FOR_VERDICTS)
+
+    jo = cell_of("json_object")
+    jo_rate = None if jo is None else jo.lands
+    jo_lo, jo_hi = (0.0, 1.0)
+    if jo is not None and jo.lands is not None:
+        jo_lo, jo_hi = wilson95(round(jo.lands * jo.n), jo.n)
+    jo_verdict, jo_prov = _ladder_provisional(
+        jo_rate, jo_lo, jo_hi,
+        ready_blocked=_truncates_below_4k(ceiling))
+
+    best_patch = None
+    for codec in ("search_replace", "whole_file"):
+        cell = cell_of(codec)
+        if cell is not None and cell.lands_applies is not None:
+            if best_patch is None or cell.lands_applies > best_patch.lands_applies:
+                best_patch = cell
+    patch_rate = None if best_patch is None else best_patch.lands_applies
+    p_lo, p_hi = (0.0, 1.0)
+    if best_patch is not None:
+        p_lo, p_hi = wilson95(round(best_patch.lands_applies * best_patch.n),
+                              best_patch.n)
+    patch_verdict, patch_prov = _ladder_provisional(patch_rate, p_lo, p_hi)
+
     counts = None if ceiling is None else ceiling.counts_available
     return {
         "structured_extraction": {
-            "verdict": _ladder(
-                _small_landing(codecs, "json_object"),
-                ready_blocked=_truncates_below_4k(ceiling),
-            ),
+            "verdict": jo_verdict,
+            "provisional": jo_prov,
+            "interval95": ([round(jo_lo, 3), round(jo_hi, 3)]
+                           if jo_rate is not None else None),
             "lens": {"landing": "json_valid_required_keys",
                      "presentation": presentation, **sampler},
         },
         "patch_editing": {
-            "verdict": _ladder(max(patch_rates) if patch_rates else None),
-            "lens": {"landing": "applies_and_parses",
+            "verdict": patch_verdict,
+            "provisional": patch_prov,
+            "interval95": ([round(p_lo, 3), round(p_hi, 3)]
+                           if patch_rate is not None else None),
+            "lens": {"landing": "applies_and_parses(python)",
                      "presentation": presentation, **sampler},
         },
         "long_context": {

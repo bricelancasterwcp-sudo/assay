@@ -13,6 +13,32 @@ it can choose another format or another model.
 
 
 
+
+## v0.4 (v1.3): the fixtures are part of the lens — external review applied
+
+An independent review (another Claude session reading the source cold)
+found the v1 codec matrix measured **one fixture per cell** — a landing
+rate was sampler variance on a single prompt, not codec capability —
+exactly this project's own recorded bug class ("hand-written fixtures
+have accidental properties," robigo CARRIED-DEBT lesson 4) applied to
+itself. v0.4 answers all findings:
+
+- **`codec-fixtures-v2`**: five heterogeneous tasks per grade across
+  five defect classes (dropped return, off-by-one, wrong operator,
+  inverted guard, wrong variable) on three clean base modules, plus
+  five JSON task variants; the fixture-set name travels in the codec
+  lens and provenance. An authoring-integrity test compiles every
+  fixture and asserts single-line diffs.
+- **Wilson intervals and provisional verdicts**: codec-backed verdicts
+  carry `interval95` and `provisional: true` whenever the interval
+  endpoints ladder to different rungs (5/5 spans ~[0.57, 1.0] — ready
+  and risky are indistinguishable at quick-mode n, and the profile now
+  says so instead of point-estimating).
+- `applies_and_parses(python)`: the landing lens names its language
+  assumption. Refusal classification requires a refusal marker AND no
+  verb attempt (shape failures containing "can't" no longer misfile).
+  README example updated to schema v3.
+
 ## v0.3 (v1.2): speed is a capability, tiers are declared
 
 Two new measurements per profile — **decode tok/s** (chat usability)

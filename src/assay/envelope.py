@@ -57,7 +57,12 @@ def _classify(text: str, expected: str) -> str:
     if expected in (line.strip() for line in text.splitlines()):
         return "prose"
     lowered = text.lower()
-    if any(marker in lowered for marker in _REFUSAL_MARKERS):
+    # A refusal marker only counts when the reply contains NO attempt at
+    # the verb menu — "I can't fit ALPHA 7 on one line" is a shape
+    # failure by a model that tried, not a refusal (external review,
+    # 2026-08-13: substring matching misfiled shape as refusal).
+    attempted = any(verb in text for verb in _VERBS)
+    if not attempted and any(m in lowered for m in _REFUSAL_MARKERS):
         return "refusal"
     return "shape"
 

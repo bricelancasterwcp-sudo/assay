@@ -1,5 +1,11 @@
 def total(prices):
     subtotal = sum(prices)
-    subtotal * 1.08          # BUG: result dropped
-def label(n):
-    return f"{n} items"
+    return subtotal * 1.08
+
+def last_of(items):
+    return items[len(items) - 1]
+
+def clamp(x, hi):
+    if x > hi:
+        return hi
+    return x

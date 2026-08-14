@@ -144,37 +144,42 @@ def test_json_required_keys_and_types(reply, valid):
 # --- fixtures -------------------------------------------------------------
 
 
-def test_fixtures_grades_sizes_and_instructions():
+def test_fixture_set_v2_integrity():
     from assay import fixtures
 
-    grades = [entry[0] for entry in fixtures.EXPECTED]
-    assert grades == ["tiny", "small", "medium"]
-    bounds = {"tiny": (1, 200), "small": (400, 700), "medium": (1400, 2200)}
-    for grade, filename, instruction, original, expected in fixtures.EXPECTED:
+    assert fixtures.FIXTURE_SET == "codec-fixtures-v2"
+    per_grade = {}
+    bounds = {"tiny": (1, 250), "small": (400, 700), "medium": (1100, 2200)}
+    for grade, dclass, filename, instruction, original, expected in fixtures.EXPECTED:
+        per_grade.setdefault(grade, []).append((dclass, expected))
         lo, hi = bounds[grade]
         assert lo <= len(original) <= hi, f"{grade} is {len(original)} chars"
-        assert filename in instruction  # the instruction names the file
+        assert filename in instruction          # the instruction names the file
         assert expected != original
-        # exactly one line differs: the dropped-return defect
-        diff = [
-            (o, e)
-            for o, e in zip(original.split("\n"), expected.split("\n"))
-            if o != e
-        ]
-        assert len(diff) == 1
-        fixed_line = diff[0][1]
-        assert fixed_line.strip().startswith("return ")
-        # the instruction never quotes the fixed line itself
-        assert fixed_line.strip() not in instruction
+        # both sides compile: a fixture that is not valid Python measures
+        # the authoring, not the model
+        compile(original, filename, "exec")
+        compile(expected, filename, "exec")
+        # exactly one line differs
+        diff = [i for i, (a, b) in enumerate(
+            zip(original.splitlines(), expected.splitlines())) if a != b]
+        assert len(diff) == 1, (grade, dclass, diff)
+    for grade, entries in per_grade.items():
+        # five heterogeneous defect classes per grade, one task each
+        assert sorted(d for d, _ in entries) == sorted(fixtures.DEFECT_CLASSES)
+        # all entries share the grade's clean base
+        assert len({e for _, e in entries}) == 1
 
 
-def test_tiny_fixture_is_exactly_the_plan_text():
+def test_historic_tiny_defect_is_preserved():
+    # Continuity with the v1 set: the dropped-return on total() survives
+    # as tiny/dropped_return, so the oldest regression shape stays covered.
     from assay import fixtures
 
-    grade, filename, _, original, expected = fixtures.EXPECTED[0]
-    assert grade == "tiny"
-    assert original == ORIGINAL
-    assert expected == EXPECTED_FIX
+    entry = [e for e in fixtures.EXPECTED
+             if e[0] == "tiny" and e[1] == "dropped_return"][0]
+    assert "    subtotal * 1.08" in entry[4]        # broken: value dropped
+    assert "    return subtotal * 1.08" in entry[5]  # fixed
 
 
 # --- probe_codecs ---------------------------------------------------------
@@ -209,23 +214,24 @@ def make_meter(max_calls=10_000, max_prompt_tokens=10_000_000):
 
 def grade_matrix_script(prompt):
     """Lands json everywhere, whole_file everywhere, search_replace on
-    tiny only — flubs small and medium."""
+    tiny only — flubs small and medium. Routes every v2 fixture task."""
     from assay import fixtures
+    from assay.codecs import JSON_DIRECTIVE
 
-    if "three apples" in prompt:
-        return '{"name": "apples", "count": 3, "tags": ["fruit"]}'
-    tiny = fixtures.EXPECTED[0]
-    if "SEARCH" in prompt:
-        if tiny[3] in prompt:  # tiny original embedded -> land it
-            return block(
-                "    subtotal * 1.08          # BUG: result dropped",
-                "    return subtotal * 1.08",
-            )
-        return "I cannot produce a patch."
-    for _, _, _, original, expected in fixtures.EXPECTED:
+    if prompt.startswith(JSON_DIRECTIVE):
+        return '{"name": "x", "count": 3, "tags": ["t"]}'
+    for grade, _, _, _, original, expected in fixtures.EXPECTED:
         if original in prompt:
+            if "SEARCH" in prompt:
+                if grade != "tiny":
+                    return "no patch from me today."
+                o_lines = original.split("\n")
+                e_lines = expected.split("\n")
+                at = next(i for i, (a, b) in enumerate(zip(o_lines, e_lines))
+                          if a != b)
+                return block(o_lines[at], e_lines[at])
             return expected
-    raise AssertionError(f"unrecognized prompt: {prompt[:80]!r}")
+    raise AssertionError(f"unrouted codec prompt: {prompt[:80]!r}")
 
 
 def test_landing_by_grade_matrix():
@@ -234,12 +240,14 @@ def test_landing_by_grade_matrix():
     backend = ScriptedBackend(grade_matrix_script)
     result = probe_codecs(backend, make_meter(), n_per_cell=3)
 
-    assert result["search_replace"]["tiny"] == Landing(lands=1.0, lands_applies=1.0, n=3)
-    assert result["search_replace"]["small"] == Landing(lands=0.0, lands_applies=0.0, n=3)
-    assert result["search_replace"]["medium"] == Landing(lands=0.0, lands_applies=0.0, n=3)
+    # v2 cells spread over the grade's five tasks (n_per_cell below the
+    # task count still measures each task once: n=5).
+    assert result["search_replace"]["tiny"] == Landing(lands=1.0, lands_applies=1.0, n=5)
+    assert result["search_replace"]["small"] == Landing(lands=0.0, lands_applies=0.0, n=5)
+    assert result["search_replace"]["medium"] == Landing(lands=0.0, lands_applies=0.0, n=5)
     for grade in ("tiny", "small", "medium"):
-        assert result["whole_file"][grade] == Landing(lands=1.0, lands_applies=1.0, n=3)
-        assert result["json_object"][grade] == Landing(lands=1.0, lands_applies=1.0, n=3)
+        assert result["whole_file"][grade] == Landing(lands=1.0, lands_applies=1.0, n=5)
+        assert result["json_object"][grade] == Landing(lands=1.0, lands_applies=1.0, n=5)
 
 
 def test_zero_cell_is_none_not_zero():
@@ -296,7 +304,7 @@ def test_probe_seeds_are_distinct_and_derived_from_seed_base():
     probe_codecs(backend, make_meter(), n_per_cell=2, seed_base=500)
 
     seeds = [call["kwargs"]["seed"] for call in backend.calls]
-    assert seeds == list(range(500, 500 + 18))  # 3 codecs x 3 grades x 2
+    assert seeds == list(range(500, 500 + 45))  # 3 codecs x 3 grades x 5 tasks
 
 
 def test_probe_charges_the_meter_per_call():
@@ -306,7 +314,7 @@ def test_probe_charges_the_meter_per_call():
     meter = make_meter()
     probe_codecs(backend, meter, n_per_cell=1)
 
-    assert meter.spent.calls == len(backend.calls) == 9  # 3 codecs x 3 grades
+    assert meter.spent.calls == len(backend.calls) == 45  # 9 cells x 5 tasks
     assert meter.spent.prompt_tokens > 0
 
 
@@ -314,8 +322,9 @@ def test_lenses_diverge_on_semantically_valid_but_not_byte_equal_reply():
     # The 2026-08-12 qwen finding as a regression test: a whole_file
     # reply that fixes the defect but editorializes a comment is valid
     # Python (applies-and-parses lands) while failing byte-equality.
-    tiny = [f for f in fixtures.EXPECTED if f[0] == "tiny"][0]
-    _, _, _, original, expected = tiny
+    tiny = [f for f in fixtures.EXPECTED
+            if f[0] == "tiny" and f[1] == "dropped_return"][0]
+    _, _, _, _, original, expected = tiny
     editorialized = expected.replace("return subtotal * 1.08",
                                      "return subtotal * 1.08  # fixed")
     assert editorialized != expected

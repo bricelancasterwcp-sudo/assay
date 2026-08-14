@@ -7,7 +7,7 @@ well enough to drive the full pipeline deterministically.
 
 from assay import fixtures
 from assay.backends.base import BackendCaps, ModelInfo, Reply
-from assay.codecs import JSON_PROMPT
+from assay.codecs import JSON_DIRECTIVE
 from assay.errors import InfrastructureError
 
 # The fake's fixed "tokenizer" rate; calibration should measure ~this.
@@ -98,13 +98,13 @@ class ScriptedBackend:
             return "ok"
         if prompt.startswith("Begin your reply with exactly the word ASSAY-"):
             return f"ASSAY-{seed} acknowledged."
-        if prompt == JSON_PROMPT:
+        if prompt.startswith(JSON_DIRECTIVE):
             return '{"name": "apples", "count": 3, "tags": ["fruit"]}'
         if "VERB must be one of" in prompt:
             verb = prompt.rsplit("Verb to use: ", 1)[1].strip()
             number = prompt.split("ARG must be the number ", 1)[1].split(".", 1)[0]
             return f"{verb} {number}"
-        for _, _, _, original, expected in fixtures.EXPECTED:
+        for _, _, _, _, original, expected in fixtures.EXPECTED:
             if original in prompt:
                 if "<<<<<<< SEARCH" in prompt:
                     return _search_replace_block(original, expected)

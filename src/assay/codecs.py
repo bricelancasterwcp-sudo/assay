@@ -25,11 +25,20 @@ _REPLACE_MARKER = ">>>>>>> REPLACE"
 CODECS = ("search_replace", "whole_file", "json_object")
 GRADES = ("tiny", "small", "medium")
 
-# The fixed extraction prompt (plan Task 9). No format forcing, ever.
-JSON_PROMPT = (
+# The extraction directive + five task variants (v1.3: one prompt was
+# sampler variance, not capability). No format forcing, ever.
+JSON_DIRECTIVE = (
     "Return a JSON object with keys `name` (string), `count` (integer), "
-    "and `tags` (array of strings) describing: three apples"
+    "and `tags` (array of strings) describing:"
 )
+JSON_TASKS = (
+    "three apples",
+    "two rusty bicycles leaning on a fence",
+    "five copper coins from an old purse",
+    "one chess board mid-game",
+    "four rain boots by the door",
+)
+JSON_PROMPT = f"{JSON_DIRECTIVE} {JSON_TASKS[0]}"  # kept for fakes/back-compat
 
 _CHARS_PER_TOKEN = 5  # sizing proxy for the budget charge (plan Task 9)
 _MAX_TOKENS = {"search_replace": 256, "whole_file": 768, "json_object": 128}
@@ -188,7 +197,7 @@ def validate_json_object(reply: str) -> bool:
 DEFAULT_DIRECTIVES = CodecDirectives(
     search_replace=_SEARCH_REPLACE_DIRECTIVE,
     whole_file=_WHOLE_FILE_DIRECTIVE,
-    json_object=JSON_PROMPT,
+    json_object=JSON_DIRECTIVE,
 )
 DEFAULT_PRESENTATION = "default-v1"
 
@@ -196,7 +205,8 @@ DEFAULT_PRESENTATION = "default-v1"
 def _build_prompt(codec: str, filename: str, instruction: str,
                   original: str, directives: CodecDirectives) -> str:
     if codec == "json_object":
-        return directives.json_object
+        # instruction carries the task description for the json codec
+        return f"{directives.json_object} {instruction}"
     directive = getattr(directives, codec)
     return f"{instruction}\n\n{directive}\n\nHere is `{filename}`:\n{original}"
 
@@ -249,7 +259,9 @@ def probe_codecs(
     exception.
     """
     directives = directives or DEFAULT_DIRECTIVES
-    by_grade = {entry[0]: entry for entry in fixtures.EXPECTED}
+    by_grade: dict[str, list] = {g: [] for g in GRADES}
+    for entry in fixtures.EXPECTED:
+        by_grade[entry[0]].append(entry)
     results: dict[str, dict[str, Landing]] = {
         codec: {grade: Landing(lands=None, lands_applies=None, n=0)
                 for grade in GRADES}
@@ -263,25 +275,38 @@ def probe_codecs(
         for grade in GRADES:
             if exhausted:
                 break
-            _, filename, instruction, original, expected = by_grade[grade]
-            prompt = _build_prompt(codec, filename, instruction, original,
-                                   directives)
+            # v1.3: a cell's attempts spread across HETEROGENEOUS tasks
+            # (five defect classes on the grade's base module; five task
+            # variants for json), not repeated draws of one prompt — the
+            # v1/v2 sets measured sampler variance on a single fixture.
+            if codec == "json_object":
+                cell_tasks = [(None, task, None, None) for task in JSON_TASKS]
+            else:
+                cell_tasks = [(entry[2], entry[3], entry[4], entry[5])
+                              for entry in by_grade[grade]]
+            reps = max(1, n_per_cell // len(cell_tasks))
             landed = 0
             landed_applies = 0
             attempted = 0
-            for _ in range(n_per_cell):
-                try:
-                    meter.charge(max(1, len(prompt) // _CHARS_PER_TOKEN))
-                except BudgetExhausted:
-                    exhausted = True
+            for filename, instruction, original, expected in cell_tasks:
+                if exhausted:
                     break
-                reply = backend.generate(
-                    prompt, seed=seed, max_tokens=_MAX_TOKENS[codec]
-                )
-                seed += 1
-                attempted += 1
-                exact, applies = _score(codec, reply.text, original, expected)
-                landed += int(exact)
-                landed_applies += int(applies)
+                prompt = _build_prompt(codec, filename, instruction,
+                                       original, directives)
+                for _ in range(reps):
+                    try:
+                        meter.charge(max(1, len(prompt) // _CHARS_PER_TOKEN))
+                    except BudgetExhausted:
+                        exhausted = True
+                        break
+                    reply = backend.generate(
+                        prompt, seed=seed, max_tokens=_MAX_TOKENS[codec]
+                    )
+                    seed += 1
+                    attempted += 1
+                    exact, applies = _score(codec, reply.text,
+                                            original, expected)
+                    landed += int(exact)
+                    landed_applies += int(applies)
             results[codec][grade] = _cell(landed, landed_applies, attempted)
     return results

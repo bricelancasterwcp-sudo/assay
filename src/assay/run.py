@@ -24,6 +24,7 @@ from assay.backends.openai_compat import OpenAICompat
 from assay.budget import Budget, BudgetMeter
 from assay.ceiling import Calibration, Ceiling, calibrate, probe_ceiling
 from assay.codecs import CodecDirectives, DEFAULT_PRESENTATION, probe_codecs
+from assay.fixtures import FIXTURE_SET
 from assay.envelope import probe_envelope
 from assay.errors import BudgetExhausted
 from assay.geometry import free_vram_mib, plan_window
@@ -283,6 +284,7 @@ def probe(
             "emulated": emulated,
             "presentation": ("custom" if directives is not None
                              else DEFAULT_PRESENTATION),
+            "fixture_set": FIXTURE_SET,
             "temperature": PROBE_TEMPERATURE,
             "seeds": list(params.seeds),
             "budget": {
