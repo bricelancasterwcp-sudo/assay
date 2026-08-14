@@ -14,16 +14,17 @@ import dataclasses
 import json
 from dataclasses import dataclass
 
-from assay.ceiling import CallEvidence, Ceiling
+from assay.ceiling import CallEvidence, Ceiling, ShapeCeiling
 from assay.codecs import Landing
 from assay.fixtures import FIXTURE_SET
+from assay.loop import LOOP_INSTRUMENT, Loop
 from assay.envelope import Envelope
 from assay.geometry import Geometry
 from assay.speed import Speed
 
-PROFILE_VERSION = 3
+PROFILE_VERSION = 4
 
-_FAMILIES = ("geometry", "ceiling", "envelope", "codecs", "speed")
+_FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs", "speed", "loop")
 _GRADE_FOR_VERDICTS = "small"
 _READY_THRESHOLD = 0.9
 _RISKY_THRESHOLD = 0.6
@@ -51,9 +52,11 @@ class Profile:
     model: dict  # {"name", "quant", "weights_bytes", "training_ctx"}
     geometry: Geometry | None
     ceiling: Ceiling | None
+    ceiling_shapes: tuple[ShapeCeiling, ...] | None
     envelope: Envelope | None
     codecs: dict[str, dict[str, Landing]] | None
     speed: Speed | None
+    loop: Loop | None
     verdicts: dict[str, dict]
     provenance: dict  # started/finished/mode/seeds/budget/spent/calibration/dropped
 
@@ -78,9 +81,11 @@ class Profile:
             model=payload["model"],
             geometry=_geometry_from(payload["geometry"]),
             ceiling=_ceiling_from(payload["ceiling"]),
+            ceiling_shapes=_shapes_from(payload["ceiling_shapes"]),
             envelope=_envelope_from(payload["envelope"]),
             codecs=_codecs_from(payload["codecs"]),
             speed=_speed_from(payload["speed"]),
+            loop=_loop_from(payload["loop"]),
             verdicts=payload["verdicts"],
             provenance=payload["provenance"],
         )
@@ -104,6 +109,16 @@ def _envelope_from(payload: dict | None) -> Envelope | None:
 
 def _speed_from(payload: dict | None) -> Speed | None:
     return None if payload is None else Speed(**payload)
+
+
+def _shapes_from(payload) -> tuple[ShapeCeiling, ...] | None:
+    if payload is None:
+        return None
+    return tuple(ShapeCeiling(**entry) for entry in payload)
+
+
+def _loop_from(payload: dict | None) -> Loop | None:
+    return None if payload is None else Loop(**payload)
 
 
 def _codecs_from(
@@ -150,6 +165,28 @@ def _ladder(lands: float | None, *, ready_blocked: bool = False) -> str:
     if lands >= _RISKY_THRESHOLD:
         return "risky"
     return "unusable"
+
+
+def _loop_verdict(loop: Loop | None) -> dict:
+    """Turn discipline under the scripted loop: ready needs high action
+    fidelity AND a landed patch; a model that follows the envelope but
+    never advances (the 14B shape: fidelity 1.0, 0/940) is risky at
+    best. Wilson over scored turns; provisional like the codec verdicts."""
+    if loop is None or loop.action_fidelity is None:
+        return {"verdict": "unmeasured", "provisional": False,
+                "interval95": None,
+                "lens": {"instrument": LOOP_INSTRUMENT,
+                         "fixtures": FIXTURE_SET, "temperature": 0.2}}
+    lo, hi = wilson95(round(loop.action_fidelity * loop.n_turns),
+                      loop.n_turns)
+    verdict = _ladder(loop.action_fidelity)
+    if verdict == "ready" and (loop.patch_rate or 0.0) < 0.5:
+        verdict = "risky"  # follows the loop, does not advance it
+    provisional = _ladder(lo) != _ladder(hi)
+    return {"verdict": verdict, "provisional": provisional,
+            "interval95": [round(lo, 3), round(hi, 3)],
+            "lens": {"instrument": LOOP_INSTRUMENT,
+                     "fixtures": FIXTURE_SET, "temperature": 0.2}}
 
 
 def _long_context(ceiling: Ceiling | None) -> str:
@@ -212,6 +249,7 @@ def compute_verdicts(
     envelope: Envelope | None,
     codecs: dict[str, dict[str, Landing]] | None,
     speed: Speed | None = None,
+    loop: Loop | None = None,
     *,
     presentation: str = "default-v1",
 ) -> dict[str, dict]:
@@ -288,6 +326,7 @@ def compute_verdicts(
                                   else "canary_only" if counts is not None
                                   else "unmeasured")},
         },
+        "loop_discipline": _loop_verdict(loop),
         "chat_speed": {
             "verdict": _speed_ladder(
                 None if speed is None else speed.decode_tps,

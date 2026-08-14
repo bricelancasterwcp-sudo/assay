@@ -334,3 +334,73 @@ def probe_ceiling(
         counts_available=calibration.counts_available,
         evidence=tuple(evidence),
     )
+
+
+@dataclass(frozen=True)
+class ShapeCeiling:
+    """The ceiling measured AT one fixed ``num_ctx`` request shape.
+
+    The right-sized ladder above answers "what can this daemon serve?";
+    real applications set ``num_ctx`` once and live with it, and the
+    2026-08-14 robigo subject row measured what that can cost: a daemon
+    that serves 14B-Q4 to 16k right-sized ERRORED on prompts above
+    ~1.8k tokens at a fixed num_ctx=8192 — a 0/940 benchmark result
+    whose cause was the request shape. This probe measures each shape
+    an application might actually pin."""
+    shape: int
+    max_verified: int | None    # largest probe that came back whole
+    failure_mode: str           # ok_to_shape | hard_error | missing_stats |
+                                # silent_truncation | canary_loss | unmeasured
+
+
+def probe_fixed_shapes(
+    backend: Backend,
+    meter: BudgetMeter,
+    *,
+    calibration: Calibration | None,
+    shapes: Sequence[int] = (2048, 4096, 8192),
+    seed: int = 700,
+) -> tuple[ShapeCeiling, ...]:
+    """Three probes per shape (quarter, half, near-full), ``num_ctx``
+    pinned to the shape exactly. Requires ``caps.per_request_ctx``;
+    callers drop the family (named) when the backend cannot pin."""
+    chars_per_token = 3.0
+    if calibration is not None and calibration.chars_per_token is not None:
+        chars_per_token = calibration.chars_per_token
+    counts = calibration.counts_available if calibration is not None else False
+
+    results: list[ShapeCeiling] = []
+    for shape in shapes:
+        sizes = (shape // 4, shape // 2, max(256, shape - 384))
+        max_ok: int | None = None
+        mode = "ok_to_shape"
+        for est in sizes:
+            canary = f"ASSAY-{seed}"
+            prompt = (
+                f"Begin your reply with exactly the word {canary}. That "
+                "word must be the very first token of your reply.\n\n"
+                + build_filler(random.Random(seed), est, chars_per_token)
+            )
+            try:
+                meter.charge(est)
+            except BudgetExhausted:
+                if max_ok is None:
+                    mode = "unmeasured"
+                break
+            try:
+                reply = backend.generate(
+                    prompt, seed=seed, max_tokens=32, num_ctx=shape
+                )
+                signal = classify_call(reply, sent_est=est, canary=canary,
+                                       counts_available=counts)
+            except InfrastructureError as error:
+                signal = classify_call(error, sent_est=est, canary=canary,
+                                       counts_available=counts)
+            if signal in ("ok", "attention_loss"):
+                max_ok = est
+                continue
+            mode = signal
+            break
+        results.append(ShapeCeiling(shape=shape, max_verified=max_ok,
+                                    failure_mode=mode))
+    return tuple(results)

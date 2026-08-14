@@ -11,7 +11,7 @@ from assay.envelope import Envelope
 from assay.geometry import Geometry
 from assay.profile import Profile, compute_verdicts, render_table
 
-_FAMILIES = ("geometry", "ceiling", "envelope", "codecs", "speed")
+_FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs", "speed", "loop")
 _GRADES = ("tiny", "small", "medium")
 _CODECS = ("search_replace", "whole_file", "json_object")
 
@@ -57,6 +57,18 @@ def make_envelope() -> Envelope:
     return Envelope(fidelity=0.97, n=30, failures={"prose": 1, "shape": 0, "refusal": 0})
 
 
+def make_shapes():
+    from assay.ceiling import ShapeCeiling
+    return (ShapeCeiling(shape=4096, max_verified=3712,
+                         failure_mode="ok_to_shape"),)
+
+
+def make_loop():
+    from assay.loop import Loop
+    return Loop(action_fidelity=1.0, patch_rate=1.0, finish_rate=1.0,
+                repeat_rate=0.0, anchor_violations=0, n_runs=3, n_turns=9)
+
+
 def make_speed():
     from assay.speed import Speed
     return Speed(decode_tps=16.0, prefill_tps=1024.0,
@@ -94,9 +106,11 @@ def make_profile(*, provenance_dropped: tuple[str, ...] = (), **overrides) -> Pr
         },
         geometry=make_geometry(),
         ceiling=make_ceiling(),
+        ceiling_shapes=make_shapes(),
         envelope=make_envelope(),
         codecs=make_codecs(),
         speed=make_speed(),
+        loop=make_loop(),
         verdicts={
             "structured_extraction": {"verdict": "ready", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "ready", "lens": {"landing": "test"}},
@@ -211,6 +225,7 @@ def test_unmeasured_inputs_yield_unmeasured_not_unusable():
         "structured_extraction": "unmeasured",
         "patch_editing": "unmeasured",
         "long_context": "unmeasured",
+        "loop_discipline": "unmeasured",
         "chat_speed": "unmeasured",
         "agent_speed": "unmeasured",
     }
@@ -245,9 +260,11 @@ def test_all_none_families_construct_when_all_named():
     profile = make_profile(
         geometry=None,
         ceiling=None,
+        ceiling_shapes=None,
         envelope=None,
         codecs=None,
         speed=None,
+        loop=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
@@ -265,9 +282,11 @@ def test_render_table_names_unmeasured_not_zero():
     bare = make_profile(
         geometry=None,
         ceiling=None,
+        ceiling_shapes=None,
         envelope=None,
         codecs=None,
         speed=None,
+        loop=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
@@ -367,3 +386,14 @@ def test_codec_lens_declares_the_fixture_set():
     verdicts = compute_verdicts(None, None, None, None)
     assert verdicts["patch_editing"]["lens"]["fixtures"] == FIXTURE_SET
     assert FIXTURE_SET == "codec-fixtures-v2"
+
+
+def test_loop_verdict_downgrades_follow_without_advance():
+    # The 14B shape: envelope discipline perfect, nothing ever advances.
+    # High fidelity + patch_rate 0 must read risky, never ready.
+    from assay.loop import Loop
+    loop = Loop(action_fidelity=1.0, patch_rate=0.0, finish_rate=1.0,
+                repeat_rate=0.4, anchor_violations=0, n_runs=5, n_turns=15)
+    verdicts = compute_verdicts(None, None, None, None, None, loop)
+    assert verdicts["loop_discipline"]["verdict"] == "risky"
+    assert verdicts["loop_discipline"]["lens"]["instrument"] == "scripted-loop-v1"

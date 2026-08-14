@@ -22,9 +22,11 @@ from assay.backends.base import PROBE_TEMPERATURE
 from assay.backends.ollama import OllamaNative
 from assay.backends.openai_compat import OpenAICompat
 from assay.budget import Budget, BudgetMeter
-from assay.ceiling import Calibration, Ceiling, calibrate, probe_ceiling
+from assay.ceiling import (Calibration, Ceiling, ShapeCeiling,
+                           calibrate, probe_ceiling, probe_fixed_shapes)
 from assay.codecs import CodecDirectives, DEFAULT_PRESENTATION, probe_codecs
 from assay.fixtures import FIXTURE_SET
+from assay.loop import Loop, probe_loop
 from assay.envelope import probe_envelope
 from assay.errors import BudgetExhausted
 from assay.geometry import free_vram_mib, plan_window
@@ -38,11 +40,15 @@ class ModeParams:
     seeds: tuple[int, ...]
     envelope_n: int
     codecs_n_per_cell: int
+    loop_runs: int
+    shape_probes: tuple[int, ...]
 
 
 MODE_PARAMS = {
-    "quick": ModeParams(seeds=(0,), envelope_n=10, codecs_n_per_cell=5),
-    "full": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=10),
+    "quick": ModeParams(seeds=(0,), envelope_n=10, codecs_n_per_cell=5,
+                        loop_runs=3, shape_probes=(2048, 4096, 8192)),
+    "full": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=10,
+                       loop_runs=5, shape_probes=(2048, 4096, 8192)),
     # 35 = the smallest n at which a PERFECT cell clears `ready`
     # non-provisionally (Wilson lower bound on 35/35 is 0.9011 against
     # the 0.9 floor) — and 7 reps x 5 fixture tasks exactly. quick and
@@ -51,7 +57,8 @@ MODE_PARAMS = {
     # sequential rule (keep sampling a cell only while its interval
     # straddles a boundary) would spend the same certainty for less
     # budget; deferred until thorough sees enough use to earn it.
-    "thorough": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=35),
+    "thorough": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=35,
+                           loop_runs=5, shape_probes=(2048, 4096, 8192)),
 }
 
 _QUICK_CEILING_CAP = 16384
@@ -194,6 +201,21 @@ def probe(
         # The partial ceiling is kept (it reports what it verified), but
         # the meter is dry: no further family may start.
         budget_death = BudgetExhausted("budget exhausted during the ceiling ladder")
+    ceiling_shapes: tuple[ShapeCeiling, ...] | None = None
+    if budget_death is None and active.caps.per_request_ctx:
+        ceiling_shapes = probe_fixed_shapes(
+            active, meter, calibration=calibration,
+            shapes=params.shape_probes)
+        if all(s.failure_mode == "unmeasured" for s in ceiling_shapes):
+            ceiling_shapes = None
+            dropped.append("ceiling_shapes: budget exhausted before any "
+                           "shape probe completed")
+    elif not active.caps.per_request_ctx:
+        dropped.append("ceiling_shapes: per_request_ctx unavailable — "
+                       "fixed request shapes cannot be pinned")
+    else:
+        dropped.append("ceiling_shapes: skipped, budget exhausted earlier")
+
     if ceiling is not None and not active.caps.per_request_ctx:
         # The evidence class is weaker and must be stated (spec §5/§11):
         # without options.num_ctx the ladder measured the server's own
@@ -216,6 +238,7 @@ def probe(
             dropped.append("envelope: budget exhausted before any probe completed")
 
     speed: Speed | None = None
+    loop: Loop | None = None
 
     if budget_death is not None:
         dropped.append("codecs: skipped, budget exhausted earlier")
@@ -246,6 +269,14 @@ def probe(
                 for cell in grades.values()
             ):
                 budget_death = BudgetExhausted("budget exhausted during codec probes")
+
+    if budget_death is not None:
+        dropped.append("loop: skipped, budget exhausted earlier")
+    else:
+        loop = probe_loop(active, meter, runs=params.loop_runs)
+        if loop.n_turns == 0:
+            loop = None
+            dropped.append("loop: budget exhausted before any turn completed")
 
     if budget_death is not None:
         dropped.append("speed: skipped, budget exhausted earlier")
@@ -280,11 +311,13 @@ def probe(
         },
         geometry=geometry,
         ceiling=ceiling,
+        ceiling_shapes=ceiling_shapes,
         envelope=envelope,
         codecs=codecs,
         speed=speed,
+        loop=loop,
         verdicts=compute_verdicts(
-            geometry, ceiling, envelope, codecs, speed,
+            geometry, ceiling, envelope, codecs, speed, loop,
             presentation=("custom" if directives is not None
                           else DEFAULT_PRESENTATION),
         ),

@@ -14,6 +14,31 @@ it can choose another format or another model.
 
 
 
+
+## v0.5 (v1.4): shapes, loops, and the matrix page
+
+Three additions that convert the 14B subject-row lessons into
+instrument (schema v4):
+
+- **Fixed-request-shape ceiling matrix** — the right-sized ladder asks
+  "what can this daemon serve?"; applications pin `num_ctx` once, so
+  `ceiling_shapes` probes each pinned shape (2k/4k/8k). The daemon that
+  served 14B-Q4 to 16k right-sized but errored above ~1.8k at a fixed
+  8k — turning a benchmark row to 0/940 — is now a three-second
+  pre-flight finding.
+- **Mini-loop discipline probe** — the same model landed 97% of
+  single-call codecs and 0/940 in a real loop; single-call probes
+  cannot see loop failure. A scripted three-turn repair (canned
+  environment, scored replies, `scripted-loop-v1` in the lens) measures
+  action fidelity, patch landing, finishing, repeats, and anchor
+  violations; the `loop_discipline` verdict downgrades
+  follows-but-never-advances to risky.
+- **`assay report *.json → report.html`** — one self-contained page
+  (stdlib, inline CSS, no JS, no server) rendering N profiles as the
+  capability matrix: verdict badges wear provisional dashes and
+  intervals, emulated tiers are labelled, lenses are one hover away,
+  dropped lists print in full.
+
 ## v0.4 (v1.3): the fixtures are part of the lens — external review applied
 
 An independent review (another Claude session reading the source cold)

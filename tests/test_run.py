@@ -13,7 +13,7 @@ _VRAM_MIB = 14558
 # Quick mode against ScriptedBackend, call by call: 2 calibration,
 # 5 ladder sizes (1024..16384, one seed, no bisection when clean),
 # 10 envelope, 3 codecs x 3 grades x 5 = 45 codec probes.
-_QUICK_CALLS_TOTAL = 2 + 5 + 10 + 45 + 2  # +2 = speed (decode, prefill)
+_QUICK_CALLS_TOTAL = 2 + 5 + 9 + 10 + 45 + 9 + 2  # +shapes +loop (v1.4)
 _CALLS_THROUGH_CEILING = 2 + 5
 
 
@@ -66,6 +66,7 @@ def test_full_pipeline_produces_complete_profile():
         "structured_extraction": "ready",
         "patch_editing": "ready",
         "long_context": "ready",
+        "loop_discipline": "ready",
         "chat_speed": "ready",
         "agent_speed": "ready",
     }

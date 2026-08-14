@@ -92,6 +92,17 @@ class ScriptedBackend:
         )
 
     def _reply_text(self, prompt: str, seed: int) -> str:
+        if prompt.startswith("You are repairing one bug"):
+            if "Contents of `tiny.py`" in prompt:
+                from assay.loop import _fixture
+                _, original, expected = _fixture()
+                o, e = original.split("\n"), expected.split("\n")
+                at = next(i for i, (a, b) in enumerate(zip(o, e)) if a != b)
+                return ("patch tiny.py\n```\n<<<<<<< SEARCH\n" + o[at]
+                        + "\n=======\n" + e[at] + "\n>>>>>>> REPLACE\n```")
+            if "every test passes" in prompt:
+                return "done the defect is fixed"
+            return "read tiny.py"
         if prompt.startswith("Count upward from one"):
             return "1\n2\n3\n4"
         if prompt.startswith(_SPEED_FILLER_PREFIX):

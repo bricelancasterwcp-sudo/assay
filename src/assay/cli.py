@@ -33,20 +33,20 @@ from assay.profile import render_table
 from assay.replay import CallRecorder
 from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 
-# The quick default must cover the WORST-case quick suite, not just the
-# clean one: 2 calibration + 5 ladder + ~7 bisection + 10 envelope +
-# 45 codec calls ≈ 69, plus margin. A default below the suite's own
-# call count would exhaust mid-codecs on every run and report
-# unmeasured cells (spec §12 criterion 1).
+# Defaults must cover the WORST-case suite, not the clean one — a
+# default below the suite's own call count exhausts mid-family on every
+# run (this bit once at 60 and nearly again at 80). Quick: 2 calibration
+# + 5 ladder + ~7 bisection + 9 shape probes + 10 envelope + 45 codecs +
+# 9 loop + 2 speed ≈ 89. Full adds seeds/reps; thorough adds 315 codec
+# calls.
 DEFAULT_BUDGETS = {
-    "quick": Budget(max_calls=80, max_prompt_tokens=120_000),
-    "full": Budget(max_calls=250, max_prompt_tokens=500_000),
-    # 2 calibration + ~12 ladder + 30 envelope + 315 codec (9 x 35) +
-    # 2 speed = ~361, plus margin.
-    "thorough": Budget(max_calls=420, max_prompt_tokens=900_000),
+    "quick": Budget(max_calls=110, max_prompt_tokens=200_000),
+    "full": Budget(max_calls=320, max_prompt_tokens=600_000),
+    "thorough": Budget(max_calls=500, max_prompt_tokens=1_000_000),
 }
 
 _COMMANDS = ("probe", "geometry", "ceiling", "envelope", "codecs")
+_REPORT_COMMAND = "report"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -125,7 +125,23 @@ def _build_parser() -> argparse.ArgumentParser:
                  "search_replace/whole_file/json_object directive strings; "
                  "the profile's lens records presentation=custom",
         )
+    report = subparsers.add_parser(
+        _REPORT_COMMAND,
+        help="render one self-contained HTML report from N profile JSONs "
+             "(the capability matrix)")
+    report.add_argument("profiles", type=Path, nargs="+",
+                        help="profile JSON files (assay probe --json output)")
+    report.add_argument("--out", type=Path, default=Path("assay-report.html"))
     return parser
+
+
+def _run_report(args: argparse.Namespace) -> int:
+    from assay.report import render_report
+
+    docs = [json.loads(p.read_text(encoding="utf-8")) for p in args.profiles]
+    args.out.write_text(render_report(docs), encoding="utf-8")
+    print(f"wrote {args.out} ({len(docs)} profile(s))")
+    return 0
 
 
 def _load_directives(path: Path | None) -> CodecDirectives | None:
@@ -222,8 +238,10 @@ def _run_probe(args: argparse.Namespace, budget: Budget) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    budget = _budget_for(args)
+    budget = _budget_for(args) if args.command != "report" else None
     try:
+        if args.command == "report":
+            return _run_report(args)
         if args.command == "probe":
             return _run_probe(args, budget)
         return _run_family(args, budget)
