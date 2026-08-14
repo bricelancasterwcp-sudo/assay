@@ -41,6 +41,9 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 DEFAULT_BUDGETS = {
     "quick": Budget(max_calls=80, max_prompt_tokens=120_000),
     "full": Budget(max_calls=250, max_prompt_tokens=500_000),
+    # 2 calibration + ~12 ladder + 30 envelope + 315 codec (9 x 35) +
+    # 2 speed = ~361, plus margin.
+    "thorough": Budget(max_calls=420, max_prompt_tokens=900_000),
 }
 
 _COMMANDS = ("probe", "geometry", "ceiling", "envelope", "codecs")
@@ -71,6 +74,12 @@ def _build_parser() -> argparse.ArgumentParser:
         mode.add_argument(
             "--full", dest="mode", action="store_const", const="full",
             help="full seeds, full ladder, full probe counts",
+        )
+        mode.add_argument(
+            "--thorough", dest="mode", action="store_const", const="thorough",
+            help="35 samples per codec cell: the smallest n where a "
+                 "perfect cell clears ready WITHOUT provisional "
+                 "(Wilson lower 0.9011)",
         )
         sub.set_defaults(mode="quick")
         sub.add_argument(

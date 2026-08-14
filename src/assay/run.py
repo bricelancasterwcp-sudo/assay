@@ -43,6 +43,15 @@ class ModeParams:
 MODE_PARAMS = {
     "quick": ModeParams(seeds=(0,), envelope_n=10, codecs_n_per_cell=5),
     "full": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=10),
+    # 35 = the smallest n at which a PERFECT cell clears `ready`
+    # non-provisionally (Wilson lower bound on 35/35 is 0.9011 against
+    # the 0.9 floor) — and 7 reps x 5 fixture tasks exactly. quick and
+    # full verdicts are honest but almost always provisional at their n;
+    # this mode exists so a decided `ready` is PURCHASABLE. A future
+    # sequential rule (keep sampling a cell only while its interval
+    # straddles a boundary) would spend the same certainty for less
+    # budget; deferred until thorough sees enough use to earn it.
+    "thorough": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=35),
 }
 
 _QUICK_CEILING_CAP = 16384
@@ -53,6 +62,8 @@ def ceiling_cap_for(
     mode: str, training_ctx: int | None, window_cap: int | None
 ) -> int:
     """The ladder cap: mode table, then the user's cap if tighter."""
+    # thorough shares full's cap: its extra budget buys codec samples,
+    # not a taller ladder.
     if mode == "quick":
         cap = _QUICK_CEILING_CAP
     else:
@@ -111,7 +122,8 @@ def probe(
     which was used (landing is a property of the instrument, v1.1).
     """
     if mode not in MODE_PARAMS:
-        raise ValueError(f"unknown mode: {mode!r} (expected 'quick' or 'full')")
+        raise ValueError(
+            f"unknown mode: {mode!r} (expected 'quick', 'full', or 'thorough')")
     if tier is not None and emulated is None:
         # The marking rule (ruled 2026-08-13): a tier-labelled profile
         # must say whether the hardware was emulated. No default — an

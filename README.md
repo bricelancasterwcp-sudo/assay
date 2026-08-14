@@ -38,6 +38,13 @@ itself. v0.4 answers all findings:
   assumption. Refusal classification requires a refusal marker AND no
   verb attempt (shape failures containing "can't" no longer misfile).
   README example updated to schema v3.
+- **`--thorough`**: at quick/full n, essentially every codec verdict is
+  honestly `provisional` — 5/5 spans [0.57, 1.0] and even 9/10 spans
+  [0.60, 0.98]. That is the instrument stating its resolution, not a
+  bug; `--thorough` (35 samples per cell, 7 reps × 5 tasks) is the
+  smallest n where a perfect cell clears `ready` undisputed (Wilson
+  lower 0.9011). A sequential rule that samples only while an interval
+  straddles a boundary is the recorded next step if thorough earns use.
 
 ## v0.3 (v1.2): speed is a capability, tiers are declared
 
@@ -142,7 +149,7 @@ calls / 500k — overridable with `--max-calls` / `--max-prompt-tokens`.
 
 ## The profile
 
-One versioned JSON document (`assay_profile_version: 1`). Every field is
+One versioned JSON document (`assay_profile_version: 3`). Every field is
 a measurement, a `None` with a named reason, or provenance.
 
 | Field | What it says |

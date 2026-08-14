@@ -274,3 +274,26 @@ def test_tier_and_emulation_travel_in_provenance():
     )
     assert bare.provenance["tier"] is None
     assert bare.provenance["emulated"] is None
+
+
+def test_thorough_mode_buys_a_decidable_ready():
+    # 35 = 7 reps x 5 tasks: the smallest n where 35/35 clears the 0.9
+    # ready floor non-provisionally (Wilson lower 0.9011). quick/full
+    # stay honest-but-provisional; thorough makes a decided ready
+    # PURCHASABLE (external review follow-up, 2026-08-13).
+    from assay.profile import wilson95
+    from assay.run import MODE_PARAMS
+
+    n = MODE_PARAMS["thorough"].codecs_n_per_cell
+    assert n == 35
+    assert wilson95(n, n)[0] > 0.9
+
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=500, max_prompt_tokens=2_000_000),
+        mode="thorough", _backend_override=ScriptedBackend(),
+    )
+    entry = profile.verdicts["structured_extraction"]
+    assert entry["verdict"] == "ready"
+    assert entry["provisional"] is False
+    assert profile.codecs["json_object"]["small"].n == 35
