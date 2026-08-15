@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from assay import fixtures
 from assay.errors import BudgetExhausted
+from assay.stats import decided
 
 _SEARCH_MARKER = "<<<<<<< SEARCH"
 _DIVIDER = "======="
@@ -242,22 +243,72 @@ def _cell(landed: int, landed_applies: int, attempted: int) -> Landing:
                    lands_applies=landed_applies / attempted, n=attempted)
 
 
+def _attempt_order(n_tasks: int, n_per_cell: int,
+                   look_schedule: tuple[int, ...] | None) -> list[int]:
+    """A cell's attempts as task indices, in the order they are sent.
+
+    Fixed-n (no schedule): the v1.4 order, ``n_per_cell // n_tasks``
+    reps of each task in turn (at least one each) — unchanged so quick
+    and family runs replay exactly as before.
+
+    Sequential (schedule given): round-robin, one rep across ALL the
+    cell's heterogeneous tasks per round. Attempts still spread across
+    tasks rather than redrawing one prompt (v1.3), the looks fall on
+    round boundaries for a five-task cell (5/10/20/35 = rounds
+    1/2/4/7), and a cell that stops early has sampled every defect
+    class it could reach instead of exhausting the first one.
+    """
+    if look_schedule is None:
+        reps = max(1, n_per_cell // n_tasks)
+        return [task for task in range(n_tasks) for _ in range(reps)]
+    cap = look_schedule[-1]  # the last entry is the cap; n_per_cell is moot
+    return [attempt % n_tasks for attempt in range(cap)]
+
+
+def _stop_count(codec: str, landed: int, landed_applies: int) -> int:
+    """The count the stop test reads: the codec's VERDICT lens.
+
+    ``json_object``'s two lenses coincide by construction (validation IS
+    the landing). The patch codecs are graded applies-and-parses, so
+    stopping on byte-equality would decide a cell on a lens no verdict
+    uses — a reply that applies and parses but editorializes a comment
+    is a landing for the verdict and must not end the cell early."""
+    return landed if codec == "json_object" else landed_applies
+
+
 def probe_codecs(
     backend, meter, *, n_per_cell: int, seed_base: int = 500,
     directives: CodecDirectives | None = None,
+    look_schedule: tuple[int, ...] | None = None,
 ) -> dict[str, dict[str, Landing]]:
     """Landing rates per codec x size grade (spec §7), both lenses.
 
-    Every cell is measured with `n_per_cell` seeded probes; each reply
-    is scored under byte-equality AND applies-and-parses (see Landing).
-    ``directives`` substitutes the consumer's own presentation for the
-    built-in one — the caller records which was used (run.py stamps
-    provenance and the verdict lens). Budget exhaustion mid-run stops
-    the matrix: completed and partial cells report what was measured;
+    Without ``look_schedule`` every cell is measured with `n_per_cell`
+    seeded probes at fixed n. With one (``assay.stats.LOOK_SCHEDULE`` is
+    the registered schedule), the cell samples round-robin and is
+    examined ONLY at the schedule's look points, stopping at the first
+    look where the Wilson-95 interval decides a rung on its verdict lens
+    (``assay.stats.decided``); the last entry is the cap and
+    ``n_per_cell`` is ignored. A cell that stops at n=5 differs from a
+    fixed-n=5 cell only in the lens the caller stamps, so run.py records
+    the stopping rule and n_used.
+
+    Each reply is scored under byte-equality AND applies-and-parses (see
+    Landing). ``directives`` substitutes the consumer's own presentation
+    for the built-in one — the caller records which was used (run.py
+    stamps provenance and the verdict lens). Budget exhaustion mid-run
+    stops the matrix: completed and partial cells report what was
+    measured (a cell stopped mid-schedule keeps its honest partial n);
     unattempted cells stay ``Landing(None, None, 0)``. Infrastructure
     errors propagate; a bad reply is data (a non-landing), never an
     exception.
     """
+    if look_schedule is not None and not look_schedule:
+        # An empty schedule is neither fixed-n nor sequential; coercing
+        # it to either would hand the caller a lens that lies about how
+        # the number was reached.
+        raise ValueError("look_schedule must name at least one look point "
+                         "(pass None for fixed-n sampling)")
     directives = directives or DEFAULT_DIRECTIVES
     by_grade: dict[str, list] = {g: [] for g in GRADES}
     for entry in fixtures.EXPECTED:
@@ -284,29 +335,35 @@ def probe_codecs(
             else:
                 cell_tasks = [(entry[2], entry[3], entry[4], entry[5])
                               for entry in by_grade[grade]]
-            reps = max(1, n_per_cell // len(cell_tasks))
+            prompts = [_build_prompt(codec, filename, instruction,
+                                     original, directives)
+                       for filename, instruction, original, _ in cell_tasks]
+            order = _attempt_order(len(cell_tasks), n_per_cell, look_schedule)
+            looks = frozenset(look_schedule or ())
             landed = 0
             landed_applies = 0
             attempted = 0
-            for filename, instruction, original, expected in cell_tasks:
-                if exhausted:
+            for task_index in order:
+                _, _, original, expected = cell_tasks[task_index]
+                prompt = prompts[task_index]
+                try:
+                    meter.charge(max(1, len(prompt) // _CHARS_PER_TOKEN))
+                except BudgetExhausted:
+                    exhausted = True
                     break
-                prompt = _build_prompt(codec, filename, instruction,
-                                       original, directives)
-                for _ in range(reps):
-                    try:
-                        meter.charge(max(1, len(prompt) // _CHARS_PER_TOKEN))
-                    except BudgetExhausted:
-                        exhausted = True
-                        break
-                    reply = backend.generate(
-                        prompt, seed=seed, max_tokens=_MAX_TOKENS[codec]
-                    )
-                    seed += 1
-                    attempted += 1
-                    exact, applies = _score(codec, reply.text,
-                                            original, expected)
-                    landed += int(exact)
-                    landed_applies += int(applies)
+                reply = backend.generate(
+                    prompt, seed=seed, max_tokens=_MAX_TOKENS[codec]
+                )
+                seed += 1
+                attempted += 1
+                exact, applies = _score(codec, reply.text, original, expected)
+                landed += int(exact)
+                landed_applies += int(applies)
+                # Looked at ONLY at the pre-registered points: peeking
+                # between them inflates the false-decision rate.
+                if attempted in looks and decided(
+                    _stop_count(codec, landed, landed_applies), attempted
+                ):
+                    break
             results[codec][grade] = _cell(landed, landed_applies, attempted)
     return results

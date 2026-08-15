@@ -1,5 +1,7 @@
 """Tests for codec fixtures, appliers, and probes (plan Task 9, spec §7)."""
 
+from collections import Counter
+
 import pytest
 
 from assay import fixtures
@@ -353,3 +355,240 @@ def test_custom_directives_reach_the_wire_verbatim():
     assert all(marker in p for p in prompts), "custom directive missing"
     # And the built-in texts must NOT appear anywhere.
     assert not any("character for character" in p for p in prompts)
+
+
+# --- sequential look-schedule stopping (v1.5, spec §1) --------------------
+
+
+def never_lands_script(prompt):
+    """Nothing lands under EITHER lens: the reply is not a block, not a
+    valid file, and not JSON. A cell of these is 0/5 at the first look —
+    both Wilson endpoints ladder `unusable`, so it is decided."""
+    return "no patch for you"
+
+
+def json_four_of_five_script(prompt):
+    """Lands four of the json cell's five tasks: 0.8 straddles risky and
+    ready at every look (4/5, 8/10, 16/20 all span the 0.9 threshold),
+    so a json cell must run to the schedule's cap. Patch codecs never
+    land, so their cells decide at the first look."""
+    from assay.codecs import JSON_DIRECTIVE, JSON_TASKS
+
+    if prompt.startswith(JSON_DIRECTIVE):
+        if prompt.endswith(JSON_TASKS[-1]):
+            return "sorry, no json today"
+        return '{"name": "x", "count": 3, "tags": ["t"]}'
+    return "no patch for you"
+
+
+def applies_but_not_equal_script(prompt):
+    """Patch replies that APPLY and parse but are never byte-equal (a
+    trailing comment). lands_applies == 1.0 while lands == 0.0, so the
+    two lenses disagree about whether the cell is decided."""
+    from assay.codecs import JSON_DIRECTIVE
+
+    if prompt.startswith(JSON_DIRECTIVE):
+        return "sorry, no json today"
+    for _, _, _, _, original, expected in fixtures.EXPECTED:
+        if original in prompt:
+            if "SEARCH" in prompt:
+                o_lines = original.split("\n")
+                e_lines = expected.split("\n")
+                at = next(i for i, (a, b) in enumerate(zip(o_lines, e_lines))
+                          if a != b)
+                return block(o_lines[at], e_lines[at] + "  # fixed")
+            return expected + "# fixed\n"
+    raise AssertionError(f"unrouted codec prompt: {prompt[:80]!r}")
+
+
+def test_sequential_stops_decided_cell_at_first_look():
+    """0/5 decides `unusable` — both Wilson endpoints ladder to the same
+    rung — so every cell stops at the first look: 5 calls, never 35."""
+    from assay.codecs import CODECS, GRADES, Landing, probe_codecs
+    from assay.stats import LOOK_SCHEDULE
+
+    backend = ScriptedBackend(never_lands_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=35,
+                          look_schedule=LOOK_SCHEDULE)
+
+    assert result["json_object"]["small"].n == 5
+    for codec in CODECS:
+        for grade in GRADES:
+            assert result[codec][grade] == Landing(lands=0.0,
+                                                   lands_applies=0.0, n=5)
+    assert len(backend.calls) == 9 * 5  # 9 cells, one look each
+
+
+def test_sequential_runs_undecided_cell_to_cap():
+    """A cell landing 4 of every 5 straddles risky/ready at 5, 10 and 20:
+    it must spend the whole schedule and report n == 35."""
+    from assay.codecs import GRADES, probe_codecs
+    from assay.stats import LOOK_SCHEDULE
+
+    backend = ScriptedBackend(json_four_of_five_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=35,
+                          look_schedule=LOOK_SCHEDULE)
+
+    for grade in GRADES:
+        cell = result["json_object"][grade]
+        assert cell.n == 35
+        assert cell.lands == 28 / 35  # 7 rounds x 4 landing tasks
+    # ...while the never-landing patch cells stop at the first look.
+    for codec in ("search_replace", "whole_file"):
+        for grade in GRADES:
+            assert result[codec][grade].n == 5
+    assert len(backend.calls) == 3 * 35 + 6 * 5
+
+
+def test_no_schedule_is_exactly_the_old_behavior():
+    """look_schedule=None (and its default) is fixed-rep sampling: the
+    v1.4 matrix, cell for cell."""
+    from assay.codecs import Landing, probe_codecs
+
+    backend = ScriptedBackend(grade_matrix_script)
+    fixed = probe_codecs(backend, make_meter(), n_per_cell=5)
+    explicit = probe_codecs(ScriptedBackend(grade_matrix_script),
+                            make_meter(), n_per_cell=5, look_schedule=None)
+
+    assert explicit == fixed
+    assert fixed["search_replace"]["tiny"] == Landing(lands=1.0,
+                                                      lands_applies=1.0, n=5)
+    for grade in ("small", "medium"):
+        assert fixed["search_replace"][grade] == Landing(lands=0.0,
+                                                         lands_applies=0.0, n=5)
+    for grade in ("tiny", "small", "medium"):
+        assert fixed["whole_file"][grade] == Landing(lands=1.0,
+                                                     lands_applies=1.0, n=5)
+        assert fixed["json_object"][grade] == Landing(lands=1.0,
+                                                      lands_applies=1.0, n=5)
+    assert len(backend.calls) == 45
+
+
+def test_no_schedule_never_stops_early():
+    """Without a schedule there are no looks: an all-failing cell that a
+    schedule would decide at 5 still spends every fixed rep. The v1.4
+    attempt order (reps of one task consecutively) is preserved too, so
+    replay transcripts of quick/family runs do not shift."""
+    from assay.codecs import CODECS, GRADES, probe_codecs
+
+    backend = ScriptedBackend(never_lands_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=35)
+
+    for codec in CODECS:
+        for grade in GRADES:
+            assert result[codec][grade].n == 35
+    assert len(backend.calls) == 9 * 35
+    first_cell = [call["prompt"] for call in backend.calls[:35]]
+    assert len(set(first_cell)) == 5              # five heterogeneous tasks
+    assert len(set(first_cell[:7])) == 1          # 35 // 5 reps, task-major
+
+
+def test_stop_test_uses_applies_lens_for_patch_codecs():
+    """The stop test reads the cell's VERDICT lens. search_replace and
+    whole_file are judged applies-and-parses: 5/5 applies is undecided,
+    so the cell continues — while the byte-equality count (0/5) would
+    have decided it unusable at the first look."""
+    from assay.codecs import GRADES, probe_codecs
+    from assay.stats import LOOK_SCHEDULE
+
+    backend = ScriptedBackend(applies_but_not_equal_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=35,
+                          look_schedule=LOOK_SCHEDULE)
+
+    for codec in ("search_replace", "whole_file"):
+        for grade in GRADES:
+            cell = result[codec][grade]
+            assert cell.lands == 0.0
+            assert cell.lands_applies == 1.0
+            assert cell.n == 35, "the byte-equality lens stopped this cell"
+    for grade in GRADES:  # json's lens is byte-equality; 0/5 decides
+        assert result["json_object"][grade].n == 5
+
+
+def test_look_points_come_from_the_given_schedule():
+    """The looks are the schedule's members, not a hardcoded 5: under
+    (10, 20) a decided-at-5 cell keeps sampling until n == 10."""
+    from assay.codecs import probe_codecs
+
+    backend = ScriptedBackend(never_lands_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=35,
+                          look_schedule=(10, 20))
+
+    assert result["json_object"]["small"].n == 10
+    assert len(backend.calls) == 9 * 10
+
+
+def test_last_schedule_entry_is_the_cap_and_n_per_cell_is_ignored():
+    from assay.codecs import probe_codecs
+
+    backend = ScriptedBackend(json_four_of_five_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=35,
+                          look_schedule=(5, 10))
+    assert result["json_object"]["small"].n == 10  # the cap, not 35
+
+    other = ScriptedBackend(json_four_of_five_script)
+    result = probe_codecs(other, make_meter(), n_per_cell=1,
+                          look_schedule=(5, 10))
+    assert result["json_object"]["small"].n == 10  # n_per_cell ignored
+
+
+def test_schedule_spreads_attempts_round_robin_across_tasks():
+    """One rep across ALL of the cell's heterogeneous tasks per round —
+    never repeated draws of one prompt (the v1.3 rule)."""
+    from assay.codecs import JSON_DIRECTIVE, probe_codecs
+    from assay.stats import LOOK_SCHEDULE
+
+    backend = ScriptedBackend(json_four_of_five_script)
+    probe_codecs(backend, make_meter(), n_per_cell=35,
+                 look_schedule=LOOK_SCHEDULE)
+
+    json_prompts = [call["prompt"] for call in backend.calls
+                    if call["prompt"].startswith(JSON_DIRECTIVE)]
+    cell = json_prompts[:35]  # the first json cell, run to the cap
+    assert len(set(cell)) == 5
+    assert all(cell[i] == cell[i % 5] for i in range(35))  # round-robin
+    assert set(Counter(cell).values()) == {7}  # seven rounds, evenly spread
+
+
+def test_budget_exhaustion_midschedule_keeps_partial_n():
+    """A budget stop between looks records the honest partial n — never
+    the look it was heading for, never a zero nobody measured."""
+    from assay.codecs import Landing, probe_codecs
+    from assay.stats import LOOK_SCHEDULE
+
+    backend = ScriptedBackend(never_lands_script)
+    result = probe_codecs(backend, make_meter(max_calls=3), n_per_cell=35,
+                          look_schedule=LOOK_SCHEDULE)
+
+    assert result["search_replace"]["tiny"] == Landing(lands=0.0,
+                                                       lands_applies=0.0, n=3)
+    assert result["search_replace"]["small"] == Landing(lands=None,
+                                                        lands_applies=None, n=0)
+    assert result["json_object"]["medium"] == Landing(lands=None,
+                                                      lands_applies=None, n=0)
+
+
+def test_empty_schedule_is_rejected_not_coerced():
+    """An empty schedule is neither fixed-n nor sequential — refuse it
+    rather than silently sampling under a rule nobody registered."""
+    from assay.codecs import probe_codecs
+
+    backend = ScriptedBackend(never_lands_script)
+    with pytest.raises(ValueError, match="look_schedule"):
+        probe_codecs(backend, make_meter(), n_per_cell=5, look_schedule=())
+    assert backend.calls == []
+
+
+def test_schedule_seeds_increment_once_per_attempt():
+    """One seed per attempt, contiguous from seed_base — a stopped cell
+    must not leave a gap or replay a seed."""
+    from assay.codecs import probe_codecs
+    from assay.stats import LOOK_SCHEDULE
+
+    backend = ScriptedBackend(json_four_of_five_script)
+    probe_codecs(backend, make_meter(), n_per_cell=35, seed_base=500,
+                 look_schedule=LOOK_SCHEDULE)
+
+    seeds = [call["kwargs"]["seed"] for call in backend.calls]
+    assert len(seeds) == 3 * 35 + 6 * 5
+    assert seeds == list(range(500, 500 + len(seeds)))
