@@ -1,0 +1,273 @@
+{
+  "assay_profile_version": 4,
+  "probe_version": "0.5.0",
+  "endpoint": {
+    "kind": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "autodetected": true
+  },
+  "model": {
+    "name": "gemma2:9b",
+    "quant": "Q4_0",
+    "weights_bytes": 5443152417,
+    "training_ctx": 8192
+  },
+  "geometry": {
+    "kv_kib_per_token": 294,
+    "vram_free_mib": 7788,
+    "usable_window": 8192,
+    "limited_by": "training_ctx",
+    "source": "api_show"
+  },
+  "ceiling": {
+    "max_verified": 8192,
+    "first_failure": 8704,
+    "failure_mode": "hard_error",
+    "counts_available": true,
+    "evidence": [
+      {
+        "est_tokens": 1024,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1007 stop_reason=length"
+      },
+      {
+        "est_tokens": 2048,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1984 stop_reason=length"
+      },
+      {
+        "est_tokens": 4096,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=3933 stop_reason=length"
+      },
+      {
+        "est_tokens": 8192,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=7814 stop_reason=length"
+      },
+      {
+        "est_tokens": 16384,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      },
+      {
+        "est_tokens": 12288,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      },
+      {
+        "est_tokens": 10240,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      },
+      {
+        "est_tokens": 9216,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      },
+      {
+        "est_tokens": 8704,
+        "seed": 0,
+        "signal": "hard_error",
+        "detail": "InfrastructureError: HTTP 400 from /api/generate"
+      }
+    ]
+  },
+  "ceiling_shapes": [
+    {
+      "shape": 2048,
+      "max_verified": 1664,
+      "failure_mode": "ok_to_shape"
+    },
+    {
+      "shape": 4096,
+      "max_verified": 3712,
+      "failure_mode": "ok_to_shape"
+    },
+    {
+      "shape": 8192,
+      "max_verified": 7808,
+      "failure_mode": "ok_to_shape"
+    }
+  ],
+  "envelope": {
+    "fidelity": 1.0,
+    "n": 10,
+    "failures": {
+      "prose": 0,
+      "shape": 0,
+      "refusal": 0
+    }
+  },
+  "codecs": {
+    "search_replace": {
+      "tiny": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.8,
+        "lands_applies": 0.8,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.6,
+        "lands_applies": 1.0,
+        "n": 5
+      }
+    },
+    "whole_file": {
+      "tiny": {
+        "lands": 0.8,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.6,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.4,
+        "lands_applies": 1.0,
+        "n": 5
+      }
+    },
+    "json_object": {
+      "tiny": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      }
+    }
+  },
+  "speed": {
+    "decode_tps": 93.77691459144113,
+    "prefill_tps": 5720.613189910552,
+    "evidence": "server_timings",
+    "n_decode": 1,
+    "n_prefill": 1
+  },
+  "loop": {
+    "action_fidelity": 1.0,
+    "patch_rate": 0.0,
+    "finish_rate": 1.0,
+    "repeat_rate": 0.0,
+    "anchor_violations": 0,
+    "n_runs": 3,
+    "n_turns": 9
+  },
+  "verdicts": {
+    "structured_extraction": {
+      "verdict": "ready",
+      "provisional": true,
+      "interval95": [
+        0.566,
+        1.0
+      ],
+      "lens": {
+        "landing": "json_valid_required_keys",
+        "presentation": "default-v1",
+        "temperature": 0.2,
+        "fixtures": "codec-fixtures-v2"
+      }
+    },
+    "patch_editing": {
+      "verdict": "ready",
+      "provisional": true,
+      "interval95": [
+        0.566,
+        1.0
+      ],
+      "lens": {
+        "landing": "applies_and_parses(python)",
+        "presentation": "default-v1",
+        "temperature": 0.2,
+        "fixtures": "codec-fixtures-v2"
+      }
+    },
+    "long_context": {
+      "verdict": "unmeasured",
+      "lens": {
+        "evidence": "counts+canary"
+      }
+    },
+    "loop_discipline": {
+      "verdict": "risky",
+      "provisional": true,
+      "interval95": [
+        0.701,
+        1.0
+      ],
+      "lens": {
+        "instrument": "scripted-loop-v1",
+        "fixtures": "codec-fixtures-v2",
+        "temperature": 0.2
+      }
+    },
+    "chat_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "decode_tps",
+        "floor_ready": 8.0,
+        "floor_risky": 4.0,
+        "evidence": "server_timings"
+      }
+    },
+    "agent_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "prefill_tps",
+        "floor_ready": 200.0,
+        "floor_risky": 80.0,
+        "evidence": "server_timings"
+      }
+    }
+  },
+  "provenance": {
+    "started": "2026-08-15T02:00:35Z",
+    "finished": "2026-08-15T02:02:24Z",
+    "mode": "quick",
+    "tier": "enthusiast-16gb",
+    "emulated": false,
+    "presentation": "default-v1",
+    "fixture_set": "codec-fixtures-v2",
+    "temperature": 0.2,
+    "seeds": [
+      0
+    ],
+    "budget": {
+      "max_calls": 110,
+      "max_prompt_tokens": 200000
+    },
+    "spent": {
+      "calls": 86,
+      "prompt_tokens": 107640
+    },
+    "calibration": {
+      "chars_per_token": 6.398406374501992,
+      "counts_available": true,
+      "deterministic": true
+    },
+    "dropped": []
+  }
+}

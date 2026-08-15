@@ -162,6 +162,13 @@ class OllamaNative:
             # Top-level, NOT inside options (robigo gotcha): ask the
             # daemon to hard-fail instead of silently truncating.
             "truncate": False,
+            # Thinking-default models (qwen3.8, r1-class) spend the whole
+            # generation budget on reasoning and return an EMPTY visible
+            # response under capped probes (measured live 2026-08-14 on
+            # qwen3.8:27b: 32 thinking tokens, empty text). Probes measure
+            # the VISIBLE channel; reasoning-off is part of the
+            # instrument and is recorded in provenance/lens.
+            "think": False,
             "options": options,
         }
         body = self._post("/api/generate", payload)

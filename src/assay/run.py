@@ -331,6 +331,7 @@ def probe(
                              else DEFAULT_PRESENTATION),
             "fixture_set": FIXTURE_SET,
             "temperature": PROBE_TEMPERATURE,
+            "thinking": "disabled",
             "seeds": list(params.seeds),
             "budget": {
                 "max_calls": budget.max_calls,

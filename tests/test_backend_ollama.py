@@ -80,6 +80,8 @@ def test_generate_sends_topLevel_truncate_and_seeded_options():
     assert url == f"{BASE_URL}/api/generate"
     # truncate is TOP-LEVEL, not inside options (robigo gotcha).
     assert payload["truncate"] is False
+    # thinking disabled at the wire: probes measure the VISIBLE channel
+    assert payload["think"] is False
     assert "truncate" not in payload["options"]
     assert payload["options"]["seed"] == 7
     assert payload["options"]["num_predict"] == 64

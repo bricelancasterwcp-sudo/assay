@@ -1,0 +1,249 @@
+{
+  "assay_profile_version": 4,
+  "probe_version": "0.5.0",
+  "endpoint": {
+    "kind": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "autodetected": true
+  },
+  "model": {
+    "name": "deepseek-coder-v2:16b-lite-instruct-q5_K_M",
+    "quant": "Q5_K_M",
+    "weights_bytes": 11851329771,
+    "training_ctx": 163840
+  },
+  "geometry": {
+    "kv_kib_per_token": 216,
+    "vram_free_mib": 2219,
+    "usable_window": 8092,
+    "limited_by": "vram",
+    "source": "api_show"
+  },
+  "ceiling": {
+    "max_verified": 16384,
+    "first_failure": null,
+    "failure_mode": "none_up_to_cap",
+    "counts_available": true,
+    "evidence": [
+      {
+        "est_tokens": 1024,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1003 stop_reason=length"
+      },
+      {
+        "est_tokens": 2048,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1974 stop_reason=length"
+      },
+      {
+        "est_tokens": 4096,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=3912 stop_reason=length"
+      },
+      {
+        "est_tokens": 8192,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=7758 stop_reason=length"
+      },
+      {
+        "est_tokens": 16384,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=15517 stop_reason=stop"
+      }
+    ]
+  },
+  "ceiling_shapes": [
+    {
+      "shape": 2048,
+      "max_verified": 1664,
+      "failure_mode": "ok_to_shape"
+    },
+    {
+      "shape": 4096,
+      "max_verified": 3712,
+      "failure_mode": "ok_to_shape"
+    },
+    {
+      "shape": 8192,
+      "max_verified": 7808,
+      "failure_mode": "ok_to_shape"
+    }
+  ],
+  "envelope": {
+    "fidelity": 1.0,
+    "n": 10,
+    "failures": {
+      "prose": 0,
+      "shape": 0,
+      "refusal": 0
+    }
+  },
+  "codecs": {
+    "search_replace": {
+      "tiny": {
+        "lands": 0.2,
+        "lands_applies": 0.8,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.0,
+        "lands_applies": 0.8,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.0,
+        "lands_applies": 0.2,
+        "n": 5
+      }
+    },
+    "whole_file": {
+      "tiny": {
+        "lands": 0.2,
+        "lands_applies": 0.4,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.0,
+        "lands_applies": 0.6,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.4,
+        "lands_applies": 1.0,
+        "n": 5
+      }
+    },
+    "json_object": {
+      "tiny": {
+        "lands": 0.6,
+        "lands_applies": 0.6,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.6,
+        "lands_applies": 0.6,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.6,
+        "lands_applies": 0.6,
+        "n": 5
+      }
+    }
+  },
+  "speed": {
+    "decode_tps": 197.57215978533554,
+    "prefill_tps": 7548.121211321116,
+    "evidence": "server_timings",
+    "n_decode": 1,
+    "n_prefill": 1
+  },
+  "loop": {
+    "action_fidelity": 0.6666666666666666,
+    "patch_rate": 0.0,
+    "finish_rate": 0.0,
+    "repeat_rate": 0.0,
+    "anchor_violations": 0,
+    "n_runs": 3,
+    "n_turns": 9
+  },
+  "verdicts": {
+    "structured_extraction": {
+      "verdict": "risky",
+      "provisional": true,
+      "interval95": [
+        0.231,
+        0.882
+      ],
+      "lens": {
+        "landing": "json_valid_required_keys",
+        "presentation": "default-v1",
+        "temperature": 0.2,
+        "fixtures": "codec-fixtures-v2"
+      }
+    },
+    "patch_editing": {
+      "verdict": "risky",
+      "provisional": true,
+      "interval95": [
+        0.376,
+        0.964
+      ],
+      "lens": {
+        "landing": "applies_and_parses(python)",
+        "presentation": "default-v1",
+        "temperature": 0.2,
+        "fixtures": "codec-fixtures-v2"
+      }
+    },
+    "long_context": {
+      "verdict": "ready",
+      "lens": {
+        "evidence": "counts+canary"
+      }
+    },
+    "loop_discipline": {
+      "verdict": "risky",
+      "provisional": true,
+      "interval95": [
+        0.354,
+        0.879
+      ],
+      "lens": {
+        "instrument": "scripted-loop-v1",
+        "fixtures": "codec-fixtures-v2",
+        "temperature": 0.2
+      }
+    },
+    "chat_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "decode_tps",
+        "floor_ready": 8.0,
+        "floor_risky": 4.0,
+        "evidence": "server_timings"
+      }
+    },
+    "agent_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "prefill_tps",
+        "floor_ready": 200.0,
+        "floor_risky": 80.0,
+        "evidence": "server_timings"
+      }
+    }
+  },
+  "provenance": {
+    "started": "2026-08-15T02:19:27Z",
+    "finished": "2026-08-15T02:21:21Z",
+    "mode": "quick",
+    "tier": "enthusiast-16gb",
+    "emulated": false,
+    "presentation": "default-v1",
+    "fixture_set": "codec-fixtures-v2",
+    "temperature": 0.2,
+    "seeds": [
+      0
+    ],
+    "budget": {
+      "max_calls": 110,
+      "max_prompt_tokens": 200000
+    },
+    "spent": {
+      "calls": 82,
+      "prompt_tokens": 67192
+    },
+    "calibration": {
+      "chars_per_token": 6.322834645669292,
+      "counts_available": true,
+      "deterministic": false
+    },
+    "dropped": []
+  }
+}

@@ -1,0 +1,249 @@
+{
+  "assay_profile_version": 4,
+  "probe_version": "0.5.0",
+  "endpoint": {
+    "kind": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "autodetected": true
+  },
+  "model": {
+    "name": "hermes3:latest",
+    "quant": "Q4_0",
+    "weights_bytes": 4661227243,
+    "training_ctx": 131072
+  },
+  "geometry": {
+    "kv_kib_per_token": 128,
+    "vram_free_mib": 9008,
+    "usable_window": 67968,
+    "limited_by": "vram",
+    "source": "api_show"
+  },
+  "ceiling": {
+    "max_verified": 16384,
+    "first_failure": null,
+    "failure_mode": "none_up_to_cap",
+    "counts_available": true,
+    "evidence": [
+      {
+        "est_tokens": 1024,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1013 stop_reason=length"
+      },
+      {
+        "est_tokens": 2048,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1996 stop_reason=length"
+      },
+      {
+        "est_tokens": 4096,
+        "seed": 0,
+        "signal": "attention_loss",
+        "detail": "tokens_in=3963 stop_reason=length"
+      },
+      {
+        "est_tokens": 8192,
+        "seed": 0,
+        "signal": "attention_loss",
+        "detail": "tokens_in=7862 stop_reason=length"
+      },
+      {
+        "est_tokens": 16384,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=15729 stop_reason=length"
+      }
+    ]
+  },
+  "ceiling_shapes": [
+    {
+      "shape": 2048,
+      "max_verified": 1664,
+      "failure_mode": "ok_to_shape"
+    },
+    {
+      "shape": 4096,
+      "max_verified": 3712,
+      "failure_mode": "ok_to_shape"
+    },
+    {
+      "shape": 8192,
+      "max_verified": 7808,
+      "failure_mode": "ok_to_shape"
+    }
+  ],
+  "envelope": {
+    "fidelity": 1.0,
+    "n": 10,
+    "failures": {
+      "prose": 0,
+      "shape": 0,
+      "refusal": 0
+    }
+  },
+  "codecs": {
+    "search_replace": {
+      "tiny": {
+        "lands": 0.6,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.4,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.0,
+        "lands_applies": 0.4,
+        "n": 5
+      }
+    },
+    "whole_file": {
+      "tiny": {
+        "lands": 0.0,
+        "lands_applies": 0.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 0.0,
+        "lands_applies": 0.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 0.0,
+        "lands_applies": 0.0,
+        "n": 5
+      }
+    },
+    "json_object": {
+      "tiny": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "small": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      },
+      "medium": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 5
+      }
+    }
+  },
+  "speed": {
+    "decode_tps": 125.9666463939095,
+    "prefill_tps": 8468.959111730312,
+    "evidence": "server_timings",
+    "n_decode": 1,
+    "n_prefill": 1
+  },
+  "loop": {
+    "action_fidelity": 1.0,
+    "patch_rate": 0.0,
+    "finish_rate": 1.0,
+    "repeat_rate": 0.0,
+    "anchor_violations": 0,
+    "n_runs": 3,
+    "n_turns": 9
+  },
+  "verdicts": {
+    "structured_extraction": {
+      "verdict": "ready",
+      "provisional": true,
+      "interval95": [
+        0.566,
+        1.0
+      ],
+      "lens": {
+        "landing": "json_valid_required_keys",
+        "presentation": "default-v1",
+        "temperature": 0.2,
+        "fixtures": "codec-fixtures-v2"
+      }
+    },
+    "patch_editing": {
+      "verdict": "ready",
+      "provisional": true,
+      "interval95": [
+        0.566,
+        1.0
+      ],
+      "lens": {
+        "landing": "applies_and_parses(python)",
+        "presentation": "default-v1",
+        "temperature": 0.2,
+        "fixtures": "codec-fixtures-v2"
+      }
+    },
+    "long_context": {
+      "verdict": "ready",
+      "lens": {
+        "evidence": "counts+canary"
+      }
+    },
+    "loop_discipline": {
+      "verdict": "risky",
+      "provisional": true,
+      "interval95": [
+        0.701,
+        1.0
+      ],
+      "lens": {
+        "instrument": "scripted-loop-v1",
+        "fixtures": "codec-fixtures-v2",
+        "temperature": 0.2
+      }
+    },
+    "chat_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "decode_tps",
+        "floor_ready": 8.0,
+        "floor_risky": 4.0,
+        "evidence": "server_timings"
+      }
+    },
+    "agent_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "prefill_tps",
+        "floor_ready": 200.0,
+        "floor_risky": 80.0,
+        "evidence": "server_timings"
+      }
+    }
+  },
+  "provenance": {
+    "started": "2026-08-15T02:08:22Z",
+    "finished": "2026-08-15T02:09:57Z",
+    "mode": "quick",
+    "tier": "enthusiast-16gb",
+    "emulated": false,
+    "presentation": "default-v1",
+    "fixture_set": "codec-fixtures-v2",
+    "temperature": 0.2,
+    "seeds": [
+      0
+    ],
+    "budget": {
+      "max_calls": 110,
+      "max_prompt_tokens": 200000
+    },
+    "spent": {
+      "calls": 82,
+      "prompt_tokens": 67192
+    },
+    "calibration": {
+      "chars_per_token": 6.322834645669292,
+      "counts_available": true,
+      "deterministic": false
+    },
+    "dropped": []
+  }
+}
