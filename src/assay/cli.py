@@ -192,7 +192,13 @@ def _build_parser() -> argparse.ArgumentParser:
 def _run_report(args: argparse.Namespace) -> int:
     from assay.report import render_report
 
-    docs = [json.loads(p.read_text(encoding="utf-8")) for p in args.profiles]
+    # Same gate as ``diff``, for the same reason: a matrix row asserts
+    # that a model was measured. An unreadable file used to traceback
+    # here, and ``{}`` — an object with no version key — rendered a row
+    # of "unmeasured" badges under whatever name the file had, which is
+    # a published capability claim for a run nobody made. Exit 4 (see
+    # ``_load_profile``), and write no report at all.
+    docs = [_load_profile(path) for path in args.profiles]
     args.out.write_text(render_report(docs), encoding="utf-8")
     print(f"wrote {args.out} ({len(docs)} profile(s))")
     return 0

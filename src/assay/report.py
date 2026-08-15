@@ -17,8 +17,19 @@ from typing import Iterable
 
 VERDICT_ORDER = (
     "structured_extraction", "patch_editing", "loop_discipline",
-    "long_context", "chat_speed", "agent_speed",
+    "long_context", "long_output", "chat_speed", "agent_speed",
 )
+
+#: The four colours the stylesheet actually defines. Any other verdict
+#: string renders uncoloured rather than borrowing a colour it did not
+#: earn — and never reaches the class attribute, so a hostile profile
+#: cannot write CSS classes (or escape the attribute) through it.
+_VERDICT_CLASSES = ("ready", "risky", "unusable", "unmeasured")
+#: ``long_output`` names its own limit — ``degrades-at-2048`` — so its
+#: verdict string is dynamic and cannot be enumerated. Every member of
+#: the family means the same thing to a reader deciding whether to
+#: trust the model: it works, up to a point. That is risky.
+_DEGRADES_PREFIX = "degrades-at"
 
 _CSS = """
 :root { --bg:#fafaf7; --fg:#1c1c1a; --muted:#6b6b66; --card:#ffffff;
@@ -72,13 +83,31 @@ def _lens_title(entry: dict) -> str:
     return "; ".join(parts)
 
 
+def _verdict_class(verdict: str) -> str:
+    """The colour class for a verdict, or none at all.
+
+    The label keeps the verdict verbatim; only the COLOUR is bucketed.
+    ``degrades-at-<N>`` is the reason this exists: it is one verdict per
+    measured rung, so it can only be matched by prefix, and the
+    alternative — interpolating it straight into ``class=`` — produced
+    ``b-degrades-at-2048``, which no rule styles and which would let an
+    attacker-controlled profile write the class attribute.
+    """
+    if verdict.startswith(_DEGRADES_PREFIX):
+        return " b-risky"
+    return f" b-{verdict}" if verdict in _VERDICT_CLASSES else ""
+
+
 def _badge(entry: dict | None) -> str:
+    # v1 wrote verdicts as bare strings; a string carries no lens and no
+    # interval, and inventing either would be worse than saying so.
     if not isinstance(entry, dict):
         return '<span class="badge b-unmeasured">unmeasured</span>'
-    verdict = entry.get("verdict", "unmeasured")
+    verdict = str(entry.get("verdict", "unmeasured"))
     provisional = entry.get("provisional", False)
-    classes = f"badge b-{verdict}" + (" provisional" if provisional else "")
-    label = verdict + ("&#8224;" if provisional else "")
+    classes = ("badge" + _verdict_class(verdict)
+               + (" provisional" if provisional else ""))
+    label = _esc(verdict) + ("&#8224;" if provisional else "")
     interval = entry.get("interval95")
     extra = ""
     if interval:
@@ -110,6 +139,15 @@ def _speed_cell(profile: dict) -> str:
             f'<span class="k">({_esc(speed.get("evidence", "?"))})</span>')
 
 
+def _num(value: object, spec: str = ".2f") -> str:
+    """A measured number, or a dash. Never 0 for "not measured"."""
+    if value is None:
+        return "—"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return format(value, spec)
+    return _esc(value)
+
+
 def _codec_grid(codecs: dict | None) -> str:
     if not codecs:
         return '<p class="k">codecs unmeasured</p>'
@@ -124,7 +162,11 @@ def _codec_grid(codecs: dict | None) -> str:
             if lands is None:
                 tds.append('<td class="k">—</td>')
             else:
-                tds.append(f'<td class="mono">{lands:.2f} / {applies:.2f} '
+                # v1 profiles measured `lands` and never wrote
+                # `lands_applies`. Dash the half that was not measured:
+                # 0.00 there would read as "nothing applied cleanly",
+                # a finding v1 never made.
+                tds.append(f'<td class="mono">{lands:.2f} / {_num(applies)} '
                            f'<span class="k">n={n}</span></td>')
         rows.append(f"<tr><td>{_esc(codec)}</td>{''.join(tds)}</tr>")
     return (f'<table class="grid"><tr><th>codec '
@@ -142,6 +184,48 @@ def _shapes_grid(shapes: list | None) -> str:
         for s in shapes)
     return ('<table class="grid"><tr><th>num_ctx shape</th>'
             '<th>max verified</th><th>mode</th></tr>' + rows + "</table>")
+
+
+def _long_output_grid(long_output: dict | None) -> str:
+    """The ladder behind a long_output verdict, rung by rung.
+
+    The verdict is one word (or one word and a number); the grid is why.
+    A rung whose reply was too short to score spent a call and measured
+    nothing, and prints as dashes — never as 0.00, which would read as
+    the most degenerate output ever recorded. Rungs that never ran at
+    all are named separately, because a missing rung and a healthy rung
+    are not the same finding.
+    """
+    if not long_output:
+        return '<p class="k">long_output unmeasured</p>'
+    rungs = long_output.get("rungs") or []
+    bits = []
+    if not rungs:
+        bits.append('<p class="k">long_output unmeasured (no rung ran)</p>')
+    else:
+        rows = "".join(
+            f'<tr><td class="mono">{_num(r.get("target_tokens"), "g")}</td>'
+            f'<td class="mono">{_num(r.get("generated_tokens"), "g")}</td>'
+            f'<td class="mono">{_num(r.get("distinct_ratio"))}</td>'
+            f'<td class="mono">{_num(r.get("zlib_ratio"))}</td>'
+            f'<td>{_degenerate_cell(r.get("degenerate"))}</td></tr>'
+            for r in rungs if isinstance(r, dict))
+        bits.append(
+            '<table class="grid"><tr><th>long output target</th>'
+            '<th>generated</th><th>distinct</th><th>zlib</th>'
+            '<th>degenerate</th></tr>' + rows + "</table>")
+    skipped = long_output.get("skipped") or []
+    if skipped:
+        items = "".join(f"<li>{_esc(s)}</li>" for s in skipped)
+        bits.append('<p class="dropped">rungs skipped:</p>'
+                    f'<ul class="dropped">{items}</ul>')
+    return "".join(bits)
+
+
+def _degenerate_cell(value: object) -> str:
+    if value is None:
+        return '<span class="k">—</span>'
+    return "yes" if value else "no"
 
 
 def _detail(profile: dict) -> str:
@@ -174,6 +258,7 @@ def _detail(profile: dict) -> str:
             f"finish {loop['finish_rate']} · repeats {loop['repeat_rate']} · "
             f"anchor violations {loop['anchor_violations']} "
             f"(runs={loop['n_runs']})</p>")
+    bits.append(_long_output_grid(profile.get("long_output")))
     dropped = prov.get("dropped") or []
     if dropped:
         items = "".join(f"<li>{_esc(d)}</li>" for d in dropped)
