@@ -72,6 +72,9 @@ DEFAULT_BUDGETS = {
 _COMMANDS = ("probe", "geometry", "ceiling", "envelope", "codecs")
 _REPORT_COMMAND = "report"
 _DIFF_COMMAND = "diff"
+#: The key every profile schema has carried since v1. A document
+#: without it is not a profile, whatever else it parses as.
+PROFILE_VERSION_KEY = "assay_profile_version"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -194,6 +197,17 @@ def _load_profile(path: Path) -> dict:
     number moved. A path that does not exist, a truncated file, a JSON
     array where a profile belongs — none of them measured anything, and
     a CI gate that read them as 1 would report drift nobody observed.
+
+    Being an object is NOT enough, and this is the failure worth
+    naming. ``{}`` — or a saved ``{"error": ...}`` reply — parses,
+    passes any isinstance check, and then sails through the whole
+    comparator: the identity gate reads ``None == None`` on every
+    field and calls it comparable, no family finds a cell, and the
+    command exits **0** on "no drift beyond noise". That is a green CI
+    check for a file nobody measured, and unlike a loud exit 1 nobody
+    ever investigates it. So a profile must SAY it is one:
+    ``assay_profile_version`` is the key every schema this project has
+    written carries, v1 included.
     """
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -205,6 +219,12 @@ def _load_profile(path: Path) -> dict:
         raise InfrastructureError(
             f"{path} is not a profile document: found a JSON "
             f"{type(payload).__name__}, not an object"
+        )
+    if PROFILE_VERSION_KEY not in payload:
+        raise InfrastructureError(
+            f"{path} is not a profile document: no {PROFILE_VERSION_KEY} key "
+            f"(an object without it compares clean against anything, which "
+            f"would exit 0 for a file that measured nothing)"
         )
     return payload
 

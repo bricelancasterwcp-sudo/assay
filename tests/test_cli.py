@@ -306,6 +306,34 @@ def test_cli_diff_rejects_valid_json_that_is_not_a_profile(tmp_path, capsys):
     assert "not a profile document" in capsys.readouterr().err
 
 
+def test_cli_diff_rejects_an_object_that_is_not_a_profile(tmp_path, capsys):
+    """The SILENT half of the same bug, and the worse half.
+
+    ``{}`` is an object, so an isinstance check waves it through; then
+    every identity field reads ``None == None``, which the gate treats
+    as non-fatal, and every family finds nothing to compare. The result
+    is exit 0 on "no drift beyond noise" — a green CI check for a file
+    nobody measured. Exit-1-on-unread is loud and gets investigated;
+    exit-0-on-unparsed is silent and never does. A profile is
+    identified by the key every profile has carried since v1.
+    """
+    old = _write_profile(tmp_path / "old.json", _diff_payload())
+    versionless = {key: value for key, value in _diff_payload().items()
+                   if key != "assay_profile_version"}
+    for name, payload in (("empty", {}),
+                          ("errorish", {"error": "model not found"}),
+                          ("versionless", versionless)):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        # Against itself (where identity trivially "matches")...
+        assert cli.main(["diff", str(path), str(path)]) == 4, name
+        assert "assay_profile_version" in capsys.readouterr().err, name
+        # ...and as the NEW side of a real pair, gated: the CI shape.
+        assert cli.main(["diff", old, str(path), "--gate"]) == 4, name
+        assert "not a profile document" in capsys.readouterr().err, name
+
+
 def test_cli_diff_reads_the_committed_live_rerun_pair(tmp_path, capsys):
     """End to end on real files: the v1 profiles under
     ``docs/superpowers/evidence`` are same-day same-daemon reruns, so
