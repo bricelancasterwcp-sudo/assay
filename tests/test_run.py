@@ -437,7 +437,10 @@ def test_long_output_family_climbs_the_full_ladder_on_a_healthy_endpoint():
     assert profile.long_output.skipped == ()
     assert all(rung.degenerate is False for rung in profile.long_output.rungs)
     assert profile.verdicts["long_output"]["verdict"] == "ready"
-    assert profile.verdicts["long_output"]["provisional"] is True
+    # UPDATED BY TASK 12: this pinned True while the floors were assumed
+    # and the verdict layer capped them. The anchor capture derived
+    # ZLIB_FLOOR, the cap released, and a clean ladder now reads settled.
+    assert profile.verdicts["long_output"]["provisional"] is False
     # The verdict carries HOW FAR it was verified, not just that it was.
     lens = profile.verdicts["long_output"]["lens"]
     assert lens["rungs_scored"] == 4

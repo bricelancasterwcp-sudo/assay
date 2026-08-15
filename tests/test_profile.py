@@ -301,17 +301,37 @@ def test_long_output_verdict_ladder(degenerate_from, expected):
     assert verdicts["long_output"]["verdict"] == expected
 
 
-def test_long_output_verdict_is_forced_provisional_while_thresholds_assumed():
-    # The floors are assumed, not derived (Task 12 derives them). Until
-    # that string stops starting with "assumed", NO long_output verdict
-    # may present itself as settled — independent of how clean the
-    # ladder looked.
-    assert THRESHOLDS_PROVENANCE.startswith("assumed")
+def test_long_output_verdicts_are_no_longer_forced_provisional():
+    # UPDATED BY TASK 12, deliberately. The cap held while both floors
+    # were guesses; the anchor capture (2026-08-15) derived ZLIB_FLOOR
+    # from 276 real replies, and every degenerate sample in it is caught
+    # by that derived floor alone. So a measured long_output verdict now
+    # follows the normal rules — and for this family "normal" means not
+    # provisional, since there is no interval to straddle a rung.
+    assert not THRESHOLDS_PROVENANCE.startswith("assumed")
     for degenerate_from in (None, 512, 2048):
         entry = compute_verdicts(
             None, None, None, None, None, None,
             make_long_output(degenerate_from=degenerate_from))["long_output"]
+        assert entry["provisional"] is False, degenerate_from
+
+
+def test_the_forced_provisional_cap_still_works_if_a_floor_goes_back_to_assumed():
+    # The cap was not deleted, only released: DISTINCT_FLOOR is still
+    # assumed, and if a future change makes the provenance say so at the
+    # front of the string, every measured verdict must go provisional
+    # again without anyone re-implementing the rule.
+    import assay.profile as profile_module
+
+    for degenerate_from in (None, 512, 2048):
+        long_output = make_long_output(degenerate_from=degenerate_from)
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(profile_module, "THRESHOLDS_PROVENANCE",
+                          "assumed-not-derived-2099-01-01")
+            entry = compute_verdicts(None, None, None, None, None, None,
+                                     long_output)["long_output"]
         assert entry["provisional"] is True, degenerate_from
+        assert entry["lens"]["thresholds"] == "assumed-not-derived-2099-01-01"
 
 
 def test_long_output_lens_names_floors_task_and_threshold_provenance():

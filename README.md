@@ -313,22 +313,37 @@ task, one call per rung, and scores each reply two ways:
   compressible collapse too tight for the n-gram window to see (one
   character repeated forever has perfect 4-gram diversity).
 
-Either metric below its floor calls the rung degenerate. **The floors
-are assumed, not derived** (`distinct < 0.30`, `zlib < 0.20`): they were
-picked to sit far below anything healthy output has been observed to
-produce, not fitted to a measured distribution, and the lens says so in
-`thresholds: "assumed-not-derived-…"`. While that string starts with
-`assumed`, every measured `long_output` verdict is forced
-`provisional` — the instrument states its own resolution rather than
-letting a smoke alarm read as a measurement. Deriving real floors needs
-a committed degenerate anchor, which is the recorded next step.
+Either metric below its floor calls the rung degenerate. **One floor is
+derived, the other is not** — the lens says which in
+`thresholds: "derived-2026-08-15 (zlib only; distinct still assumed)"`.
+The degeneracy anchor (`docs/superpowers/evidence/degenerate-anchor/`)
+captured 28 live enumeration replies from seven models, labelled them by
+reading them, and set each floor at the midpoint between the degenerate
+cluster's best value and the healthy cluster's worst:
+
+- `zlib < 0.2557` is **derived**, from the gap between 0.2362 (a 0.5b
+  model emitting one sentence on repeat) and 0.2752 (the worst healthy
+  reply on record). The old assumed 0.20 missed two genuinely degenerate
+  replies and cleared two more at 0.1976 and 0.1997.
+- `distinct < 0.30` **stays assumed**, because on that metric the
+  clusters overlap: a reply whose items 7–20 are the same sentence
+  scores 0.6127, above a healthy code reply at 0.5952. Renumbering each
+  looped line keeps the 4-gram window fed, which is exactly the collapse
+  the zlib metric is there to catch instead.
+
+Because the derived floor alone flags all ten degenerate samples,
+measured `long_output` verdicts are no longer forced `provisional`; the
+cap still fires for any provenance that starts with `assumed`.
 
 The committed transcripts under `docs/evidence-transcripts/` are code
-and JSON — the wrong genre to calibrate prose degeneracy, since code is
-legitimately repetitive — so they serve as **false-positive guards**
-instead: 248 healthy replies across 23 transcripts, none of which may
-flag. The tightest scores 0.275 on zlib, only 1.38× the floor, and that
-number is pinned in the tests.
+and JSON — the wrong genre to calibrate prose degeneracy on its own,
+since code is legitimately repetitive — so they serve as
+**false-positive guards**, and their worst case is what caps how high a
+floor may go: 248 healthy replies across 23 transcripts, none of which
+may flag. The tightest scores 0.2752 on zlib, now only 1.08× the derived
+floor (it was 1.38× the assumed one), and both edges are pinned in the
+tests. Deriving bought sensitivity and spent headroom, and the anchor
+README says so in those words.
 
 The verdict names the extent, not just the outcome: `ready` (no scorable
 rung degenerate), `degrades-at-2048` (the first degenerate rung, named),

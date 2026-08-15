@@ -7,28 +7,43 @@ character repeated forever has perfect 4-gram diversity of one gram and
 a floor-scraping compression ratio). Either one dipping below its floor
 is enough to call the output degenerate.
 
-THRESHOLDS ARE ASSUMED, NOT DERIVED. ``DISTINCT_FLOOR`` and
-``ZLIB_FLOOR`` were picked to sit far below anything healthy output has
-been observed to produce, not fitted to a measured distribution. Task 12
-captures live long generations, derives real floors, and restamps
-``THRESHOLDS_PROVENANCE`` as ``derived-<date>``; the verdict layer
-(Task 9) caps its verdict provisional for as long as this string starts
-with ``assumed``. Treat a flag from this module as a smoke alarm, not a
-measurement.
+ONE FLOOR IS DERIVED, THE OTHER IS STILL ASSUMED. Task 12 captured live
+long generations from seven models on the enumeration task
+(``docs/superpowers/evidence/degenerate-anchor/``, 2026-08-15, ollama
+0.32.13) and put both floors to the same rule — the midpoint between the
+degenerate cluster's best value and the healthy cluster's worst. Only one
+of them survived it:
+
+- ``ZLIB_FLOOR`` is DERIVED. Degenerate best 0.2362, healthy worst
+  0.2752 (a hermes3 code reply), midpoint 0.2557. The old assumed 0.20
+  missed two genuinely degenerate replies outright and caught two more
+  at 0.1976 and 0.1997 — its sensitivity was luck, not calibration.
+- ``DISTINCT_FLOOR`` is NOT derived and stays assumed at 0.30, because
+  the clusters OVERLAP on it: a 1.5b reply whose items 7-20 are the same
+  sentence scores 0.6127, ABOVE the worst healthy code reply at 0.5952.
+  A looping model that renumbers each repeated line keeps its 4-gram
+  diversity up — which is precisely the collapse ``zlib_ratio`` is here
+  to catch instead. No single genre-agnostic distinct floor separates
+  the two, so none was invented.
+
+``THRESHOLDS_PROVENANCE`` carries that mixed state verbatim into every
+profile's verdict lens. It no longer starts with ``assumed``, so the
+Task 9 forced-provisional cap releases: all ten captured degenerate
+samples are flagged by the DERIVED floor alone, so the verdict's
+sensitivity rests on measured data, and the assumed distinct floor is a
+redundant backstop (the only sample below it is flagged by zlib too).
 
 The committed transcripts under ``docs/evidence-transcripts/`` are code
-and JSON, which is the wrong genre for CALIBRATING prose degeneracy —
-code is legitimately repetitive. They serve instead as a false-positive
-guard (spec §3 amendment): healthy output of a repetitive genre that
-must not flag. Measured against
-``qwen2.5-coder-7b-instruct-q8_0-quick.jsonl`` (all 10 replies of >= 50
-words), the worst healthy case scores distinct=0.961 and zlib=0.400 —
-clear of both assumed floors, so no downward adjustment was needed.
-Widened to all 23 committed transcripts (248 replies), still nothing
-flags, but the headroom is thinner than that one file suggests: the
-tightest case scores zlib=0.275, only 1.38x ``ZLIB_FLOOR``. Both numbers
-are pinned in ``tests/test_long_output.py``. Should a later guard fail,
-the floors yield: they are assumed, and the transcripts are real data.
+and JSON — legitimately repetitive, and the reason a distinct floor
+cannot be fitted to prose alone. They are the false-positive guard
+(spec §3 amendment): healthy output of a repetitive genre that must not
+flag, and their worst case is what caps how high a floor may go. Across
+all 23 files (248 replies of >= 50 words) nothing flags under either
+floor, but the margin is thin and thinner than before: worst zlib 0.2752
+is 1.076x the derived ``ZLIB_FLOOR``, worst distinct 0.5952 is 1.984x
+``DISTINCT_FLOOR``. Both edges are pinned in
+``tests/test_long_output.py``. Should a later guard fail, the floors
+yield: 0.2557 is derived from 276 samples, not from a population.
 
 ``probe_long_output`` is the other half: one call per rung up an
 escalating ladder of generation targets, scoring each reply with the
@@ -46,9 +61,14 @@ from assay.backends.base import Backend
 from assay.budget import BudgetMeter
 from assay.errors import BudgetExhausted
 
-DISTINCT_FLOOR = 0.30   # assumed, not derived — see THRESHOLDS_PROVENANCE
-ZLIB_FLOOR = 0.20       # assumed, not derived
-THRESHOLDS_PROVENANCE = "assumed-not-derived-2026-08-14"
+# ASSUMED. The anchor's clusters overlap on this metric (degenerate
+# 0.6127 > healthy 0.5952), so no floor was derivable; 0.30 is the
+# original conservative pick, kept as a redundant backstop.
+DISTINCT_FLOOR = 0.30
+# DERIVED 2026-08-15: midpoint of (0.236194, 0.275208), the gap between
+# the anchor's best degenerate reply and the worst healthy one.
+ZLIB_FLOOR = 0.2557
+THRESHOLDS_PROVENANCE = "derived-2026-08-15 (zlib only; distinct still assumed)"
 
 
 def distinct_n_ratio(text: str, n: int = 4) -> float | None:

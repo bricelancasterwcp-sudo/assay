@@ -71,9 +71,15 @@ VARIED_PROSE = (
 PATHOLOGICAL = "the same four words " * 200
 
 
-def test_thresholds_are_registered_and_marked_assumed():
-    assert (DISTINCT_FLOOR, ZLIB_FLOOR) == (0.30, 0.20)
-    assert THRESHOLDS_PROVENANCE.startswith("assumed")
+def test_thresholds_are_registered_and_the_mixed_provenance_is_explicit():
+    # Task 12 derived ZLIB_FLOOR from the anchor capture and could NOT
+    # derive DISTINCT_FLOOR (the clusters overlap on it). The provenance
+    # string has to say both halves, because it is what every profile's
+    # verdict lens quotes — a bare "derived-<date>" would claim the whole
+    # instrument was calibrated when half of it was not.
+    assert (DISTINCT_FLOOR, ZLIB_FLOOR) == (0.30, 0.2557)
+    assert THRESHOLDS_PROVENANCE.startswith("derived-2026-08-15")
+    assert "distinct still assumed" in THRESHOLDS_PROVENANCE
 
 
 def test_pathological_repetition_flags():
@@ -180,13 +186,15 @@ def test_committed_code_replies_do_not_false_positive():
 def test_no_committed_transcript_reply_false_positives():
     """The same guard widened to every committed transcript.
 
-    248 replies of >= 50 words across 23 files, and the assumed floors
-    clear all of them — but the margin is not uniform. The worst zlib is
-    0.275 (``sweep-hermes3-latest.jsonl``), only 1.38x the assumed
-    ZLIB_FLOOR of 0.20; the worst distinct is 0.5952, 1.98x
-    DISTINCT_FLOOR. Neither floor has 2x headroom against real committed
-    output, which is why the provenance string still says assumed: prose
-    from a model that hedges repetitively could plausibly sit lower.
+    248 replies of >= 50 words across 23 files, and the floors clear all
+    of them — but the margin is not uniform, and Task 12's derivation
+    made the zlib one TIGHTER, deliberately. The worst zlib is 0.2752
+    (``sweep-hermes3-latest.jsonl``), now only 1.076x the derived
+    ZLIB_FLOOR of 0.2557 where it was 1.38x the assumed 0.20; the worst
+    distinct is 0.5952, 1.98x the still-assumed DISTINCT_FLOOR. That
+    same hermes3 reply is the healthy edge the derivation used, so this
+    guard is not an independent check of it — it is the pin that stops
+    the margin being eaten silently by a later floor raise.
     """
     worst_distinct = worst_zlib = None
     seen = 0
@@ -205,11 +213,204 @@ def test_no_committed_transcript_reply_false_positives():
     assert seen == 248
     # Both headrooms pinned, so a future floor raise that eats the
     # observed margin fails here instead of silently flagging healthy
-    # committed output. Neither floor clears 2x.
+    # committed output. Neither floor clears 2x, and zlib now clears
+    # barely 1.07x — the price of deriving it.
     assert worst_distinct == pytest.approx(0.5952, abs=1e-4)
     assert worst_zlib == pytest.approx(0.2752, abs=1e-4)
+    assert worst_distinct / DISTINCT_FLOOR == pytest.approx(1.984, abs=1e-3)
+    assert worst_zlib / ZLIB_FLOOR == pytest.approx(1.076, abs=1e-3)
+    # The readable claim the exact ratios encode: neither floor has 2x
+    # headroom against real committed output, and zlib now has barely 1.1x.
     assert worst_distinct / DISTINCT_FLOOR < 2.0
-    assert worst_zlib / ZLIB_FLOOR < 2.0
+    assert worst_zlib / ZLIB_FLOOR < 1.1
+
+
+# --- Task 12: the degeneracy anchor -----------------------------------------
+#
+# The floors above are no longer guesses on the zlib side: they were fitted
+# to 28 live enumeration replies captured 2026-08-15 (ollama 0.32.13, seven
+# models, one call per rung) and committed under docs/superpowers/evidence/
+# degenerate-anchor/ with human labels. These tests read the COMMITTED text
+# — no daemon, no GPU, no network — and hold the derivation to it.
+
+
+ANCHOR = pathlib.Path(__file__).resolve().parents[1] / (
+    "docs/superpowers/evidence/degenerate-anchor")
+
+
+def _anchor_samples() -> list[dict]:
+    """Labelled anchor replies, each carrying its recorded text.
+
+    The label comes from ``labels.json`` (human judgement, recorded once);
+    the text comes from the transcript. Pairing them here means a
+    transcript edited out from under its label fails the suite rather
+    than quietly re-deriving the floors from different data.
+    """
+    labels = json.loads((ANCHOR / "labels.json").read_text())
+    texts: dict[tuple[str, int], str] = {}
+    for path in sorted(ANCHOR.glob("*-longoutput.jsonl")):
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("outcome") == "reply":
+                texts[(path.name, row["seed"])] = row["text"]
+    out = []
+    for sample in labels["samples"]:
+        text = texts[(sample["transcript"], sample["seed"])]
+        out.append({**sample, "text": text})
+    return out
+
+
+def test_the_anchor_capture_is_committed_whole():
+    samples = _anchor_samples()
+    assert len(samples) == 28  # 7 models x 4 rungs
+    assert len({s["model"] for s in samples}) == 7
+    assert sum(s["label"] == "degenerate" for s in samples) == 10
+    # The metrics recorded beside each label still describe the committed
+    # text: labels.json is evidence, not a cache that may drift.
+    for sample in samples:
+        assert distinct_n_ratio(sample["text"]) == pytest.approx(
+            sample["distinct_ratio"], abs=1e-5), sample["transcript"]
+        assert zlib_ratio(sample["text"]) == pytest.approx(
+            sample["zlib_ratio"], abs=1e-5), sample["transcript"]
+
+
+def test_every_labelled_degenerate_anchor_reply_flags():
+    """The acceptance test the floors exist to pass.
+
+    Ten replies that a human read and called degenerate — models emitting
+    one sentence over and over under a fresh number. If the instrument
+    does not flag these it does not work.
+    """
+    degenerate = [s for s in _anchor_samples() if s["label"] == "degenerate"]
+    assert len(degenerate) == 10
+    for sample in degenerate:
+        verdict = is_degenerate(distinct_n_ratio(sample["text"]),
+                                zlib_ratio(sample["text"]))
+        assert verdict is True, (
+            f"{sample['model']} seed {sample['seed']} "
+            f"({100 * sample['duplicate_item_fraction']:.0f}% duplicate items) "
+            f"read as healthy: distinct={sample['distinct_ratio']:.4f} "
+            f"zlib={sample['zlib_ratio']:.4f}")
+
+
+def test_every_labelled_healthy_anchor_reply_passes():
+    """The other half: same task, same prompt, healthy output.
+
+    18 replies from the same enumeration prompt that repeat nothing. A
+    floor that flags these is measuring the task, not the model.
+    """
+    healthy = [s for s in _anchor_samples() if s["label"] == "healthy"]
+    assert len(healthy) == 18
+    for sample in healthy:
+        verdict = is_degenerate(distinct_n_ratio(sample["text"]),
+                                zlib_ratio(sample["text"]))
+        assert verdict is False, (
+            f"{sample['model']} seed {sample['seed']} flagged: "
+            f"distinct={sample['distinct_ratio']:.4f} "
+            f"zlib={sample['zlib_ratio']:.4f}")
+
+
+def test_the_derived_zlib_floor_is_the_midpoint_of_the_measured_band():
+    """The derivation arithmetic, recomputed rather than quoted.
+
+    Floor = midpoint between the degenerate cluster's best value and the
+    healthy cluster's worst. The healthy cluster is every real healthy
+    reply available — the anchor's enumeration replies AND the committed
+    code corpus, whose worst case (0.2752) is lower than any healthy
+    enumeration and is therefore what actually caps the floor.
+    """
+    samples = _anchor_samples()
+    degenerate_best = max(zlib_ratio(s["text"])
+                          for s in samples if s["label"] == "degenerate")
+    healthy_worst_enum = min(zlib_ratio(s["text"])
+                             for s in samples if s["label"] == "healthy")
+    healthy_worst_code = min(
+        zlib_ratio(text)
+        for path in sorted(TRANSCRIPTS.glob("*.jsonl"))
+        for text in _replies(path.name)
+        if len(text.split()) >= 50)
+    assert degenerate_best == pytest.approx(0.236194, abs=1e-5)
+    assert healthy_worst_enum == pytest.approx(0.454239, abs=1e-5)
+    assert healthy_worst_code == pytest.approx(0.275208, abs=1e-5)
+    # The code genre binds, not the enumeration genre.
+    healthy_worst = min(healthy_worst_enum, healthy_worst_code)
+    assert healthy_worst == healthy_worst_code
+    assert degenerate_best < healthy_worst  # separated, so derivable
+    assert ZLIB_FLOOR == round((degenerate_best + healthy_worst) / 2, 4)
+    # And the shipped constant sits strictly inside the band it came from.
+    assert degenerate_best < ZLIB_FLOOR < healthy_worst
+
+
+def test_the_distinct_clusters_overlap_so_that_floor_could_not_be_derived():
+    """Why DISTINCT_FLOOR is still assumed, kept as a live counterexample.
+
+    A qwen2.5-coder:1.5b reply whose items 7-20 are one repeated sentence
+    scores 0.6127 on distinct-n — ABOVE the worst healthy committed code
+    reply at 0.5952. Renumbering each looped line keeps the 4-gram window
+    fed, so no single genre-agnostic distinct floor separates degenerate
+    prose from healthy code. Anyone tempted to fit one later has to get
+    past this test first.
+    """
+    samples = _anchor_samples()
+    degenerate_best = max(distinct_n_ratio(s["text"])
+                          for s in samples if s["label"] == "degenerate")
+    healthy_worst_code = min(
+        distinct_n_ratio(text)
+        for path in sorted(TRANSCRIPTS.glob("*.jsonl"))
+        for text in _replies(path.name)
+        if len(text.split()) >= 50)
+    assert degenerate_best == pytest.approx(0.612745, abs=1e-5)
+    assert healthy_worst_code == pytest.approx(0.595238, abs=1e-5)
+    assert degenerate_best > healthy_worst_code  # overlap: no gap to halve
+    assert DISTINCT_FLOOR == 0.30  # unchanged, and still assumed
+    # The overlapping degenerate reply is caught anyway — by zlib, which
+    # is the whole reason two orthogonal metrics are read.
+    overlapper = max((s for s in samples if s["label"] == "degenerate"),
+                     key=lambda s: distinct_n_ratio(s["text"]))
+    assert distinct_n_ratio(overlapper["text"]) > DISTINCT_FLOOR
+    assert zlib_ratio(overlapper["text"]) < ZLIB_FLOOR
+
+
+def test_the_derived_floor_catches_what_the_assumed_floor_missed():
+    """What deriving bought: two real misses fixed, no new false positive.
+
+    Under the old assumed 0.20 the anchor's degenerate cluster scored
+    8/10 — and two of those eight passed at 0.1976 and 0.1997, which is
+    luck, not calibration. Under 0.2557 it scores 10/10 while every
+    healthy sample still clears.
+    """
+    assumed_zlib_floor = 0.20  # the pre-Task-12 value, pinned as history
+    samples = _anchor_samples()
+    missed = [s for s in samples
+              if s["label"] == "degenerate"
+              and distinct_n_ratio(s["text"]) >= DISTINCT_FLOOR
+              and zlib_ratio(s["text"]) >= assumed_zlib_floor]
+    assert {(s["model"], s["seed"]) for s in missed} == {
+        ("qwen2.5-coder:0.5b-instruct-q8_0", 1103),
+        ("qwen2.5-coder:1.5b", 1101),
+    }
+    for sample in missed:
+        assert is_degenerate(distinct_n_ratio(sample["text"]),
+                             zlib_ratio(sample["text"])) is True
+
+
+def test_the_anchor_labels_never_came_near_their_own_boundary():
+    """The labels are human, so their credibility is worth pinning.
+
+    Samples were sorted by reading them; ``duplicate_item_fraction`` (the
+    share of numbered items restating an earlier one verbatim) is the
+    recorded audit trail, not a third metric — nothing in src/ computes
+    it. The clusters do not touch on it, so no label was a coin flip.
+    """
+    samples = _anchor_samples()
+    healthy = [s["duplicate_item_fraction"]
+               for s in samples if s["label"] == "healthy"]
+    degenerate = [s["duplicate_item_fraction"]
+                  for s in samples if s["label"] == "degenerate"]
+    assert max(healthy) == 0.0
+    assert min(degenerate) >= 0.50
 
 
 # --- Task 8: probe_long_output ----------------------------------------------
