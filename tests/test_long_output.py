@@ -1,15 +1,21 @@
-"""Tasks 7 and 8 tests: long-output degeneracy metrics and the probe.
+"""Tasks 7, 8 and 12 tests: long-output degeneracy metrics and the probe.
 
-The floors these tests exercise are ASSUMED, not derived (Task 12 does
-the deriving), so the tests deliberately pin two different kinds of
-thing: synthetic extremes that any sane floor must separate, and one
-guard against REAL committed output. The guard is the load-bearing
-one — code replies are healthy output of a repetitive genre, and if the
-assumed floors flagged them the floors would be too hot.
+Three kinds of pin, in ascending order of how much they are worth:
+synthetic extremes that any sane floor must separate; a false-positive
+guard against REAL committed code replies, which are healthy output of a
+repetitive genre and would be flagged by a floor set too hot; and the
+Task 12 anchor — 28 live enumeration replies, labelled by reading them,
+which is where ZLIB_FLOOR was actually derived from and which the
+derivation arithmetic is recomputed against here rather than quoted.
+DISTINCT_FLOOR is still assumed, and the reply that made it underivable
+is pinned as a live counterexample.
 
-The Task 8 half below tests the escalating-rung probe: what it asks
-for, what it charges, and — the part worth the most — what it refuses
-to claim when a rung never ran or came back empty.
+The Task 8 half tests the escalating-rung probe: what it asks for, what
+it charges, and — the part worth the most — what it refuses to claim
+when a rung never ran or came back empty.
+
+Everything is offline: the anchor tests read committed transcripts, and
+the probe-level ones replay them through CallReplayer. No daemon, no GPU.
 """
 
 import dataclasses
@@ -19,7 +25,7 @@ import pathlib
 import pytest
 from fakes import ScriptedBackend
 
-from assay.backends.base import Reply
+from assay.backends.base import BackendCaps, Reply
 from assay.budget import Budget, BudgetMeter
 from assay.errors import BudgetExhausted, InfrastructureError
 from assay.long_output import (
@@ -37,6 +43,7 @@ from assay.long_output import (
     probe_long_output,
     zlib_ratio,
 )
+from assay.replay import CallReplayer
 
 TRANSCRIPTS = pathlib.Path(__file__).resolve().parents[1] / "docs/evidence-transcripts"
 
@@ -394,6 +401,46 @@ def test_the_derived_floor_catches_what_the_assumed_floor_missed():
     for sample in missed:
         assert is_degenerate(distinct_n_ratio(sample["text"]),
                              zlib_ratio(sample["text"])) is True
+
+
+def _anchor_replay(transcript: str):
+    """Re-run probe_long_output over a committed anchor transcript.
+
+    The strongest form of the acceptance test: not the metrics in
+    isolation but the whole probe — ladder, scoring, rung assembly —
+    against text a real daemon really produced. CallReplayer is strict,
+    so this also proves the transcript is complete and correctly keyed.
+    """
+    path = ANCHOR / transcript
+    model = json.loads(path.read_text().splitlines()[0])["model"]
+    backend = CallReplayer(path, model=model, caps=BackendCaps(
+        reports_counts=True, per_request_ctx=True,
+        truncate_control=True, metadata_access=True))
+    return probe_long_output(backend, long_meter(), ceiling_max=None)
+
+
+def test_the_anchor_degenerate_transcript_replays_and_every_rung_flags():
+    out = _anchor_replay("qwen2.5-coder-0.5b-instruct-q8_0-longoutput.jsonl")
+    assert tuple(r.target_tokens for r in out.rungs) == RUNGS
+    assert [r.degenerate for r in out.rungs] == [True, True, True, True]
+    # The 4096 rung is the one the assumed 0.20 floor let through.
+    assert out.rungs[3].zlib_ratio == pytest.approx(0.2362, abs=1e-4)
+    assert out.rungs[3].distinct_ratio == pytest.approx(0.5431, abs=1e-4)
+
+
+def test_the_anchor_healthy_transcript_replays_and_no_rung_flags():
+    out = _anchor_replay("gemma2-9b-longoutput.jsonl")
+    assert tuple(r.target_tokens for r in out.rungs) == RUNGS
+    assert [r.degenerate for r in out.rungs] == [False] * 4
+
+
+def test_the_anchor_mixed_transcript_locates_where_the_model_degrades():
+    # The ladder shape the family exists to find, from real output: a q4
+    # 1.5b that is clean at 512, loops at 1024 and 2048, and comes back
+    # clean at 4096 (where it happened to stop after 138 tokens).
+    # Degeneracy is per-generation, not a switch thrown once at a size.
+    out = _anchor_replay("qwen2.5-coder-1.5b-longoutput.jsonl")
+    assert [r.degenerate for r in out.rungs] == [False, True, True, False]
 
 
 def test_the_anchor_labels_never_came_near_their_own_boundary():
