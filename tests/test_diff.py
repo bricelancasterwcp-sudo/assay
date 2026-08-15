@@ -177,6 +177,43 @@ def test_emulated_mismatch_is_fatal():
     assert comparable is False
 
 
+def test_an_unmarked_profile_reads_as_not_recorded_not_as_a_disagreement():
+    """A v1 profile has no tier keys at all. That is still fatal — an
+    undeclared tier is unknown hardware — but the note must not claim
+    the two runs disagreed about the hardware."""
+    old = make_profile()
+    del old["provenance"]["tier"]
+    del old["provenance"]["emulated"]
+    comparable, notes = identity_gate(old, make_profile())
+    assert comparable is False
+    assert any("provenance.tier not recorded on one side" in note for note in notes)
+    assert any("provenance.emulated not recorded on one side" in note
+               for note in notes)
+    assert not any("differs" in note for note in notes)
+
+
+def test_a_null_tier_reads_as_not_recorded_too():
+    """Present-with-null is the same claim as absent: nobody declared it."""
+    comparable, notes = identity_gate(
+        make_profile(tier=None, emulated=None), make_profile())
+    assert comparable is False
+    assert all("not recorded on one side" in note for note in notes)
+
+
+def test_a_real_tier_disagreement_still_says_differs():
+    comparable, notes = identity_gate(make_profile(),
+                                      make_profile(tier="enthusiast-16gb"))
+    assert comparable is False
+    assert any("provenance.tier differs: 'average-gamer-8gb'"
+               " -> 'enthusiast-16gb'" in note for note in notes)
+
+
+def test_a_real_emulated_disagreement_still_says_differs():
+    _, notes = identity_gate(make_profile(), make_profile(emulated=True))
+    assert any("provenance.emulated differs: False -> True" in note
+               for note in notes)
+
+
 def test_identity_notes_survive_into_the_result():
     result = diff_profiles(make_profile(quant=None), make_profile())
     assert result.comparable is True
@@ -552,6 +589,27 @@ def test_render_keeps_rates_looking_like_rates():
     result = diff_profiles(make_profile(codecs=_one_cell_codecs(1.0, 35)),
                            make_profile(codecs=_one_cell_codecs(0.0, 35)))
     assert "codec.json_object.small.lands: 1.0 -> 0.0" in render_diff(result)
+
+
+def test_render_preserves_a_fractional_speed_value():
+    """The rendered number IS the measured number: 3456.78 tok/s must
+    not reach the page as 3457.0, which would assert a precision the
+    measurement never had."""
+    old = make_speed(prefill_tps=3456.78, prefill_samples=None)
+    new = make_speed(prefill_tps=1234.5, prefill_samples=None)
+    text = render_diff(diff_profiles(make_profile(speed=old),
+                                     make_profile(speed=new)))
+    assert ("speed.prefill_tps: 3456.78 -> 1234.5"
+            " (regression, threshold-20pct-assumed)" in text)
+
+
+def test_render_never_falls_back_to_scientific_notation():
+    old = make_speed(prefill_tps=12345.6, prefill_samples=None)
+    new = make_speed(prefill_tps=1000.0, prefill_samples=None)
+    text = render_diff(diff_profiles(make_profile(speed=old),
+                                     make_profile(speed=new)))
+    assert "speed.prefill_tps: 12345.6 -> 1000.0" in text
+    assert "e+" not in text
 
 
 def test_render_prints_the_assumed_basis_verbatim():

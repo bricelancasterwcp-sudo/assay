@@ -17,7 +17,9 @@ on all five are the same model on the same class of machine as far as
 the record can tell; quant or size known on only one side is a warning
 (the older file simply did not record it), a *disagreement* is fatal.
 Tier is stricter than quant: an undeclared tier is not a benign unknown
-because the number's meaning depends on the hardware under it.
+because the number's meaning depends on the hardware under it — though
+the note for it says "not recorded on one side", never "differs", so a
+schema-era gap is not read as two machines disagreeing.
 
 **Drift vs noise.** A diff that reports every wobble is a diff nobody
 reads. Each family is judged by the strongest evidence its cells carry:
@@ -135,9 +137,20 @@ def identity_gate(old: dict, new: dict) -> tuple[bool, tuple[str, ...]]:
 
     for field in ("tier", "emulated"):
         old_value, new_value = old_prov.get(field), new_prov.get(field)
-        if old_value != new_value:
+        if old_value == new_value:
+            continue
+        # Still fatal — an undeclared tier is unknown hardware, which is
+        # what this gate exists to catch — but a v1 profile that predates
+        # the marking did not DISAGREE about the hardware, and a note
+        # saying it did would send a reader looking for a machine that
+        # changed. Absent and present-with-null make the same claim:
+        # nobody declared it.
+        if old_value is None or new_value is None:
+            notes.append(f"provenance.{field} not recorded on one side: "
+                         f"{old_value!r} -> {new_value!r}")
+        else:
             notes.append(_differs(f"provenance.{field}", old_value, new_value))
-            fatal = True
+        fatal = True
 
     return (not fatal), tuple(notes)
 
@@ -409,15 +422,19 @@ def diff_profiles(old: dict, new: dict) -> DiffResult:
 
 
 def _show(value: object) -> str:
-    """Unmeasured is SAID (render_table's rule), and a float keeps its
-    decimal point: a landing rate printed as ``1 -> 0`` reads like a
-    count of something."""
-    if value is None:
-        return UNMEASURED
-    if isinstance(value, float):
-        text = f"{value:.4g}"
-        return text if any(mark in text for mark in ".e") else text + ".0"
-    return str(value)
+    """Unmeasured is SAID (``render_table``'s rule) and the rendered
+    number IS the measured number.
+
+    Plain ``str``, the same rule ``profile._show`` uses, so a field
+    prints identically in ``render_table`` and here. Python's float
+    ``str`` is the shortest text that round-trips: it neither rounds
+    3456.78 tok/s to 3457 — a precision the measurement never had,
+    asserted by a diff that exists to catch exactly that kind of drift
+    — nor drops into scientific notation at report magnitudes, and it
+    always keeps the decimal point, so a landing rate never reaches the
+    page as ``1 -> 0`` and reads like a count of something.
+    """
+    return UNMEASURED if value is None else str(value)
 
 
 def render_diff(result: DiffResult) -> str:
