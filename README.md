@@ -31,7 +31,8 @@ one failure mode nothing was watching.
   difference between two timestamps. diff gates on subject identity
   first, then reports only what moved *beyond noise*: codec cells when
   their Wilson intervals are disjoint, speeds against a 2-SE band
-  computed from the per-call samples the speed probe now records.
+  computed from the per-call samples the speed probe now records (and,
+  where a side has too few of those, an assumed threshold that says so).
   `--gate` turns it into a CI check that fails on regressions only. See
   [assay diff](#assay-diff).
 - **Long-output integrity** — the v1 live validation watched a model
@@ -197,11 +198,12 @@ Flags: `--full | --thorough | --quick` (`--full` is the default;
 `--emulated` or `--real-hardware`), `--directives JSON` (your own codec
 presentation).
 
-Exit codes for the measuring commands (`probe`, the family slices,
-`report`): `0` profile/slice/report produced (whatever it says), `2`
-budget exhausted before any probe family completed, `4` infrastructure
-failure before any measurement. `diff` measures nothing, so it uses its
-own codes — see [assay diff](#assay-diff).
+Exit codes for the probing commands (`probe` and the family slices):
+`0` profile/slice produced (whatever it says), `2` budget exhausted
+before any probe family completed, `4` infrastructure failure before any
+measurement. `report` spends no budget and so can only exit `0` or `4`
+(an unreadable or version-less profile). `diff` measures nothing either,
+and uses its own codes — see [assay diff](#assay-diff).
 
 As a library:
 
@@ -280,13 +282,16 @@ calls instead — but only the calls the question needs.
   `json_object` (where validation is the landing) and
   applies-and-parses for the patch codecs, so no cell is ever ended by
   a lens no verdict uses.
-- **`--quick` keeps fixed n=5** for time-boxed probes, and says so:
-  every verdict's lens carries `stopping_rule` — `"fixed-n"` or
-  `"wilson95-looks-5-10-20-35"` — plus the `n_used` it was actually
-  computed from. A verdict that stopped at n=5 is distinguishable from
-  a v1.3 fixed-n=5 verdict by its lens, not by guessing from context.
-  An unmeasured cell gets no `n_used` entry at all: `n_used: 0` would
-  read as a verdict graded on zero samples.
+- **`--quick` keeps fixed n=5** for time-boxed probes, and says so: the
+  **two codec lenses** — `structured_extraction` and `patch_editing`,
+  the only verdicts sequential sampling governs — carry `stopping_rule`
+  (`"fixed-n"` or `"wilson95-looks-5-10-20-35"`) plus the `n_used` they
+  were computed from. The other five verdicts have their own lens
+  shapes and neither key. A codec verdict that stopped at n=5 is
+  distinguishable from a v1.3 fixed-n=5 verdict by its lens, not by
+  guessing from context; an unmeasured cell gets no `n_used` entry at
+  all, because `n_used: 0` would read as a verdict graded on zero
+  samples.
 - **The budget is still the outer bound.** A cell stopped by the meter
   mid-schedule reports its honest partial n, and the profile can tell
   that apart from a cell the rule decided.
@@ -345,22 +350,41 @@ and reports what moved. It touches no endpoint and spends no budget.
 weight size, same declared tier, same emulated/real-hardware marking —
 any mismatch and the pair is *not comparable*, with nothing scored at
 all. Half a comparison between two different models is worse than none,
-because a rung difference between two subjects is not drift. A field
-recorded on only one side (an older profile that predates the marking)
-is a note, not a mismatch — absent and present-with-null make the same
-claim: nobody declared it.
+because a rung difference between two subjects is not drift.
+
+One-sided fields split two ways, and the split is deliberate.
+`model.quant` and `model.weights_bytes` known on only one side are a
+**note, not a mismatch** — an older profile simply did not record them,
+and the pair still compares. `provenance.tier` and
+`provenance.emulated` are **still fatal** when either side lacks them:
+an undeclared tier is unknown hardware, which is precisely what this
+gate exists to catch. What softens there is only the wording — "not
+recorded on one side" rather than "differs", because a profile that
+predates the marking did not *disagree* about the machine, and a note
+saying it did would send a reader hunting for hardware that changed.
+The practical consequence, worth knowing before you wire this into CI:
+**a pre-tier baseline cannot be diffed against a tier-marked profile.**
+It exits 2. Re-baseline with a marked run.
 
 **Then noise is separated from drift**, per family:
 
 - **codec cells** flag only when the two Wilson intervals are
   **disjoint**; overlapping intervals are reported as within-noise by
   name, not silently dropped;
-- **speeds** flag beyond a 2-SE band computed from the per-call samples
-  both sides recorded. Against a pre-v5 profile that has none, diff
-  falls back to a fixed 20% relative threshold and labels that line as
-  assumed rather than derived;
+- **speeds** flag beyond a 2-SE Welch band — but only when **both**
+  sides carry at least two per-call samples. Whenever either side has
+  fewer, diff falls back to a fixed 20% relative threshold and stamps
+  the line `threshold-20pct-assumed`. That covers more than old
+  profiles: a pre-v5 profile with no samples at all, a cell that
+  sampled and accepted nothing, **and any `--quick` profile**, which
+  spends a single decode call. Two current v5 quick profiles diff their
+  speeds under the assumed rule, not the derived one;
 - **ceiling rungs, shape flips, and verdict ladders** are exact
-  comparisons, classified grew/shrank and improvement/regression;
+  comparisons. Each change carries a `direction` — `regression`,
+  `improvement`, or `neutral` (honest-to-honest ceiling modes and
+  provisional-flag flips are facts, not grades) — and a `basis` naming
+  the rule that flagged it: `rung-change`, `flip`,
+  `disjoint-intervals`, `beyond-2se`, `threshold-20pct-assumed`;
 - **a cell present on one side only** goes in `dropped` — never scored
   as regression or improvement. Absence of evidence is absence.
 
@@ -390,7 +414,7 @@ carries an answer:
 |---|---|
 | `0` | comparable, nothing moved beyond noise (with `--gate`: nothing moved in the regression direction) |
 | `1` | drift found (with `--gate`: a **regression** was found; an improvement alone still exits 0) |
-| `2` | not comparable — a different model, quant, weight size, or hardware tier |
+| `2` | not comparable — a different model, quant, weight size, or hardware tier, **or** a tier/emulated marking recorded on only one side |
 | `4` | a profile file could not be read or parsed. Never `1`: exit 1 claims a measured change, and an unreadable file measured nothing |
 
 `--gate` is the CI shape: a model that got *faster* should not fail a
