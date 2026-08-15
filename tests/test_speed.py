@@ -181,6 +181,21 @@ def test_unmeasured_probe_records_no_samples_but_not_none():
     assert speed.prefill_samples == ()
 
 
+def test_budget_death_between_decode_and_prefill_keeps_a_measured_half():
+    # The reachable mixed state: one call of budget buys the decode
+    # probe and leaves nothing for prefill. The cell SURVIVES into the
+    # profile (run.probe only drops it when both n are zero), so an
+    # empty prefill_samples tuple is a shape that really gets written
+    # to disk — not a theoretical one.
+    meter_ = BudgetMeter(Budget(max_calls=1, max_prompt_tokens=10**9))
+    speed = probe_speed(SpeedFake(OLLAMA_RAW), meter_, calibration=None,
+                        clock=ticking_clock())
+    assert speed.n_decode == 1 and speed.n_prefill == 0
+    assert speed.decode_samples == (16.0,)
+    assert speed.prefill_samples == ()
+    assert speed.prefill_tps is None
+
+
 def test_old_speed_payload_still_parses_with_none_samples():
     # A v1.4 profile on disk has no samples at all. It must still
     # construct, and it must say "not recorded" — never an empty tuple

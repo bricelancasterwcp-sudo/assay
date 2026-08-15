@@ -175,6 +175,23 @@ def test_speed_payload_predating_samples_parses_as_none():
     assert speed.prefill_samples is None
 
 
+def test_empty_speed_samples_parse_as_an_empty_TUPLE_not_a_list():
+    # This payload is reachable: a probe whose budget dies between the
+    # decode calls and the prefill call is KEPT (run.py only drops a
+    # speed cell when both n are zero) and writes "prefill_samples": [].
+    # A falsy-check in the parser would leave that as a list inside a
+    # frozen dataclass, and the profile would stop comparing equal to
+    # itself across a round trip — the exact bug the coercion prevents.
+    from assay.profile import _speed_from
+    speed = _speed_from({"decode_tps": 16.0, "prefill_tps": None,
+                         "evidence": "server_timings",
+                         "n_decode": 1, "n_prefill": 0,
+                         "decode_samples": [16.0], "prefill_samples": []})
+    assert speed.prefill_samples == ()
+    assert isinstance(speed.prefill_samples, tuple)
+    assert speed.decode_samples == (16.0,)
+
+
 def test_speed_samples_explicitly_null_stay_none():
     # An unmeasured probe serialized with nulls must not be coerced into
     # tuple(None) — the parser has to guard the None case.
