@@ -174,7 +174,7 @@ calls / 500k — overridable with `--max-calls` / `--max-prompt-tokens`.
 
 ## The profile
 
-One versioned JSON document (`assay_profile_version: 3`). Every field is
+One versioned JSON document (`assay_profile_version: 5`). Every field is
 a measurement, a `None` with a named reason, or provenance.
 
 | Field | What it says |

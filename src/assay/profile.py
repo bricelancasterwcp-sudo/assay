@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from assay.ceiling import CallEvidence, Ceiling, ShapeCeiling
 from assay.codecs import Landing
 from assay.fixtures import FIXTURE_SET
+from assay.long_output import (DISTINCT_FLOOR, LONG_OUTPUT_TASK,
+                               THRESHOLDS_PROVENANCE, ZLIB_FLOOR, LongOutput,
+                               LongRung)
 from assay.loop import LOOP_INSTRUMENT, Loop
 from assay.envelope import Envelope
 from assay.geometry import Geometry
@@ -31,9 +34,15 @@ from assay.stats import RISKY_THRESHOLD as _RISKY_THRESHOLD  # noqa: F401
 from assay.stats import ladder as _ladder
 from assay.stats import wilson95
 
-PROFILE_VERSION = 4
+PROFILE_VERSION = 5
 
-_FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs", "speed", "loop")
+_FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
+             "speed", "loop", "long_output")
+#: Families the v1 schema did not have. A document written before one of
+#: them existed simply has no key for it — a different fact from a
+#: modern document that writes ``null`` because the family measured
+#: nothing, and ``from_json`` keeps the two apart (spec §4).
+_POST_V1_FAMILIES = ("ceiling_shapes", "speed", "loop", "long_output")
 _GRADE_FOR_VERDICTS = "small"
 _LONG_CONTEXT_TOKENS = 16384
 _TRUNCATION_GUARD_TOKENS = 4096
@@ -64,6 +73,7 @@ class Profile:
     codecs: dict[str, dict[str, Landing]] | None
     speed: Speed | None
     loop: Loop | None
+    long_output: LongOutput | None
     verdicts: dict[str, dict]
     provenance: dict  # started/finished/mode/seeds/budget/spent/calibration/dropped
 
@@ -81,6 +91,18 @@ class Profile:
 
     @classmethod
     def from_json(cls, payload: dict) -> "Profile":
+        """Parse any profile this project has ever written (spec §4).
+
+        The v1 families and ``verdicts``/``provenance`` are REQUIRED: a
+        document without them is not a profile, and pretending otherwise
+        would let an arbitrary JSON object parse as one. The families
+        added after v1 are read with ``.get()`` — absent means the schema
+        predated them, which is not a malformed profile — and every
+        family the old document could not carry is named in the parsed
+        ``provenance.dropped`` so the None-vs-zero rule survives the
+        version boundary (an unnamed None is exactly the silent gap the
+        __post_init__ guard exists to refuse).
+        """
         return cls(
             assay_profile_version=payload["assay_profile_version"],
             probe_version=payload["probe_version"],
@@ -88,14 +110,39 @@ class Profile:
             model=payload["model"],
             geometry=_geometry_from(payload["geometry"]),
             ceiling=_ceiling_from(payload["ceiling"]),
-            ceiling_shapes=_shapes_from(payload["ceiling_shapes"]),
+            ceiling_shapes=_shapes_from(payload.get("ceiling_shapes")),
             envelope=_envelope_from(payload["envelope"]),
             codecs=_codecs_from(payload["codecs"]),
-            speed=_speed_from(payload["speed"]),
-            loop=_loop_from(payload["loop"]),
+            speed=_speed_from(payload.get("speed")),
+            loop=_loop_from(payload.get("loop")),
+            long_output=_long_output_from(payload.get("long_output")),
             verdicts=payload["verdicts"],
-            provenance=payload["provenance"],
+            provenance=_provenance_naming_absent_families(payload),
         )
+
+
+def _provenance_naming_absent_families(payload: dict) -> dict:
+    """The payload's provenance, plus a dropped line per absent family.
+
+    Only families with NO key at all are named here. A family present
+    and null was written by a schema that had it and measured nothing —
+    if that run failed to name it, the guard must still refuse the
+    profile rather than paper over it on the way in.
+
+    The input payload is never mutated: a caller who re-serializes the
+    dict it passed in must get back what it read from disk.
+    """
+    provenance = payload["provenance"]
+    absent = [family for family in _POST_V1_FAMILIES if family not in payload]
+    if not absent:
+        return provenance
+    version = payload.get("assay_profile_version")
+    dropped = list(provenance.get("dropped") or [])
+    dropped += [
+        f"{family}: not present in the parsed profile (schema v{version})"
+        for family in absent
+    ]
+    return {**provenance, "dropped": dropped}
 
 
 def _geometry_from(payload: dict | None) -> Geometry | None:
@@ -138,13 +185,38 @@ def _loop_from(payload: dict | None) -> Loop | None:
     return None if payload is None else Loop(**payload)
 
 
+def _long_output_from(payload: dict | None) -> LongOutput | None:
+    if payload is None:
+        return None
+    # JSON has no tuples: rungs and skip reasons come back as lists and
+    # must be coerced, or a round-tripped profile stops comparing equal
+    # to itself.
+    return LongOutput(
+        rungs=tuple(LongRung(**rung) for rung in payload["rungs"]),
+        skipped=tuple(payload["skipped"]),
+    )
+
+
 def _codecs_from(
     payload: dict | None,
 ) -> dict[str, dict[str, Landing]] | None:
     if payload is None:
         return None
     return {
-        codec: {grade: Landing(**cell) for grade, cell in grades.items()}
+        codec: {
+            grade: Landing(
+                lands=cell["lands"],
+                # v1 cells have no applies-and-parses column: that lens
+                # did not exist when they were written, so it reads
+                # None — unmeasured. Copying `lands` across would
+                # fabricate a measurement under an instrument that never
+                # ran (the 2026-08-12 finding: the same model scores 0%
+                # and 100% depending on which lens is asked).
+                lands_applies=cell.get("lands_applies"),
+                n=cell["n"],
+            )
+            for grade, cell in grades.items()
+        }
         for codec, grades in payload.items()
     }
 
@@ -194,6 +266,65 @@ def _loop_verdict(loop: Loop | None) -> dict:
             "interval95": [round(lo, 3), round(hi, 3)],
             "lens": {"instrument": LOOP_INSTRUMENT,
                      "fixtures": FIXTURE_SET, "temperature": 0.2}}
+
+
+def _long_output_lens() -> dict:
+    """What a long_output verdict was judged by — floors included.
+
+    The floors are ASSUMED, not derived (see long_output's module
+    docstring), and the lens carries that provenance string so no reader
+    has to go looking for it: a verdict quoted without its thresholds is
+    not a model property.
+    """
+    return {
+        "metrics": "distinct4gram+zlib",
+        "distinct_floor": DISTINCT_FLOOR,
+        "zlib_floor": ZLIB_FLOOR,
+        "thresholds": THRESHOLDS_PROVENANCE,
+        "task": LONG_OUTPUT_TASK,
+        "temperature": 0.2,
+    }
+
+
+def _long_output_verdict(long_output: LongOutput | None) -> dict:
+    """Where a long generation stops holding together, if it does.
+
+    Only rungs with a MEASURED degenerate (True or False) count. A rung
+    whose reply was too short to score is neither a measurement nor a
+    skipped rung — it spent a call and learned nothing (ruled
+    2026-08-14) — so a ladder with no scorable rung reads "unmeasured",
+    never "ready": nothing was found healthy, it was merely not found
+    degenerate.
+
+    Among the scorable rungs: none degenerate -> "ready"; the FIRST
+    scorable rung degenerate -> "unusable" (the smallest target this
+    ladder could measure was already looping); a later one ->
+    "degrades-at-<target>", naming the rung. Unscorable rungs never
+    stand in for healthy ones, which is why the index is taken over the
+    scorable rungs rather than over the ladder.
+
+    ``provisional`` is forced True for any measured verdict while the
+    floors are assumed rather than derived — the spec's cap. It is False
+    for "unmeasured", which claims nothing a better threshold could
+    revise.
+    """
+    scorable = [] if long_output is None else [
+        rung for rung in long_output.rungs if rung.degenerate is not None
+    ]
+    if not scorable:
+        return {"verdict": "unmeasured", "provisional": False,
+                "lens": _long_output_lens()}
+    first_bad = next(
+        (i for i, rung in enumerate(scorable) if rung.degenerate), None)
+    if first_bad is None:
+        verdict = "ready"
+    elif first_bad == 0:
+        verdict = "unusable"
+    else:
+        verdict = f"degrades-at-{scorable[first_bad].target_tokens}"
+    return {"verdict": verdict,
+            "provisional": THRESHOLDS_PROVENANCE.startswith("assumed"),
+            "lens": _long_output_lens()}
 
 
 def _long_context(ceiling: Ceiling | None) -> str:
@@ -282,6 +413,7 @@ def compute_verdicts(
     codecs: dict[str, dict[str, Landing]] | None,
     speed: Speed | None = None,
     loop: Loop | None = None,
+    long_output: LongOutput | None = None,
     *,
     presentation: str = "default-v1",
     stopping_rule: str = "fixed-n",
@@ -378,6 +510,7 @@ def compute_verdicts(
                      "evidence": ("unmeasured" if speed is None
                                   else speed.evidence)},
         },
+        "long_output": _long_output_verdict(long_output),
     }
 
 
@@ -438,6 +571,28 @@ def _render_codecs(codecs: dict[str, dict[str, Landing]] | None) -> list[str]:
     return lines
 
 
+def _render_long_output(long_output: LongOutput | None) -> str:
+    if long_output is None:
+        return "long_output unmeasured"
+    scorable = [rung for rung in long_output.rungs
+                if rung.degenerate is not None]
+    if not scorable:
+        # Calls were spent and nothing was scored: say unmeasured, and
+        # say how many rungs were asked, so the spend is visible.
+        return ("long_output unmeasured"
+                f" ({len(long_output.rungs)} rungs attempted, none scorable)")
+    first_bad = next((rung for rung in scorable if rung.degenerate), None)
+    state = (
+        f"healthy through {scorable[-1].target_tokens} tokens"
+        if first_bad is None
+        else f"degenerate from {first_bad.target_tokens} tokens"
+    )
+    line = f"long_output {state} (rungs scored {len(scorable)})"
+    if long_output.skipped:
+        line += " | skipped " + "; ".join(long_output.skipped)
+    return line
+
+
 def render_table(profile: Profile) -> str:
     """Human view of a profile. Unmeasured is SAID, never shown as 0."""
     endpoint = profile.endpoint
@@ -460,6 +615,7 @@ def render_table(profile: Profile) -> str:
          f"speed      decode {_show(profile.speed.decode_tps)} tok/s | "
          f"prefill {_show(profile.speed.prefill_tps)} tok/s "
          f"({profile.speed.evidence})"),
+        _render_long_output(profile.long_output),
         "verdicts   "
         + " | ".join(f"{name}: {entry['verdict']}"
                      for name, entry in profile.verdicts.items()),

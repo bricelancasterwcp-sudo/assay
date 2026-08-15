@@ -56,12 +56,21 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 # default below the suite's own call count exhausts mid-family on every
 # run (this bit once at 60 and nearly again at 80). Quick: 2 calibration
 # + 5 ladder + ~7 bisection + 9 shape probes + 10 envelope + 45 codecs +
-# 9 loop + 2 speed ≈ 89. Full is now sequential, so its worst case IS
-# thorough's old worst case (no cell decides early and every one runs to
-# the 35-sample cap): 2 calibration + ~12 ladder + 9 shapes + 30
-# envelope + up to 315 codec + 15 loop + 4 speed ≈ 387. A typical run
-# stops well short of that — the budget covers the case where nothing
-# decides.
+# 9 loop + 2 speed + 4 long-output rungs ≈ 93 of 110. Full is now
+# sequential, so its worst case IS thorough's old worst case (no cell
+# decides early and every one runs to the 35-sample cap): 2 calibration
+# + ~12 ladder + 9 shapes + 30 envelope + up to 315 codec + 15 loop +
+# 4 speed + 4 long-output rungs ≈ 391 of 500. A typical run stops well
+# short of that — the budget covers the case where nothing decides.
+#
+# Token side (v1.5): the long-output ladder is the one family whose
+# charge is dominated by GENERATION, not prompt — 4 rungs at
+# 512/1024/2048/4096 charge 7,832 tokens, because a 4096-token
+# generation shares the window with its prompt and must not be priced
+# like a 512-token one. Measured on the scripted suite, a clean quick
+# run now spends 75,024 of 200,000 prompt tokens and a clean full run
+# 213,455 of 1,000,000; the worst case (a failing ceiling ladder adds
+# its bisection calls) stays inside both. No budget needed raising.
 DEFAULT_BUDGETS = {
     "quick": Budget(max_calls=110, max_prompt_tokens=200_000),
     "full": Budget(max_calls=500, max_prompt_tokens=1_000_000),

@@ -3,7 +3,9 @@
 import json
 
 import pytest
-from fakes import CodecFailingBackend, MetadataFreeBackend, ScriptedBackend
+from fakes import (CodecFailingBackend, LongOutputDegradingBackend,
+                   LongOutputTerseBackend, MetadataFreeBackend,
+                   ScriptedBackend)
 
 from assay import Budget, Profile, probe
 
@@ -13,7 +15,8 @@ _VRAM_MIB = 14558
 # Quick mode against ScriptedBackend, call by call: 2 calibration,
 # 5 ladder sizes (1024..16384, one seed, no bisection when clean),
 # 10 envelope, 3 codecs x 3 grades x 5 = 45 codec probes.
-_QUICK_CALLS_TOTAL = 2 + 5 + 9 + 10 + 45 + 9 + 2  # +shapes +loop (v1.4)
+# +shapes +loop (v1.4), +4 long-output rungs (v1.5).
+_QUICK_CALLS_TOTAL = 2 + 5 + 9 + 10 + 45 + 9 + 2 + 4
 _CALLS_THROUGH_CEILING = 2 + 5
 
 
@@ -69,6 +72,7 @@ def test_full_pipeline_produces_complete_profile():
         "loop_discipline": "ready",
         "chat_speed": "ready",
         "agent_speed": "ready",
+        "long_output": "ready",
     }
     assert profile.speed is not None
     assert profile.speed.decode_tps == 16.0
@@ -418,6 +422,104 @@ def test_speed_decode_calls_follow_the_mode(mode, budget, expected):
     assert profile.speed.n_decode == expected
     assert len(profile.speed.decode_samples) == expected
     assert len(profile.speed.prefill_samples) == profile.speed.n_prefill == 1
+
+
+def test_long_output_family_climbs_the_full_ladder_on_a_healthy_endpoint():
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", _backend_override=ScriptedBackend(),
+    )
+    assert profile.long_output is not None
+    assert [rung.target_tokens for rung in profile.long_output.rungs] == [
+        512, 1024, 2048, 4096]
+    # The measured ceiling is 16384, so no rung is out of reach.
+    assert profile.long_output.skipped == ()
+    assert all(rung.degenerate is False for rung in profile.long_output.rungs)
+    assert profile.verdicts["long_output"]["verdict"] == "ready"
+    assert profile.verdicts["long_output"]["provisional"] is True
+    assert profile.provenance["dropped"] == []
+
+
+def test_long_output_degradation_is_located_at_the_rung_it_starts():
+    # The family exists for exactly this shape: fine at 512 and 1024,
+    # looping from 2048 up. A single-target probe cannot see it.
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", _backend_override=LongOutputDegradingBackend(2048),
+    )
+    flags = {rung.target_tokens: rung.degenerate
+             for rung in profile.long_output.rungs}
+    assert flags == {512: False, 1024: False, 2048: True, 4096: True}
+    assert profile.verdicts["long_output"]["verdict"] == "degrades-at-2048"
+
+
+def test_long_output_rungs_above_the_measured_ceiling_are_skipped_by_name():
+    # ceiling_max is the ladder's cap: a rung bigger than anything the
+    # ceiling verified is not attempted, and says why it was not.
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", window_cap=1024, _backend_override=ScriptedBackend(),
+    )
+    assert profile.ceiling.max_verified == 1024
+    assert [rung.target_tokens for rung in profile.long_output.rungs] == [512, 1024]
+    assert profile.long_output.skipped == ("2048: above measured ceiling",
+                                           "4096: above measured ceiling")
+    assert profile.verdicts["long_output"]["verdict"] == "ready"
+
+
+def test_long_output_skipped_when_the_budget_died_earlier():
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=_CALLS_THROUGH_CEILING,
+                      max_prompt_tokens=100_000),
+        mode="quick", _backend_override=ScriptedBackend(),
+    )
+    assert profile.long_output is None
+    assert "long_output: skipped, budget exhausted earlier" in (
+        profile.provenance["dropped"])
+    assert profile.verdicts["long_output"]["verdict"] == "unmeasured"
+
+
+def test_a_ladder_that_ran_no_rung_is_none_and_named():
+    # The meter runs dry inside the speed family (which does not itself
+    # declare budget death), so long_output starts on an empty meter:
+    # every rung is skipped, nothing is measured, and the family is
+    # None — named, never a silently empty ladder.
+    backend = ScriptedBackend()
+    through_speed = _QUICK_CALLS_TOTAL - 4
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=through_speed, max_prompt_tokens=1_000_000),
+        mode="quick", _backend_override=backend,
+    )
+    assert backend.calls == through_speed  # not one rung was attempted
+    assert profile.speed is not None
+    assert profile.long_output is None
+    assert any(entry.startswith("long_output: no rung ran")
+               for entry in profile.provenance["dropped"])
+    assert profile.verdicts["long_output"]["verdict"] == "unmeasured"
+
+
+def test_a_ladder_that_scored_nothing_is_named_in_dropped_and_kept():
+    # Four calls spent, four rungs attempted, nothing scorable came
+    # back. The rungs are real evidence (they say what was asked and
+    # what came back), so the family is KEPT — but the profile must say
+    # the ladder measured nothing, and the verdict must not read ready.
+    backend = LongOutputTerseBackend()
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", _backend_override=backend,
+    )
+    assert profile.long_output is not None
+    assert len(profile.long_output.rungs) == 4
+    assert all(rung.degenerate is None for rung in profile.long_output.rungs)
+    assert any("long_output:" in entry and "scorable" in entry
+               for entry in profile.provenance["dropped"])
+    assert profile.verdicts["long_output"]["verdict"] == "unmeasured"
 
 
 def test_thorough_params_equal_full_params():

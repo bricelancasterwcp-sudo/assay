@@ -163,6 +163,60 @@ class CodecFailingBackend(ScriptedBackend):
         return super()._reply_text(prompt, seed)
 
 
+class LongOutputDegradingBackend(ScriptedBackend):
+    """Healthy enumeration at short targets, a looping phrase at long ones.
+
+    The failure the rung ladder exists to locate: a model that holds
+    together for 512 tokens and collapses at 2048. Every other family is
+    answered exactly as ScriptedBackend answers it, so a profile built
+    on this backend differs from the well-behaved one in the long_output
+    family alone.
+    """
+
+    def __init__(self, degrade_at: int = 2048, model: str = "fake-model") -> None:
+        super().__init__(model)
+        self.degrade_at = degrade_at
+        self._target: int | None = None
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        seed: int,
+        max_tokens: int,
+        num_ctx: int | None = None,
+    ) -> Reply:
+        # The rung IS max_tokens: _reply_text only sees the prompt, which
+        # is identical at every rung, so the target is stashed here.
+        self._target = max_tokens
+        return super().generate(prompt, seed=seed, max_tokens=max_tokens,
+                                num_ctx=num_ctx)
+
+    def _reply_text(self, prompt: str, seed: int) -> str:
+        if (
+            prompt.startswith("Write a numbered list of distinct")
+            and self._target is not None
+            and self._target >= self.degrade_at
+        ):
+            return "the same line over and over again. " * 60
+        return super()._reply_text(prompt, seed)
+
+
+class LongOutputTerseBackend(ScriptedBackend):
+    """Answers the long-output prompt with three words at every rung.
+
+    Nothing scorable comes back (the n-gram window needs four), so every
+    rung lands degenerate=None: calls were spent and NOTHING was
+    measured — the case a naive "no rung flagged, so it is healthy"
+    reading turns into a false clean bill.
+    """
+
+    def _reply_text(self, prompt: str, seed: int) -> str:
+        if prompt.startswith("Write a numbered list of distinct"):
+            return "no thanks"
+        return super()._reply_text(prompt, seed)
+
+
 class MetadataFreeBackend(ScriptedBackend):
     """Answers probes but reports no architecture metadata (geometry None)."""
 

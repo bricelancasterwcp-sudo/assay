@@ -27,6 +27,7 @@ from assay.ceiling import (Calibration, Ceiling, ShapeCeiling,
 from assay.codecs import (CodecDirectives, DEFAULT_PRESENTATION, Landing,
                           probe_codecs, stopped_on_rule)
 from assay.fixtures import FIXTURE_SET
+from assay.long_output import LongOutput, probe_long_output
 from assay.loop import Loop, probe_loop
 from assay.envelope import probe_envelope
 from assay.errors import BudgetExhausted
@@ -302,6 +303,7 @@ def probe(
 
     speed: Speed | None = None
     loop: Loop | None = None
+    long_output: LongOutput | None = None
 
     if budget_death is not None:
         dropped.append("codecs: skipped, budget exhausted earlier")
@@ -347,6 +349,29 @@ def probe(
             speed = None
             dropped.append("speed: budget exhausted before any probe completed")
 
+    if budget_death is not None:
+        dropped.append("long_output: skipped, budget exhausted earlier")
+    else:
+        # ceiling_max is the ceiling probe's largest VERIFIED size, or
+        # None when it measured nothing — ignorance, not a cap of zero,
+        # and probe_long_output reads it that way (no rung is skipped
+        # for a ceiling nobody measured).
+        long_output = probe_long_output(
+            active, meter,
+            ceiling_max=ceiling.max_verified if ceiling else None)
+        if not long_output.rungs:
+            reason = "; ".join(long_output.skipped) or "no rung was attempted"
+            long_output = None
+            dropped.append(f"long_output: no rung ran ({reason})")
+        elif all(rung.degenerate is None for rung in long_output.rungs):
+            # The rungs are kept — they record what was asked and what
+            # came back — but nothing was scored, so the profile says so
+            # rather than letting an unflagged ladder read as a clean
+            # one (ruled 2026-08-14).
+            dropped.append(
+                "long_output: rungs ran but no reply was scorable — "
+                "the ladder measured nothing")
+
     if (
         budget_death is not None
         and geometry is None
@@ -377,8 +402,9 @@ def probe(
         codecs=codecs,
         speed=speed,
         loop=loop,
+        long_output=long_output,
         verdicts=compute_verdicts(
-            geometry, ceiling, envelope, codecs, speed, loop,
+            geometry, ceiling, envelope, codecs, speed, loop, long_output,
             presentation=("custom" if directives is not None
                           else DEFAULT_PRESENTATION),
             stopping_rule=_stopping_rule(params.codec_look_schedule),

@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+from pathlib import Path
 
 import pytest
 
@@ -9,9 +10,17 @@ from assay.ceiling import CallEvidence, Ceiling
 from assay.codecs import Landing
 from assay.envelope import Envelope
 from assay.geometry import Geometry
-from assay.profile import Profile, compute_verdicts, render_table
+from assay.long_output import (DISTINCT_FLOOR, LONG_OUTPUT_TASK,
+                               THRESHOLDS_PROVENANCE, ZLIB_FLOOR, LongOutput,
+                               LongRung)
+from assay.profile import (PROFILE_VERSION, Profile, compute_verdicts,
+                           render_table)
 
-_FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs", "speed", "loop")
+_FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
+             "speed", "loop", "long_output")
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_V1_PROFILE = (_REPO_ROOT / "docs/superpowers/evidence/live"
+               / "qwen2.5-coder-7b-instruct-q8_0-quick.json")
 _GRADES = ("tiny", "small", "medium")
 _CODECS = ("search_replace", "whole_file", "json_object")
 
@@ -78,6 +87,35 @@ def make_speed():
                  decode_samples=(15.0, 17.0), prefill_samples=(1024.0,))
 
 
+def make_long_output(
+    *, degenerate_from: int | None = None,
+    targets: tuple[int, ...] = (512, 1024, 2048),
+    skipped: tuple[str, ...] = ("4096: above measured ceiling",),
+) -> LongOutput:
+    """A measured ladder; ``degenerate_from`` is the first bad rung."""
+    rungs = tuple(
+        LongRung(
+            target_tokens=target,
+            generated_tokens=target - 8,
+            distinct_ratio=0.04 if _bad(target, degenerate_from) else 0.94,
+            zlib_ratio=0.03 if _bad(target, degenerate_from) else 0.41,
+            degenerate=_bad(target, degenerate_from),
+        )
+        for target in targets
+    )
+    return LongOutput(rungs=rungs, skipped=skipped)
+
+
+def _bad(target: int, degenerate_from: int | None) -> bool:
+    return degenerate_from is not None and target >= degenerate_from
+
+
+def unscorable_rung(target: int) -> LongRung:
+    """A rung that spent a call and measured nothing: every metric None."""
+    return LongRung(target_tokens=target, generated_tokens=3,
+                    distinct_ratio=None, zlib_ratio=None, degenerate=None)
+
+
 def make_codecs(
     *, sr_small: float = 0.9, wf_small: float = 0.8, jo_small: float = 0.95
 ) -> dict[str, dict[str, Landing]]:
@@ -114,6 +152,7 @@ def make_profile(*, provenance_dropped: tuple[str, ...] = (), **overrides) -> Pr
         codecs=make_codecs(),
         speed=make_speed(),
         loop=make_loop(),
+        long_output=make_long_output(),
         verdicts={
             "structured_extraction": {"verdict": "ready", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "ready", "lens": {"landing": "test"}},
@@ -210,6 +249,175 @@ def test_every_profile_field_is_wired_into_the_payload():
     assert set(payload) == field_names
 
 
+# --- schema v5: the long_output family -------------------------------------
+
+
+def test_schema_version_and_package_version_move_together():
+    # The schema and the distribution version are one release, not two:
+    # a profile that says v5 must have been written by a 0.6.0 probe.
+    import assay
+
+    assert PROFILE_VERSION == 5
+    assert assay.__version__ == "0.6.0"
+    assert 'version = "0.6.0"' in (
+        _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_long_output_round_trips_as_tuples_of_rungs():
+    restored = Profile.from_json(json.loads(make_profile().to_json()))
+    assert restored == make_profile()
+    assert isinstance(restored.long_output, LongOutput)
+    assert isinstance(restored.long_output.rungs, tuple)
+    assert isinstance(restored.long_output.rungs[0], LongRung)
+    assert isinstance(restored.long_output.skipped, tuple)
+    assert restored.long_output.skipped == ("4096: above measured ceiling",)
+
+
+def test_every_long_rung_field_is_wired_into_the_payload():
+    # The robigo per_record lesson: consumers read the ARTIFACT, not the
+    # in-memory object. A field that exists on LongRung and not in the
+    # JSON is a measurement nobody downstream can see.
+    payload = json.loads(make_profile().to_json())
+    rung = payload["long_output"]["rungs"][0]
+    assert set(rung) == {field.name for field in dataclasses.fields(LongRung)}
+    assert set(payload["long_output"]) == {
+        field.name for field in dataclasses.fields(LongOutput)}
+
+
+@pytest.mark.parametrize(("degenerate_from", "expected"), [
+    (None, "ready"),
+    (512, "unusable"),      # the first rung already loops
+    (1024, "degrades-at-1024"),
+    (2048, "degrades-at-2048"),
+])
+def test_long_output_verdict_ladder(degenerate_from, expected):
+    long_output = make_long_output(degenerate_from=degenerate_from)
+    verdicts = compute_verdicts(None, None, None, None, None, None, long_output)
+    assert verdicts["long_output"]["verdict"] == expected
+
+
+def test_long_output_verdict_is_forced_provisional_while_thresholds_assumed():
+    # The floors are assumed, not derived (Task 12 derives them). Until
+    # that string stops starting with "assumed", NO long_output verdict
+    # may present itself as settled — independent of how clean the
+    # ladder looked.
+    assert THRESHOLDS_PROVENANCE.startswith("assumed")
+    for degenerate_from in (None, 512, 2048):
+        entry = compute_verdicts(
+            None, None, None, None, None, None,
+            make_long_output(degenerate_from=degenerate_from))["long_output"]
+        assert entry["provisional"] is True, degenerate_from
+
+
+def test_long_output_lens_names_floors_task_and_threshold_provenance():
+    entry = compute_verdicts(None, None, None, None, None, None,
+                             make_long_output())["long_output"]
+    assert entry["lens"] == {
+        "metrics": "distinct4gram+zlib",
+        "distinct_floor": DISTINCT_FLOOR,
+        "zlib_floor": ZLIB_FLOOR,
+        "thresholds": THRESHOLDS_PROVENANCE,
+        "task": LONG_OUTPUT_TASK,
+        "temperature": 0.2,
+    }
+
+
+def test_unmeasured_long_output_is_unmeasured_and_not_provisional():
+    for long_output in (
+        None,
+        LongOutput(rungs=(), skipped=("512: budget exhausted",)),
+    ):
+        entry = compute_verdicts(None, None, None, None, None, None,
+                                 long_output)["long_output"]
+        assert entry["verdict"] == "unmeasured"
+        assert entry["provisional"] is False
+        assert entry["lens"]["thresholds"] == THRESHOLDS_PROVENANCE
+
+
+def test_a_ladder_of_unscorable_rungs_measured_nothing():
+    # Ruled 2026-08-14: an all-None rung is NOT a measurement and NOT a
+    # skipped rung — it spent a call and scored nothing. A ladder whose
+    # every attempted rung came back unscorable must read "unmeasured",
+    # never "ready": no rung was found healthy, they were merely not
+    # found degenerate, which is a different (and empty) claim.
+    ladder = LongOutput(rungs=tuple(unscorable_rung(t)
+                                    for t in (512, 1024, 2048)),
+                        skipped=())
+    entry = compute_verdicts(None, None, None, None, None, None,
+                             ladder)["long_output"]
+    assert entry["verdict"] == "unmeasured"
+    assert entry["provisional"] is False
+
+
+def test_unscorable_rungs_never_stand_in_for_healthy_ones():
+    # A rung that measured nothing cannot certify the rungs below it.
+    # 512 unscorable + 1024 degenerate is "unusable" — the smallest rung
+    # this ladder actually measured was already looping — not
+    # "degrades-at-1024", which would claim a healthy 512 nobody saw.
+    ladder = LongOutput(
+        rungs=(unscorable_rung(512),
+               make_long_output(degenerate_from=1024,
+                                targets=(1024,)).rungs[0]),
+        skipped=())
+    entry = compute_verdicts(None, None, None, None, None, None,
+                             ladder)["long_output"]
+    assert entry["verdict"] == "unusable"
+
+    # ...and a measured-healthy rung below a measured-degenerate one
+    # still names the rung it degraded at, unscorable rungs between them
+    # notwithstanding.
+    healthy = make_long_output(targets=(512,)).rungs[0]
+    bad = make_long_output(degenerate_from=2048, targets=(2048,)).rungs[0]
+    mixed = LongOutput(rungs=(healthy, unscorable_rung(1024), bad),
+                       skipped=())
+    entry = compute_verdicts(None, None, None, None, None, None,
+                             mixed)["long_output"]
+    assert entry["verdict"] == "degrades-at-2048"
+
+
+# --- v1 back-compat (spec §4) ----------------------------------------------
+
+
+def test_a_committed_v1_profile_still_parses():
+    # Post-v1 families are ABSENT from a v1 document; the parser must
+    # read one without exploding, and must NAME every family the old
+    # schema could not carry (the None-vs-zero rule holds across the
+    # version boundary too — an unnamed None is a silent gap).
+    payload = json.loads(_V1_PROFILE.read_text(encoding="utf-8"))
+    assert payload["assay_profile_version"] == 1
+    profile = Profile.from_json(payload)
+
+    assert profile.ceiling is not None  # a v1 family really parsed
+    assert profile.geometry is not None
+    for family in ("ceiling_shapes", "speed", "loop", "long_output"):
+        assert getattr(profile, family) is None
+        assert any(entry.startswith(f"{family}:")
+                   for entry in profile.provenance["dropped"]), family
+    # The parsed payload is not mutated by the upgrade note.
+    assert payload["provenance"]["dropped"] == []
+
+
+def test_a_v1_codec_cell_has_no_applies_lens_and_says_so():
+    # v1 measured byte-equality only. Parsing one back must leave
+    # lands_applies None — unmeasured under that lens — never a copy of
+    # `lands`, which would fabricate a measurement that never ran.
+    payload = json.loads(_V1_PROFILE.read_text(encoding="utf-8"))
+    cell = Profile.from_json(payload).codecs["search_replace"]["tiny"]
+    assert cell.n > 0
+    assert cell.lands is not None
+    assert cell.lands_applies is None
+
+
+def test_a_present_but_null_family_still_has_to_be_named():
+    # The back-compat .get() must not weaken the guard: a MODERN profile
+    # that writes "speed": null with an empty dropped list is still a
+    # silent None and still refused.
+    payload = json.loads(make_profile().to_json())
+    payload["speed"] = None
+    with pytest.raises(ValueError, match="speed"):
+        Profile.from_json(payload)
+
+
 # --- verdicts --------------------------------------------------------------
 
 
@@ -282,6 +490,7 @@ def test_unmeasured_inputs_yield_unmeasured_not_unusable():
         "loop_discipline": "unmeasured",
         "chat_speed": "unmeasured",
         "agent_speed": "unmeasured",
+        "long_output": "unmeasured",
     }
     # v1.1: every verdict names its lens, even when unmeasured.
     for entry in verdicts.values():
@@ -319,6 +528,7 @@ def test_all_none_families_construct_when_all_named():
         codecs=None,
         speed=None,
         loop=None,
+        long_output=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
@@ -341,6 +551,7 @@ def test_render_table_names_unmeasured_not_zero():
         codecs=None,
         speed=None,
         loop=None,
+        long_output=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
@@ -355,6 +566,30 @@ def test_render_table_names_unmeasured_not_zero():
     assert "None" not in rendered
     # Measured values DO render.
     assert "0.97" in render_table(make_profile())
+
+
+def test_render_table_carries_a_long_output_line():
+    bare = make_profile(
+        long_output=None,
+        provenance_dropped=("long_output: budget exhausted",))
+    assert "long_output unmeasured" in render_table(bare)
+
+    healthy = render_table(make_profile())
+    assert "long_output" in healthy
+    assert "2048" in healthy  # the deepest rung it held together at
+
+    degraded = render_table(
+        make_profile(long_output=make_long_output(degenerate_from=1024)))
+    assert "long_output" in degraded
+    assert "1024" in degraded  # the rung it went degenerate at is NAMED
+
+
+def test_render_table_says_unmeasured_for_a_ladder_that_scored_nothing():
+    # Calls were spent, rungs exist, nothing was measured: the human
+    # view must not show that as a clean ladder.
+    nothing = make_profile(
+        long_output=LongOutput(rungs=(unscorable_rung(512),), skipped=()))
+    assert "long_output unmeasured" in render_table(nothing)
 
 
 def test_patch_verdict_is_judged_under_the_applies_lens():
