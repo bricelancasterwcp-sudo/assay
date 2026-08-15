@@ -3,12 +3,30 @@
 ``assay probe URL --model NAME`` runs the full suite and prints the
 human table (``--json PATH`` writes the profile document). Subcommands
 ``geometry | ceiling | envelope | codecs`` run one family and print its
-slice as JSON.
+slice as JSON. ``assay report`` renders N profiles as one HTML matrix,
+and ``assay diff OLD.json NEW.json`` compares two profile documents
+without touching an endpoint at all.
 
-Exit codes (the robigo taxonomy, minus model-outcome codes):
-  0  profile/slice produced, whatever it says
+Exit codes are PER-SUBCOMMAND. The measuring commands (probe, the
+family slices, report) use the robigo taxonomy minus model-outcome
+codes:
+
+  0  profile/slice/report produced, whatever it says
   2  budget exhausted before ANY family completed
   4  infrastructure failure before any measurement
+
+``diff`` measures nothing, so 2 means something else there and 1 —
+unused by every other subcommand — carries its answer:
+
+  0  comparable, and nothing moved beyond noise (with ``--gate``:
+     nothing moved in the regression direction)
+  1  drift found (with ``--gate``: a REGRESSION was found; an
+     improvement alone still exits 0)
+  2  not comparable — a different model, quant, weight size, or
+     hardware tier, so nothing was subtracted and nothing is reported
+  4  a profile file could not be read or parsed. Never 1: exit 1 from
+     this command claims a measured change, and an unreadable file
+     measured nothing.
 
 The CLI supplies documented budget defaults (the default full mode: 500
 calls / 1M prompt tokens; quick: 110 / 200k); the library requires an
@@ -26,6 +44,7 @@ from assay.budget import Budget, BudgetMeter
 from assay.codecs import CodecDirectives
 from assay.ceiling import calibrate, probe_ceiling
 from assay.codecs import probe_codecs
+from assay.diff import DiffResult, diff_profiles, render_diff
 from assay.envelope import probe_envelope
 from assay.errors import BudgetExhausted, InfrastructureError
 from assay.geometry import free_vram_mib, plan_window
@@ -49,8 +68,10 @@ DEFAULT_BUDGETS = {
     "thorough": Budget(max_calls=500, max_prompt_tokens=1_000_000),
 }
 
+#: The commands that spend GPU time, and so take a budget.
 _COMMANDS = ("probe", "geometry", "ceiling", "envelope", "codecs")
 _REPORT_COMMAND = "report"
+_DIFF_COMMAND = "diff"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -138,6 +159,21 @@ def _build_parser() -> argparse.ArgumentParser:
     report.add_argument("profiles", type=Path, nargs="+",
                         help="profile JSON files (assay probe --json output)")
     report.add_argument("--out", type=Path, default=Path("assay-report.html"))
+    diff = subparsers.add_parser(
+        _DIFF_COMMAND,
+        help="compare two profile JSONs: what moved beyond noise "
+             "(exit 1 = drift, 2 = not comparable)")
+    diff.add_argument("old", type=Path, help="the earlier profile JSON")
+    diff.add_argument("new", type=Path, help="the later profile JSON")
+    diff.add_argument(
+        "--gate", action="store_true",
+        help="CI mode: exit 1 only for REGRESSIONS, not for any change "
+             "(a model that got faster should not fail a build)",
+    )
+    diff.add_argument(
+        "--json", dest="json_path", type=Path,
+        help="write the full diff result to this path",
+    )
     return parser
 
 
@@ -148,6 +184,54 @@ def _run_report(args: argparse.Namespace) -> int:
     args.out.write_text(render_report(docs), encoding="utf-8")
     print(f"wrote {args.out} ({len(docs)} profile(s))")
     return 0
+
+
+def _load_profile(path: Path) -> dict:
+    """Read one profile document as the RAW dict ``diff`` wants.
+
+    Every way this can fail is an ``InfrastructureError`` (exit 4), and
+    the reason is deliberate: ``diff``'s exit 1 asserts that a measured
+    number moved. A path that does not exist, a truncated file, a JSON
+    array where a profile belongs — none of them measured anything, and
+    a CI gate that read them as 1 would report drift nobody observed.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise InfrastructureError(f"cannot read {path}: {error}") from error
+    except json.JSONDecodeError as error:
+        raise InfrastructureError(f"{path} is not valid JSON: {error}") from error
+    if not isinstance(payload, dict):
+        raise InfrastructureError(
+            f"{path} is not a profile document: found a JSON "
+            f"{type(payload).__name__}, not an object"
+        )
+    return payload
+
+
+def _diff_exit_code(result: DiffResult, *, gate: bool) -> int:
+    """Not comparable outranks everything: it is not a clean run and it
+    is not a regression, it is the absence of a comparison."""
+    if not result.comparable:
+        return 2
+    if gate:
+        return 1 if any(change.direction == "regression"
+                        for change in result.changes) else 0
+    return 1 if result.changes else 0
+
+
+def _run_diff(args: argparse.Namespace) -> int:
+    result = diff_profiles(_load_profile(args.old), _load_profile(args.new))
+    print(render_diff(result))
+    if args.json_path is not None:
+        # The whole result, including the cells that were checked and
+        # found clean: a machine reader needs to know what was compared,
+        # not only what moved.
+        args.json_path.write_text(
+            json.dumps(dataclasses.asdict(result), indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return _diff_exit_code(result, gate=args.gate)
 
 
 def _load_directives(path: Path | None) -> CodecDirectives | None:
@@ -250,10 +334,14 @@ def _run_probe(args: argparse.Namespace, budget: Budget) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    budget = _budget_for(args) if args.command != "report" else None
+    # Only the measuring commands take a budget; report and diff read
+    # files that already exist and never touch an endpoint.
+    budget = _budget_for(args) if args.command in _COMMANDS else None
     try:
-        if args.command == "report":
+        if args.command == _REPORT_COMMAND:
             return _run_report(args)
+        if args.command == _DIFF_COMMAND:
+            return _run_diff(args)
         if args.command == "probe":
             return _run_probe(args, budget)
         return _run_family(args, budget)

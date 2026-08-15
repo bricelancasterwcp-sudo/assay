@@ -4,9 +4,14 @@ Exit codes: 0 = profile produced (whatever it says); 2 = budget
 exhausted before ANY family completed; 4 = infrastructure failure
 before any measurement. No test here touches a real socket: the
 backend factory and the VRAM reader are always replaced.
+
+``diff`` measures nothing and so reads 1 and 2 differently — 1 = drift
+found, 2 = the pair is not comparable — which is why its tests live in
+their own section at the bottom rather than beside probe's.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 from fakes import (CodecFailingBackend, MetadataFreeBackend, ScriptedBackend,
@@ -151,3 +156,167 @@ def test_codecs_subcommand_stops_sequentially_like_the_probe_command(
         for grade, cell in grades.items():
             assert cell["n"] == 5, (codec, grade)
     assert backend.calls == 45
+
+
+# --- diff subcommand -------------------------------------------------
+#
+# Exit codes here are a DIFFERENT taxonomy from probe's: 1 = drift
+# found (with --gate: a regression), 2 = the two files are not
+# comparable at all. 4 keeps its meaning — a file we could not read is
+# infrastructure, never a finding.
+
+
+def _diff_payload(**overrides):
+    """A minimal raw profile payload: enough identity for the gate,
+    plus one exact-valued cell for a doctored copy to move."""
+    payload = {
+        "assay_profile_version": 5,
+        "model": {"name": "fake-model", "quant": "Q8_0",
+                  "weights_bytes": 8_000_000_000},
+        "provenance": {"tier": "average-gamer-8gb", "emulated": False},
+        "ceiling": {"max_verified": 8192, "failure_mode": "hard_error"},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _write_profile(path, payload):
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return str(path)
+
+
+def _ceiling(max_verified):
+    return {"ceiling": {"max_verified": max_verified,
+                        "failure_mode": "hard_error"}}
+
+
+def test_cli_diff_exit_codes(tmp_path, capsys):
+    old = _write_profile(tmp_path / "old.json", _diff_payload())
+    same = _write_profile(tmp_path / "same.json", _diff_payload())
+    worse = _write_profile(tmp_path / "worse.json",
+                           _diff_payload(**_ceiling(4096)))
+    other = _write_profile(tmp_path / "other.json",
+                           _diff_payload(model={"name": "other-model",
+                                                "quant": "Q8_0",
+                                                "weights_bytes": 8_000_000_000}))
+
+    assert cli.main(["diff", old, same]) == 0
+    assert "no drift beyond noise" in capsys.readouterr().out
+
+    assert cli.main(["diff", old, worse]) == 1
+    assert "8192 -> 4096" in capsys.readouterr().out
+
+    # Not comparable is its own answer, not "no changes" and not a
+    # regression: nothing was subtracted, so nothing is reported.
+    assert cli.main(["diff", old, other]) == 2
+    assert "not comparable" in capsys.readouterr().out
+
+
+def test_cli_diff_gate_fails_only_on_regressions(tmp_path, capsys):
+    old = _write_profile(tmp_path / "old.json", _diff_payload())
+    better = _write_profile(tmp_path / "better.json",
+                            _diff_payload(**_ceiling(16384)))
+    worse = _write_profile(tmp_path / "worse.json",
+                           _diff_payload(**_ceiling(4096)))
+    other = _write_profile(tmp_path / "other.json",
+                           _diff_payload(model={"name": "other-model"}))
+
+    # Bare diff answers "did anything move"; --gate answers "did
+    # anything get WORSE", which is the CI question.
+    assert cli.main(["diff", old, better]) == 1
+    assert cli.main(["diff", old, better, "--gate"]) == 0
+    assert cli.main(["diff", old, worse, "--gate"]) == 1
+    # --gate must not launder incomparability into a pass.
+    assert cli.main(["diff", old, other, "--gate"]) == 2
+    capsys.readouterr()
+
+
+def test_cli_diff_json_writes_the_whole_result(tmp_path, capsys):
+    old = _write_profile(tmp_path / "old.json", _diff_payload())
+    worse = _write_profile(tmp_path / "worse.json",
+                           _diff_payload(**_ceiling(4096)))
+    out = tmp_path / "diff.json"
+
+    code = cli.main(["diff", old, worse, "--json", str(out)])
+
+    assert code == 1
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["comparable"] is True
+    assert payload["changes"] == [{
+        "family": "ceiling", "cell": "max_verified", "direction": "regression",
+        "old": 8192, "new": 4096, "basis": "rung-change",
+    }]
+    # The clean cells and the identity notes travel with it: a machine
+    # reader needs to know what WAS checked, not only what moved.
+    assert payload["within_noise"] == ["ceiling.failure_mode"]
+    assert payload["dropped"] == []
+    assert payload["identity_notes"] == []
+    # stdout still carries the human rendering.
+    assert "8192 -> 4096" in capsys.readouterr().out
+
+
+def test_cli_diff_json_records_an_incomparable_pair_too(tmp_path, capsys):
+    old = _write_profile(tmp_path / "old.json", _diff_payload())
+    other = _write_profile(tmp_path / "other.json",
+                           _diff_payload(model={"name": "other-model"}))
+    out = tmp_path / "diff.json"
+
+    assert cli.main(["diff", old, other, "--json", str(out)]) == 2
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["comparable"] is False
+    assert payload["changes"] == []
+    assert any("model.name" in note for note in payload["identity_notes"])
+    capsys.readouterr()
+
+
+def test_cli_diff_unreadable_file_is_infrastructure_not_a_finding(
+    tmp_path, capsys
+):
+    """Exit 4, never 1: a file we could not read has told us nothing
+    about the model, and a CI gate reading 1 would report drift that
+    was never measured."""
+    old = _write_profile(tmp_path / "old.json", _diff_payload())
+    missing = str(tmp_path / "absent.json")
+    garbage = tmp_path / "garbage.json"
+    garbage.write_text("{not json at all", encoding="utf-8")
+
+    assert cli.main(["diff", old, missing]) == 4
+    assert "infrastructure" in capsys.readouterr().err.lower()
+
+    assert cli.main(["diff", old, str(garbage)]) == 4
+    err = capsys.readouterr().err
+    assert "infrastructure" in err.lower() and "garbage.json" in err
+
+    # ...and with --gate too: the gate must not read a broken file as
+    # "no regressions".
+    assert cli.main(["diff", old, missing, "--gate"]) == 4
+    capsys.readouterr()
+
+
+def test_cli_diff_rejects_valid_json_that_is_not_a_profile(tmp_path, capsys):
+    """Valid JSON is not the bar — a profile document is an object. A
+    list parses fine and then blows up inside the comparator, which
+    would surface as a traceback instead of exit 4."""
+    old = _write_profile(tmp_path / "old.json", _diff_payload())
+    listy = tmp_path / "list.json"
+    listy.write_text(json.dumps([_diff_payload()]), encoding="utf-8")
+
+    assert cli.main(["diff", old, str(listy)]) == 4
+    assert "not a profile document" in capsys.readouterr().err
+
+
+def test_cli_diff_reads_the_committed_live_rerun_pair(tmp_path, capsys):
+    """End to end on real files: the v1 profiles under
+    ``docs/superpowers/evidence`` are same-day same-daemon reruns, so
+    the CLI answer is 0 — bare and gated."""
+    evidence = Path(__file__).resolve().parents[1] / "docs/superpowers/evidence"
+    name = "granite-code-8b-instruct-q8_0-quick.json"
+    old = str(evidence / "live" / name)
+    new = str(evidence / "live-run2" / name)
+    out = tmp_path / "diff.json"
+
+    assert cli.main(["diff", old, new, "--json", str(out)]) == 0
+    assert cli.main(["diff", old, new, "--gate"]) == 0
+    assert "no drift beyond noise" in capsys.readouterr().out
+    assert json.loads(out.read_text(encoding="utf-8"))["comparable"] is True

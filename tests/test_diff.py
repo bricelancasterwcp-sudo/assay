@@ -12,11 +12,16 @@ The Wilson intervals quoted in the codec tests were computed with
 2/35 = [0.016, 0.186], 33/35 = [0.814, 0.984] (disjoint, drift).
 """
 
+import json
+import pathlib
+
 import pytest
 
 from assay.diff import Change, DiffResult, diff_profiles, identity_gate, render_diff
 
 _MISSING = object()
+
+EVIDENCE = pathlib.Path(__file__).resolve().parents[1] / "docs/superpowers/evidence"
 
 
 def codec_cell(lands=1.0, lands_applies=1.0, n=5):
@@ -662,3 +667,69 @@ def test_change_and_result_are_frozen():
                         within_noise=(), dropped=())
     with pytest.raises(Exception):
         result.comparable = False
+
+
+# --- real-data acceptance: the committed same-day rerun pairs --------
+
+_RERUN_PAIRS = ("qwen2.5-coder-7b-instruct-q8_0-quick.json",
+                "codegemma-7b-instruct-q8_0-quick.json",
+                "granite-code-8b-instruct-q8_0-quick.json")
+
+
+def _rerun_pair(name: str) -> tuple[dict, dict]:
+    return (json.loads((EVIDENCE / "live" / name).read_text(encoding="utf-8")),
+            json.loads((EVIDENCE / "live-run2" / name).read_text(encoding="utf-8")))
+
+
+@pytest.mark.parametrize("name", _RERUN_PAIRS)
+def test_live_rerun_pairs_read_within_noise(name):
+    """The committed anchor (spec §2): ``live/`` and ``live-run2/`` are
+    the same three models, same day, same unrestarted Ollama daemon —
+    the recorded example of sampler-level variation that must NOT be
+    read as drift.
+
+    These are ``assay_profile_version: 1`` files: bare-string verdicts,
+    no ``ceiling_shapes``, no ``speed``, codec cells with no
+    ``lands_applies`` column and no per-call samples. Reading them at
+    all is half of what this asserts.
+    """
+    old, new = _rerun_pair(name)
+    result = diff_profiles(old, new)
+    assert result.comparable, name
+    regressions = [change for change in result.changes
+                   if change.direction == "regression"]
+    assert regressions == [], (name, regressions)
+    # Nothing moved beyond noise in EITHER direction, so the pair also
+    # exits 0 without --gate. Stronger than the regression clause, and
+    # true of the committed files as measured on 2026-08-12.
+    assert result.changes == (), (name, result.changes)
+    # ...and it is clean because the comparator absorbed the movement,
+    # not because it compared nothing: 13-14 cells were checked, the
+    # ceiling and the whole codec matrix among them.
+    assert "ceiling.max_verified" in result.within_noise, name
+    assert len(result.within_noise) >= 13, (name, result.within_noise)
+
+
+def test_the_rerun_codec_cells_that_actually_moved_are_absorbed_as_noise():
+    """Non-vacuity, stated as the evidence README states it: granite's
+    "stray landings moving 0.2 -> 0.0 between runs shows the n=5 noise
+    scale". Five codec cells genuinely differ across the two runs —
+    codegemma ``search_replace.tiny`` 0.2 -> 0.0 and granite's
+    ``whole_file.tiny`` 0.2 -> 0.0, ``whole_file.medium`` 0.4 -> 0.0,
+    ``json_object.tiny`` 0.2 -> 0.0, ``json_object.small`` 0.2 -> 0.0.
+    Every one is one or two probes out of five; Wilson-95 at n=5 must
+    swallow all of them, and a comparator that flagged them would make
+    the tool unreadable on its own recorded data.
+    """
+    moved = []
+    for name in _RERUN_PAIRS:
+        old, new = _rerun_pair(name)
+        within_noise = diff_profiles(old, new).within_noise
+        for codec, grades in old["codecs"].items():
+            for grade, cell in grades.items():
+                if cell["lands"] == new["codecs"][codec][grade]["lands"]:
+                    continue
+                moved.append((name, codec, grade))
+                assert f"codec.{codec}.{grade}.lands" in within_noise, (
+                    name, codec, grade)
+    assert len(moved) == 5, moved
