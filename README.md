@@ -12,8 +12,45 @@ that codec*, and an application that knows this before shipping work to
 it can choose another format or another model.
 
 
+## v0.6 (v1.5): sequential verdicts, profile diff, long-output integrity
 
+Three changes that sharpen the instrument rather than widen it (package
+0.6.0, schema v5). No probe measures anything new: what changed is how
+much evidence a verdict demands, what happens between two profiles, and
+one failure mode nothing was watching.
 
+- **Sequential testing** — codec cells no longer run a fixed n and then
+  apologise in `provisional`. They sample against a pre-registered look
+  schedule (n ∈ {5, 10, 20, 35}) and stop at the first look where the
+  Wilson-95 interval decides a rung. An unusable cell settles in five
+  calls; only a genuinely undecided one pays for 35 — which is why the
+  honest mode is now the default one. See [Sequential
+  testing](#sequential-testing).
+- **`assay diff OLD.json NEW.json`** — capability is a point-in-time
+  measurement of a serving state, so the object worth looking at is the
+  difference between two timestamps. diff gates on subject identity
+  first, then reports only what moved *beyond noise*: codec cells when
+  their Wilson intervals are disjoint, speeds against a 2-SE band
+  computed from the per-call samples the speed probe now records.
+  `--gate` turns it into a CI check that fails on regressions only. See
+  [assay diff](#assay-diff).
+- **Long-output integrity** — the v1 live validation watched a model
+  hold protocol, keep its stats, and emit degenerate repetition:
+  quality dies before protocol does, and no probe was watching. An
+  escalating rung ladder (512/1024/2048/4096 target tokens) now scores
+  each generation for degeneracy, and the `long_output` verdict names
+  the rung where it starts. See [Long-output
+  integrity](#long-output-integrity).
+
+This wave amends v1.3's verdict semantics. The amendment is recorded
+rather than quietly applied, because a number whose definition changed
+without saying so is worse than no number:
+
+> This amends v1.3's verdict semantics (spec of 2026-08-13: fixed n=5
+> with provisional marking; `--thorough` n=35 added in 0.4.1, sequential
+> testing recorded as deferred). The deferral is now executed. Old
+> profiles (schema ≤ v4) remain readable; their verdicts carry no
+> `stopping_rule` and are treated as fixed-n by `assay diff`.
 
 ## v0.5 (v1.4): shapes, loops, and the matrix page
 
@@ -135,7 +172,10 @@ pip install -e .[dev]     # + pytest
 ## Quick start
 
 ```sh
-# Full suite, quick mode (~90s of inference), against a local Ollama:
+# Full suite, default mode (sequential codec sampling), local Ollama:
+assay probe http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0 --json profile.json
+
+# Time-boxed instead: fixed n=5 per codec cell, and the lens says so.
 assay probe http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0 --quick --json profile.json
 
 # One family at a time:
@@ -143,15 +183,25 @@ assay geometry http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
 assay ceiling  http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
 assay envelope http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
 assay codecs   http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
+
+# Offline, on profiles already written — neither touches an endpoint:
+assay diff   before.json after.json          # what moved beyond noise
+assay report profile-*.json --out report.html  # N profiles as one matrix page
 ```
 
-Flags: `--quick | --full`, `--backend ollama|openai` (else auto-detect),
-`--json PATH`, `--record PATH` (JSONL call transcript), `--max-calls N`,
-`--max-prompt-tokens N`, `--window-cap N`.
+Flags: `--full | --thorough | --quick` (`--full` is the default;
+`--thorough` is an alias of it, kept so old invocations still parse),
+`--backend ollama|openai` (else auto-detect), `--json PATH`,
+`--record PATH` (JSONL call transcript), `--max-calls N`,
+`--max-prompt-tokens N`, `--window-cap N`, `--tier NAME` (requires
+`--emulated` or `--real-hardware`), `--directives JSON` (your own codec
+presentation).
 
-Exit codes: `0` profile produced (whatever it says), `2` budget exhausted
-before any probe family completed, `4` infrastructure failure before any
-measurement.
+Exit codes for the measuring commands (`probe`, the family slices,
+`report`): `0` profile/slice/report produced (whatever it says), `2`
+budget exhausted before any probe family completed, `4` infrastructure
+failure before any measurement. `diff` measures nothing, so it uses its
+own codes — see [assay diff](#assay-diff).
 
 As a library:
 
@@ -161,16 +211,21 @@ from assay import Budget, probe
 profile = probe(
     "http://127.0.0.1:11434",
     "qwen2.5-coder:7b-instruct-q8_0",
-    budget=Budget(max_calls=80, max_prompt_tokens=120_000),
-    mode="quick",
+    budget=Budget(max_calls=500, max_prompt_tokens=1_000_000),
+    mode="full",
 )
 print(profile.to_json())
 ```
 
 `budget` is a **required** argument: a library consumer burning a user's
 GPU time must say how much. There is no silent default. The CLI supplies
-documented defaults — quick: 80 calls / 120k prompt tokens; full: 250
-calls / 500k — overridable with `--max-calls` / `--max-prompt-tokens`.
+documented defaults — quick: 110 calls / 200k prompt tokens; full and
+thorough: 500 calls / 1M — overridable with `--max-calls` /
+`--max-prompt-tokens`. Those cover the WORST case (a full run in which
+no codec cell decides early and every one runs to the 35-sample cap); a
+typical run stops well short. `mode` is explicit above because the
+library's default is still `"quick"` — the cheap one — while the CLI
+defaults to `--full`.
 
 ## The profile
 
@@ -183,15 +238,164 @@ a measurement, a `None` with a named reason, or provenance.
 | `model` | `name`, `quant`, `weights_bytes`, `training_ctx` — as reported, never guessed |
 | `geometry` | `kv_kib_per_token`, `vram_free_mib`, `usable_window`, and `limited_by` — **which** term (`training_ctx` / `vram` / `user_cap`) actually bound the window |
 | `ceiling` | `max_verified`, `first_failure`, `failure_mode` (`hard_error` / `missing_stats` / `silent_truncation` / `canary_loss` / `none_up_to_cap` / `budget`), plus per-call evidence |
+| `ceiling_shapes` | the same question asked at each **pinned** `num_ctx` an application might set (2k/4k/8k), because a daemon can serve 16k right-sized and error above ~1.8k at a fixed 8k |
 | `envelope` | exact-format fidelity over N one-line probes, with failures classified (`prose` / `shape` / `refusal`) |
-| `codecs` | landing rate per codec (`search_replace`, `whole_file`, `json_object`) × size grade (`tiny`, `small`, `medium`) |
-| `verdicts` | `structured_extraction`, `patch_editing`, `long_context` — each `ready` / `risky` / `unusable` / `unmeasured` |
+| `codecs` | landing rate per codec (`search_replace`, `whole_file`, `json_object`) × size grade (`tiny`, `small`, `medium`), under both landing lenses, with the `n` each cell actually spent |
+| `speed` | `decode_tps` (chat usability) and `prefill_tps` (agent usability), their `evidence` class, and — new in v5 — the per-call `decode_samples` / `prefill_samples` a diff needs to tell noise from drift |
+| `loop` | scripted three-turn repair: `action_fidelity`, `patch_rate`, `finish_rate`, `repeat_rate`, `anchor_violations` — single-call probes cannot see loop failure |
+| `long_output` | per-rung `target_tokens`, `generated_tokens`, `distinct_ratio`, `zlib_ratio`, `degenerate`, plus a `skipped` list naming why each unattempted rung did not run |
+| `verdicts` | `structured_extraction`, `patch_editing`, `long_context`, `loop_discipline`, `chat_speed`, `agent_speed`, `long_output` — each `ready` / `risky` / `unusable` / `unmeasured` (`long_output` may also read `degrades-at-N`), each carrying its own lens |
 | `provenance` | started/finished, mode, seeds, budget granted vs spent, calibration, and `dropped` |
 
 No probe uses grammar/JSON forcing: constrained generation deforms
 rather than rejects, so a forced probe measures the constraint, not the
 model. assay measures unforced behavior — the number an application can
 act on.
+
+## Sequential testing
+
+A landing rate of 5/5 spans a Wilson-95 interval of roughly [0.57, 1.0]:
+`ready` and `risky` are indistinguishable at that n, and v1.3 handled it
+by marking the verdict `provisional` and moving on. v1.5 spends the
+calls instead — but only the calls the question needs.
+
+- **Look schedule: n ∈ {5, 10, 20, 35}**, and a cell is examined *only*
+  at those points. Peeking between them inflates the false-decision
+  rate, so the schedule is pre-registered rather than continuous.
+- **Stopping rule: `decided`** — at a look, compute
+  `wilson95(passes, n)` and stop when both interval endpoints ladder to
+  the **same** rung (`ladder(lo) == ladder(hi)`). That is the exact
+  negation of v1.3's provisional condition, so nothing stops early that
+  v1.3 would have called undecided. It also stops a decided-*risky*
+  cell, which the originally registered two-condition form (stop if
+  `lo >= ready`, stop if `hi < risky`) would have missed; the spec was
+  amended before any code existed and the amendment is footnoted there.
+- **35 is the cap, not a promise.** A cell that never decides runs to
+  35 — the smallest n at which a perfect cell clears `ready`
+  undisputed (Wilson lower on 35/35 is 0.9011 against the 0.9 floor).
+  A never-landing cell settles at 5. Attempts round-robin across the
+  cell's heterogeneous fixtures, so a cell that stops early has still
+  sampled every defect class it could reach.
+- **The stop test reads the codec's *verdict* lens**: byte-equality for
+  `json_object` (where validation is the landing) and
+  applies-and-parses for the patch codecs, so no cell is ever ended by
+  a lens no verdict uses.
+- **`--quick` keeps fixed n=5** for time-boxed probes, and says so:
+  every verdict's lens carries `stopping_rule` — `"fixed-n"` or
+  `"wilson95-looks-5-10-20-35"` — plus the `n_used` it was actually
+  computed from. A verdict that stopped at n=5 is distinguishable from
+  a v1.3 fixed-n=5 verdict by its lens, not by guessing from context.
+  An unmeasured cell gets no `n_used` entry at all: `n_used: 0` would
+  read as a verdict graded on zero samples.
+- **The budget is still the outer bound.** A cell stopped by the meter
+  mid-schedule reports its honest partial n, and the profile can tell
+  that apart from a cell the rule decided.
+
+## Long-output integrity
+
+From the v1 live validation, at a 15.8k prompt: protocol held, stats
+were intact, `done_reason: length` — and the output was degenerate
+repetition. Quality dies before protocol does, and every other probe in
+this instrument watches protocol.
+
+The `long_output` family climbs an escalating ladder of generation
+targets — **512, 1024, 2048, 4096 tokens** — on one frozen enumeration
+task, one call per rung, and scores each reply two ways:
+
+- **distinct 4-gram ratio** — distinct 4-grams / total 4-grams, which
+  catches a model looping phrases;
+- **zlib ratio** — `len(compress(text)) / len(text)`, which catches any
+  compressible collapse too tight for the n-gram window to see (one
+  character repeated forever has perfect 4-gram diversity).
+
+Either metric below its floor calls the rung degenerate. **The floors
+are assumed, not derived** (`distinct < 0.30`, `zlib < 0.20`): they were
+picked to sit far below anything healthy output has been observed to
+produce, not fitted to a measured distribution, and the lens says so in
+`thresholds: "assumed-not-derived-…"`. While that string starts with
+`assumed`, every measured `long_output` verdict is forced
+`provisional` — the instrument states its own resolution rather than
+letting a smoke alarm read as a measurement. Deriving real floors needs
+a committed degenerate anchor, which is the recorded next step.
+
+The committed transcripts under `docs/evidence-transcripts/` are code
+and JSON — the wrong genre to calibrate prose degeneracy, since code is
+legitimately repetitive — so they serve as **false-positive guards**
+instead: 248 healthy replies across 23 transcripts, none of which may
+flag. The tightest scores 0.275 on zlib, only 1.38× the floor, and that
+number is pinned in the tests.
+
+The verdict names the extent, not just the outcome: `ready` (no scorable
+rung degenerate), `degrades-at-2048` (the first degenerate rung, named),
+`unusable` (already degenerate at the smallest rung this ladder could
+measure), `unmeasured` (nothing scorable came back). A reply too short
+to score is unmeasurable, never healthy — it spent a call and learned
+nothing, and it never stands in for a clean rung. Rungs that did not run
+say why (`"4096: above measured ceiling"`, `"2048: budget exhausted"`),
+and the lens carries `rungs_scored` and `deepest_scored_tokens` so
+`ready` on a ladder the ceiling cut off at 1024 is not confused with
+`ready` verified clean to 4096.
+
+## assay diff
+
+`assay diff OLD.json NEW.json` compares two profiles of the same subject
+and reports what moved. It touches no endpoint and spends no budget.
+
+**The identity gate runs first.** Same model name, same quant, same
+weight size, same declared tier, same emulated/real-hardware marking —
+any mismatch and the pair is *not comparable*, with nothing scored at
+all. Half a comparison between two different models is worse than none,
+because a rung difference between two subjects is not drift. A field
+recorded on only one side (an older profile that predates the marking)
+is a note, not a mismatch — absent and present-with-null make the same
+claim: nobody declared it.
+
+**Then noise is separated from drift**, per family:
+
+- **codec cells** flag only when the two Wilson intervals are
+  **disjoint**; overlapping intervals are reported as within-noise by
+  name, not silently dropped;
+- **speeds** flag beyond a 2-SE band computed from the per-call samples
+  both sides recorded. Against a pre-v5 profile that has none, diff
+  falls back to a fixed 20% relative threshold and labels that line as
+  assumed rather than derived;
+- **ceiling rungs, shape flips, and verdict ladders** are exact
+  comparisons, classified grew/shrank and improvement/regression;
+- **a cell present on one side only** goes in `dropped` — never scored
+  as regression or improvement. Absence of evidence is absence.
+
+```
+$ cd docs/superpowers/evidence
+$ assay diff live/qwen2.5-coder-7b-instruct-q8_0-quick.json \
+             live-run2/qwen2.5-coder-7b-instruct-q8_0-quick.json
+no drift beyond noise
+within noise: ceiling.max_verified, ceiling.failure_mode, verdict.long_context, …
+
+$ assay diff live/qwen2.5-coder-7b-instruct-q8_0-quick.json \
+             live/granite-code-8b-instruct-q8_0-quick.json
+not comparable
+  model.name differs: 'qwen2.5-coder:7b-instruct-q8_0' -> 'granite-code:8b-instruct-q8_0'
+  model.weights_bytes differs: 8098539207 -> 8565533673
+```
+
+Those two committed live-validation runs — same models, same daemon,
+thirteen minutes apart — are the project's acceptance anchor: the
+sampler-level variation a diff worth trusting must **not** flag. It is a
+test, not an anecdote: all three model pairs must read within noise.
+
+Exit codes are diff's own, because diff measures nothing and its `1`
+carries an answer:
+
+| Code | Meaning |
+|---|---|
+| `0` | comparable, nothing moved beyond noise (with `--gate`: nothing moved in the regression direction) |
+| `1` | drift found (with `--gate`: a **regression** was found; an improvement alone still exits 0) |
+| `2` | not comparable — a different model, quant, weight size, or hardware tier |
+| `4` | a profile file could not be read or parsed. Never `1`: exit 1 claims a measured change, and an unreadable file measured nothing |
+
+`--gate` is the CI shape: a model that got *faster* should not fail a
+build, so only worsening drift exits 1. `--json PATH` writes the full
+result for machine consumption.
 
 ## The None-vs-zero rule
 
@@ -210,6 +414,13 @@ spent-vs-granted. If the budget dies mid-run, every unfinished family is
 `None` and named in `dropped` — partial results report exactly what was
 verified, never more. assay does not probe paid cloud endpoints (v1):
 against a metered API those tokens are money.
+
+The long-output ladder is the one family whose charge is dominated by
+**generation** rather than prompt: a 4096-token rung shares the context
+window with its prompt and is not the same load as a 512-token one, so
+each rung is charged its target. Sequential sampling makes the other
+direction true — a full run's budget covers the case where no codec cell
+decides early, and a typical run spends a fraction of it.
 
 ## Scope honesty
 
