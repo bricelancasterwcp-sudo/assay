@@ -136,3 +136,32 @@ def test_committed_code_replies_do_not_false_positive():
         assert is_degenerate(distinct, z) is not True, (
             f"healthy code reply flagged: distinct={distinct:.3f} zlib={z:.3f}"
         )
+
+
+def test_no_committed_transcript_reply_false_positives():
+    """The same guard widened to every committed transcript.
+
+    248 replies of >= 50 words across 24 files, and the assumed floors
+    clear all of them — but the margin is not uniform. The tightest is
+    ``sweep-hermes3-latest.jsonl`` at zlib=0.275, only 1.38x the assumed
+    ZLIB_FLOOR of 0.20. That number is the honest headroom on this floor
+    and is why the provenance string still says assumed: prose from a
+    model that hedges repetitively could plausibly sit lower.
+    """
+    tightest = None
+    for path in sorted(TRANSCRIPTS.glob("*.jsonl")):
+        for text in _replies(path.name):
+            if len(text.split()) < 50:
+                continue
+            distinct = distinct_n_ratio(text)
+            z = zlib_ratio(text)
+            assert is_degenerate(distinct, z) is not True, (
+                f"{path.name}: distinct={distinct:.3f} zlib={z:.3f}"
+            )
+            margin = min(distinct / DISTINCT_FLOOR, z / ZLIB_FLOOR)
+            if tightest is None or margin < tightest:
+                tightest = margin
+    assert tightest is not None
+    # Pinned so a future floor raise that eats the observed headroom
+    # fails here instead of silently flagging healthy committed output.
+    assert 1.3 < tightest < 1.5

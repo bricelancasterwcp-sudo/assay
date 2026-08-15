@@ -23,9 +23,12 @@ guard (spec §3 amendment): healthy output of a repetitive genre that
 must not flag. Measured against
 ``qwen2.5-coder-7b-instruct-q8_0-quick.jsonl`` (all 10 replies of >= 50
 words), the worst healthy case scores distinct=0.961 and zlib=0.400 —
-clear of both assumed floors by a wide margin, so no downward adjustment
-was needed. Should a later guard fail, the floors yield: they are
-assumed, and the transcripts are real data.
+clear of both assumed floors, so no downward adjustment was needed.
+Widened to all 24 committed transcripts (248 replies), still nothing
+flags, but the headroom is thinner than that one file suggests: the
+tightest case scores zlib=0.275, only 1.38x ``ZLIB_FLOOR``. Both numbers
+are pinned in ``tests/test_long_output.py``. Should a later guard fail,
+the floors yield: they are assumed, and the transcripts are real data.
 """
 
 import zlib
