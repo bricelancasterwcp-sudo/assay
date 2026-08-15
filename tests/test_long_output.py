@@ -1,4 +1,4 @@
-"""Task 7 tests: long-output degeneracy metrics.
+"""Tasks 7 and 8 tests: long-output degeneracy metrics and the probe.
 
 The floors these tests exercise are ASSUMED, not derived (Task 12 does
 the deriving), so the tests deliberately pin two different kinds of
@@ -6,19 +6,34 @@ thing: synthetic extremes that any sane floor must separate, and one
 guard against REAL committed output. The guard is the load-bearing
 one — code replies are healthy output of a repetitive genre, and if the
 assumed floors flagged them the floors would be too hot.
+
+The Task 8 half below tests the escalating-rung probe: what it asks
+for, what it charges, and — the part worth the most — what it refuses
+to claim when a rung never ran or came back empty.
 """
 
+import dataclasses
 import json
 import pathlib
 
 import pytest
+from fakes import ScriptedBackend
 
+from assay.backends.base import Reply
+from assay.budget import Budget, BudgetMeter
+from assay.errors import BudgetExhausted, InfrastructureError
 from assay.long_output import (
     DISTINCT_FLOOR,
+    LONG_OUTPUT_TASK,
+    RUNGS,
     THRESHOLDS_PROVENANCE,
     ZLIB_FLOOR,
+    LongOutput,
+    LongRung,
+    _PROMPT,
     distinct_n_ratio,
     is_degenerate,
+    probe_long_output,
     zlib_ratio,
 )
 
@@ -194,3 +209,236 @@ def test_no_committed_transcript_reply_false_positives():
     assert worst_zlib == pytest.approx(0.2752, abs=1e-4)
     assert worst_distinct / DISTINCT_FLOOR < 2.0
     assert worst_zlib / ZLIB_FLOOR < 2.0
+
+
+# --- Task 8: probe_long_output ----------------------------------------------
+
+# len(_PROMPT) // 5, pinned as a literal: a test that recomputed the
+# divisor from the module would agree with any divisor the module chose.
+CHARGE_PROMPT_TOKENS = 38
+
+
+class LongFake:
+    """Backend replying with scripted texts in call order.
+
+    A call past the end of the script raises IndexError, so a probe that
+    takes one call too many fails loudly instead of silently reusing the
+    last reply.
+    """
+
+    model = "long-fake"
+
+    def __init__(self, texts, *, reports_counts: bool = True) -> None:
+        self._texts = list(texts)
+        self.reports_counts = reports_counts
+        self.calls: list[tuple[str, int, int]] = []  # prompt, seed, max_tokens
+
+    def generate(self, prompt, *, seed, max_tokens, num_ctx=None):
+        self.calls.append((prompt, seed, max_tokens))
+        text = self._texts[len(self.calls) - 1]
+        return Reply(
+            text=text,
+            tokens_in=None,
+            tokens_out=len(text.split()) if self.reports_counts else None,
+            stop_reason="length",
+            raw={},
+        )
+
+
+class ExplodingFake:
+    """Every call fails at the transport layer."""
+
+    model = "exploding-fake"
+
+    def generate(self, prompt, *, seed, max_tokens, num_ctx=None):
+        raise InfrastructureError("transport failure: connection refused (scripted)")
+
+
+def long_meter(max_calls: int = 99, max_prompt_tokens: int = 10**9) -> BudgetMeter:
+    return BudgetMeter(Budget(max_calls=max_calls, max_prompt_tokens=max_prompt_tokens))
+
+
+def test_the_ladder_and_the_task_name_are_registered():
+    assert RUNGS == (512, 1024, 2048, 4096)
+    assert LONG_OUTPUT_TASK == "enumeration-v1"
+
+
+def test_each_rung_is_scored_from_its_own_reply():
+    backend = LongFake([VARIED_PROSE, PATHOLOGICAL, VARIED_PROSE, PATHOLOGICAL])
+    out = probe_long_output(backend, long_meter(), ceiling_max=None)
+    assert isinstance(out, LongOutput)
+    assert out.skipped == ()
+    assert tuple(r.target_tokens for r in out.rungs) == RUNGS
+    assert [r.degenerate for r in out.rungs] == [False, True, False, True]
+    # The metrics are Task 7's, run on the reply text of THAT rung.
+    assert out.rungs[0].distinct_ratio == pytest.approx(distinct_n_ratio(VARIED_PROSE))
+    assert out.rungs[0].zlib_ratio == pytest.approx(zlib_ratio(VARIED_PROSE))
+    assert out.rungs[1].distinct_ratio == pytest.approx(distinct_n_ratio(PATHOLOGICAL))
+    assert out.rungs[0].generated_tokens == len(VARIED_PROSE.split())
+
+
+def test_one_call_per_rung_asks_for_the_rung_and_steps_the_seed():
+    backend = LongFake([VARIED_PROSE] * 4)
+    probe_long_output(backend, long_meter(), ceiling_max=None, seed=7000)
+    assert [c[0] for c in backend.calls] == [_PROMPT] * 4
+    assert [c[1] for c in backend.calls] == [7000, 7001, 7002, 7003]
+    assert [c[2] for c in backend.calls] == list(RUNGS)
+
+
+def test_the_charge_is_the_prompt_plus_the_generation_target():
+    # Generation shares the window, so the target is charged too — a
+    # 4096-token rung is not the same load as a 512-token one and the
+    # meter must not pretend otherwise.
+    meter = long_meter()
+    probe_long_output(LongFake([VARIED_PROSE] * 4), meter, ceiling_max=None)
+    assert meter.spent.calls == 4
+    assert meter.spent.prompt_tokens == 4 * CHARGE_PROMPT_TOKENS + sum(RUNGS)
+
+
+def test_a_caller_supplied_ladder_is_honoured():
+    backend = LongFake([VARIED_PROSE, PATHOLOGICAL])
+    out = probe_long_output(
+        backend, long_meter(), ceiling_max=None, rungs=(128, 256)
+    )
+    assert tuple(r.target_tokens for r in out.rungs) == (128, 256)
+    assert [c[2] for c in backend.calls] == [128, 256]
+
+
+def test_the_ceiling_caps_the_ladder_and_names_each_skipped_rung():
+    backend = LongFake([VARIED_PROSE])
+    out = probe_long_output(backend, long_meter(), ceiling_max=1000)
+    assert len(backend.calls) == 1  # the capped rungs were never asked for
+    assert tuple(r.target_tokens for r in out.rungs) == (512,)
+    assert out.skipped == (
+        "1024: above measured ceiling",
+        "2048: above measured ceiling",
+        "4096: above measured ceiling",
+    )
+
+
+def test_a_rung_sitting_exactly_at_the_ceiling_still_runs():
+    # The ceiling is the largest VERIFIED size, so a rung equal to it is
+    # inside what was measured; only a strictly larger rung is outside.
+    backend = LongFake([VARIED_PROSE, VARIED_PROSE])
+    out = probe_long_output(backend, long_meter(), ceiling_max=1024)
+    assert tuple(r.target_tokens for r in out.rungs) == (512, 1024)
+    assert out.skipped == (
+        "2048: above measured ceiling",
+        "4096: above measured ceiling",
+    )
+
+
+def test_an_unmeasured_ceiling_is_not_a_cap_of_zero():
+    # ceiling_max None means the ceiling probe landed no number. That is
+    # ignorance, not a limit — the ladder runs and the budget is the
+    # only brake.
+    out = probe_long_output(LongFake([VARIED_PROSE] * 4), long_meter(), ceiling_max=None)
+    assert len(out.rungs) == 4
+    assert out.skipped == ()
+
+
+def test_budget_death_stops_the_ladder_and_names_every_later_rung():
+    backend = LongFake([VARIED_PROSE])
+    out = probe_long_output(backend, long_meter(max_calls=1), ceiling_max=None)
+    assert len(backend.calls) == 1
+    assert tuple(r.target_tokens for r in out.rungs) == (512,)
+    assert out.skipped == (
+        "1024: budget exhausted",
+        "2048: budget exhausted",
+        "4096: budget exhausted",
+    )
+
+
+def test_budget_exhaustion_is_reported_not_raised():
+    # The probe swallows BudgetExhausted into `skipped`; a caller
+    # running the family last must still get the earlier rungs back.
+    try:
+        out = probe_long_output(
+            LongFake([VARIED_PROSE]), long_meter(max_calls=1), ceiling_max=None
+        )
+    except BudgetExhausted as exc:
+        raise AssertionError(f"probe raised instead of reporting: {exc}")
+    assert len(out.rungs) == 1
+
+
+def test_the_token_budget_can_kill_a_rung_before_the_call_budget():
+    # One token short of what rung 1 costs, with calls to spare.
+    meter = long_meter(
+        max_prompt_tokens=2 * CHARGE_PROMPT_TOKENS + 512 + 1024 - 1
+    )
+    backend = LongFake([VARIED_PROSE])
+    out = probe_long_output(backend, meter, ceiling_max=None)
+    assert len(backend.calls) == 1
+    assert meter.spent.calls == 1
+    assert meter.spent.prompt_tokens == CHARGE_PROMPT_TOKENS + 512
+    assert out.skipped[0] == "1024: budget exhausted"
+
+
+def test_a_capped_rung_is_named_by_the_ceiling_even_after_the_budget_died():
+    # Both rules apply to rungs 2 and 3 here. The ceiling is a property
+    # of the model and holds whatever the budget did, so it wins; the
+    # budget reason would otherwise change with call ordering.
+    backend = LongFake([VARIED_PROSE])
+    out = probe_long_output(backend, long_meter(max_calls=1), ceiling_max=1500)
+    assert out.skipped == (
+        "1024: budget exhausted",
+        "2048: above measured ceiling",
+        "4096: above measured ceiling",
+    )
+
+
+def test_an_empty_reply_is_unmeasurable_never_healthy():
+    backend = LongFake(["", VARIED_PROSE, VARIED_PROSE, VARIED_PROSE])
+    out = probe_long_output(backend, long_meter(), ceiling_max=None)
+    rung = out.rungs[0]
+    assert rung.target_tokens == 512
+    assert (rung.distinct_ratio, rung.zlib_ratio) == (None, None)
+    # `is None`, not falsy: False would claim the output was checked and
+    # found healthy.
+    assert rung.degenerate is None
+    # The rung still happened, and the backend's reported count stands.
+    assert rung.generated_tokens == 0
+    assert out.rungs[1].degenerate is False
+
+
+def test_a_whitespace_only_reply_is_unmeasurable_too():
+    # zlib on "   \n\n  " compresses to more bytes than it started with,
+    # scoring far above the floor — a reply that said nothing would read
+    # as checked-and-healthy if whitespace counted as content.
+    backend = LongFake(["   \n\n  "] + [VARIED_PROSE] * 3)
+    out = probe_long_output(backend, long_meter(), ceiling_max=None)
+    assert zlib_ratio("   \n\n  ") > ZLIB_FLOOR  # the trap this avoids
+    assert out.rungs[0].zlib_ratio is None
+    assert out.rungs[0].degenerate is None
+
+
+def test_generated_tokens_is_none_when_the_backend_reports_nothing():
+    backend = LongFake([VARIED_PROSE] * 4, reports_counts=False)
+    out = probe_long_output(backend, long_meter(), ceiling_max=None)
+    assert all(r.generated_tokens is None for r in out.rungs)
+    # An unreported count does not stop the text itself being scored.
+    assert all(r.degenerate is False for r in out.rungs)
+
+
+def test_infrastructure_errors_propagate_and_are_never_scored():
+    with pytest.raises(InfrastructureError):
+        probe_long_output(ExplodingFake(), long_meter(), ceiling_max=None)
+
+
+def test_the_result_objects_are_frozen():
+    out = probe_long_output(LongFake([VARIED_PROSE] * 4), long_meter(), ceiling_max=None)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        out.rungs[0].degenerate = False
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        out.skipped = ()
+    assert isinstance(out.rungs[0], LongRung)
+
+
+def test_the_house_fake_answers_the_real_prompt():
+    # The orchestrator's shared fake raises on any unscripted prompt, so
+    # wiring this family into run() (Task 9) fails here first if the
+    # fake has no answer for it.
+    out = probe_long_output(ScriptedBackend(), long_meter(), ceiling_max=None)
+    assert len(out.rungs) == len(RUNGS)
+    assert out.skipped == ()
+    assert all(r.degenerate is False for r in out.rungs)

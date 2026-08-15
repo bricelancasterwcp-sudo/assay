@@ -22,6 +22,22 @@ _SPEED_FILLER_PREFIX = _build_filler(_random.Random(900), 8, 3.0)[:20]
 
 CHARS_PER_TOKEN = 4
 
+# The long-output probe (v1.5) asks for an enumeration; a well-behaved
+# endpoint answers with varied, non-repeating lines. Healthy on both
+# degeneracy metrics, which is what makes it the "well-behaved" script.
+_ENUMERATION = (
+    "1. A cast iron skillet holds heat because the metal is thick, not conductive.\n"
+    "2. Runways carry the number of their magnetic heading, so drift forces renaming.\n"
+    "3. Nutmeg and mace grow on one tree: the seed and the lacy aril around it.\n"
+    "4. Venetian canals sit on pilings of alder, which hardens rather than rots underwater.\n"
+    "5. Bicycle wheels stay true through spoke tension, not through rim stiffness.\n"
+    "6. Vanilla orchids outside Mexico need hand pollination; their bee never travelled.\n"
+    "7. Library book spines were once shelved inward, with titles written on the fore edge.\n"
+    "8. Fireflies time their flashes into species-specific codes to avoid wooing strangers.\n"
+    "9. The Dead Sea keeps swimmers afloat on dissolved magnesium and potassium salts.\n"
+    "10. Cathedral flying buttresses move thrust outward so the walls can carry glass.\n"
+)
+
 _FULL_CAPS = BackendCaps(
     reports_counts=True,
     per_request_ctx=True,
@@ -105,6 +121,8 @@ class ScriptedBackend:
             return "read tiny.py"
         if prompt.startswith("Count upward from one"):
             return "1\n2\n3\n4"
+        if prompt.startswith("Write a numbered list of distinct"):
+            return _ENUMERATION
         if prompt.startswith(_SPEED_FILLER_PREFIX):
             return "ok"
         if prompt.startswith("Begin your reply with exactly the word ASSAY-"):

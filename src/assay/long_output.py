@@ -1,4 +1,4 @@
-"""Degeneracy metrics for long generations (spec §3).
+"""Degeneracy metrics and probe for long generations (spec §3).
 
 Two cheap, orthogonal views of the same failure. ``distinct_n_ratio``
 catches a model that loops phrases; ``zlib_ratio`` catches any
@@ -29,9 +29,22 @@ flags, but the headroom is thinner than that one file suggests: the
 tightest case scores zlib=0.275, only 1.38x ``ZLIB_FLOOR``. Both numbers
 are pinned in ``tests/test_long_output.py``. Should a later guard fail,
 the floors yield: they are assumed, and the transcripts are real data.
+
+``probe_long_output`` is the other half: one call per rung up an
+escalating ladder of generation targets, scoring each reply with the
+functions above. A model that holds together for 512 tokens and loops
+at 2048 is the failure this ladder exists to locate, and it can only be
+located by asking for both. Every rung that does NOT run says why —
+above the measured ceiling, or out of budget — because a missing rung
+and a healthy rung are not the same finding.
 """
 
 import zlib
+from dataclasses import dataclass
+
+from assay.backends.base import Backend
+from assay.budget import BudgetMeter
+from assay.errors import BudgetExhausted
 
 DISTINCT_FLOOR = 0.30   # assumed, not derived — see THRESHOLDS_PROVENANCE
 ZLIB_FLOOR = 0.20       # assumed, not derived
@@ -83,3 +96,118 @@ def is_degenerate(distinct: float | None, z: float | None) -> bool | None:
     return (distinct is not None and distinct < DISTINCT_FLOOR) or (
         z is not None and z < ZLIB_FLOOR
     )
+
+
+# --- the probe --------------------------------------------------------------
+
+RUNGS = (512, 1024, 2048, 4096)
+LONG_OUTPUT_TASK = "enumeration-v1"
+"""Names the task the rungs were measured on. Degeneracy is a property
+of model x task, not of the model alone: an enumeration prompt invites
+list-shaped repetition that a summarisation prompt would not. A reader
+comparing two profiles needs to know both ran the same task."""
+
+_PROMPT = (
+    "Write a numbered list of distinct, specific facts, each about a "
+    "different everyday object or place. One fact per line. Do not "
+    "repeat a fact or an object. Continue the list until you are "
+    "stopped."
+)
+_LONG_SEED = 1100
+# Charge sizing ONLY, never reported as a measurement. The prompt is
+# ~40 tokens however it is counted, while the generation target it sits
+# beside is 512-4096 — the rough term is two orders of magnitude below
+# the one that matters, so it is left rough on purpose.
+_EST_CHARS_PER_TOKEN = 5
+
+
+@dataclass(frozen=True)
+class LongRung:
+    """One attempted rung. Every metric is None when unmeasurable."""
+
+    target_tokens: int
+    generated_tokens: int | None  # reply.tokens_out; None when unreported
+    distinct_ratio: float | None
+    zlib_ratio: float | None
+    degenerate: bool | None       # None = nothing scorable came back
+
+
+@dataclass(frozen=True)
+class LongOutput:
+    rungs: tuple[LongRung, ...]   # attempted rungs, in ladder order
+    # Why each unattempted rung did not run, naming itself:
+    # "4096: above measured ceiling", "2048: budget exhausted".
+    skipped: tuple[str, ...]
+
+
+def _score(text: str) -> tuple[float | None, float | None, bool | None]:
+    """(distinct, zlib, degenerate) for one reply body.
+
+    A reply with no non-whitespace content is unmeasurable on all three:
+    ``zlib_ratio`` would happily score ``"   "`` at 3.7 (the header
+    outweighs three bytes), which clears the floor and would report a
+    reply that said NOTHING as checked-and-healthy.
+    """
+    if not text.strip():
+        return None, None, None
+    distinct = distinct_n_ratio(text)
+    z = zlib_ratio(text)
+    return distinct, z, is_degenerate(distinct, z)
+
+
+def probe_long_output(
+    backend: Backend,
+    meter: BudgetMeter,
+    *,
+    ceiling_max: int | None,
+    rungs: tuple[int, ...] = RUNGS,
+    seed: int = _LONG_SEED,
+) -> LongOutput:
+    """Climb the rung ladder, scoring each reply for degeneracy.
+
+    One call per rung, ``max_tokens`` set to the rung. Each call is
+    charged ``max(1, len(_PROMPT) // 5) + target``: generation shares
+    the context window with the prompt, so a 4096-token rung is not the
+    same load on the endpoint as a 512-token one and the meter must not
+    price them alike (the codec probes' sizing-proxy philosophy).
+
+    Rungs that do not run are named in ``skipped`` rather than dropped
+    silently. ``ceiling_max`` (the ceiling probe's largest VERIFIED
+    size, ``None`` when it measured nothing — ignorance, not a cap of
+    zero) skips any strictly larger rung; budget exhaustion skips the
+    rung it hit and every later one. A rung that is BOTH above the
+    ceiling and past the budget is named by the ceiling: that reason is
+    a property of the model and holds whatever the budget did, where
+    the budget reason would shift with how the run was ordered.
+
+    Infrastructure errors propagate — a rung whose call failed at the
+    transport is not a rung that produced healthy text (spec §3).
+    """
+    attempted: list[LongRung] = []
+    skipped: list[str] = []
+    budget_dead = False
+    for i, target in enumerate(rungs):
+        if ceiling_max is not None and target > ceiling_max:
+            skipped.append(f"{target}: above measured ceiling")
+            continue
+        if budget_dead:
+            skipped.append(f"{target}: budget exhausted")
+            continue
+        try:
+            meter.charge(max(1, len(_PROMPT) // _EST_CHARS_PER_TOKEN) + target)
+        except BudgetExhausted:
+            budget_dead = True
+            skipped.append(f"{target}: budget exhausted")
+            continue
+        reply = backend.generate(_PROMPT, seed=seed + i, max_tokens=target)
+        distinct, z, degenerate = _score(reply.text)
+        attempted.append(
+            LongRung(
+                target_tokens=target,
+                generated_tokens=reply.tokens_out,
+                distinct_ratio=distinct,
+                zlib_ratio=z,
+                degenerate=degenerate,
+            )
+        )
+    return LongOutput(rungs=tuple(attempted), skipped=tuple(skipped))
