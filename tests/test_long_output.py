@@ -11,6 +11,8 @@ assumed floors flagged them the floors would be too hot.
 import json
 import pathlib
 
+import pytest
+
 from assay.long_output import (
     DISTINCT_FLOOR,
     THRESHOLDS_PROVENANCE,
@@ -102,6 +104,27 @@ def test_the_floor_is_an_exclusive_bound():
     assert is_degenerate(DISTINCT_FLOOR, ZLIB_FLOOR) is False
 
 
+def test_ngram_windows_overlap_rather_than_chunk():
+    # The suite otherwise cannot tell a sliding window from a chunked
+    # one: "one two three four" scores 1.0 under both. Here they
+    # diverge. Eight words give five OVERLAPPING 4-grams — (a b a b),
+    # (b a b a), (a b a b), (b a b a), (a b a b) — of which 2 are
+    # unique, so 2/5 = 0.4. A chunked implementation would cut two
+    # non-overlapping grams, 1 unique of 2, and score 0.5.
+    assert distinct_n_ratio("a b a b a b a b") == pytest.approx(0.4)
+
+
+def test_zlib_ratio_measures_bytes_not_characters():
+    # Non-ASCII text is where the denominator choice shows. Ten
+    # repetitions of "ünïcödé " are 80 characters but 120 UTF-8 bytes;
+    # the byte denominator scores 0.2 where a character denominator
+    # would score 0.3. Bytes are correct — compression works on bytes,
+    # and a character denominator would flatter multibyte text.
+    text = "ünïcödé " * 10
+    assert len(text) == 80 and len(text.encode("utf-8")) == 120
+    assert zlib_ratio(text) == pytest.approx(0.2, abs=1e-4)
+
+
 def test_a_nonsense_gram_width_is_refused_not_silently_answered():
     # n=0 would window empty tuples and report a ratio near zero — a
     # nonsense number that reads exactly like total collapse.
@@ -141,27 +164,33 @@ def test_committed_code_replies_do_not_false_positive():
 def test_no_committed_transcript_reply_false_positives():
     """The same guard widened to every committed transcript.
 
-    248 replies of >= 50 words across 24 files, and the assumed floors
-    clear all of them — but the margin is not uniform. The tightest is
-    ``sweep-hermes3-latest.jsonl`` at zlib=0.275, only 1.38x the assumed
-    ZLIB_FLOOR of 0.20. That number is the honest headroom on this floor
-    and is why the provenance string still says assumed: prose from a
-    model that hedges repetitively could plausibly sit lower.
+    248 replies of >= 50 words across 23 files, and the assumed floors
+    clear all of them — but the margin is not uniform. The worst zlib is
+    0.275 (``sweep-hermes3-latest.jsonl``), only 1.38x the assumed
+    ZLIB_FLOOR of 0.20; the worst distinct is 0.5952, 1.98x
+    DISTINCT_FLOOR. Neither floor has 2x headroom against real committed
+    output, which is why the provenance string still says assumed: prose
+    from a model that hedges repetitively could plausibly sit lower.
     """
-    tightest = None
+    worst_distinct = worst_zlib = None
+    seen = 0
     for path in sorted(TRANSCRIPTS.glob("*.jsonl")):
         for text in _replies(path.name):
             if len(text.split()) < 50:
                 continue
+            seen += 1
             distinct = distinct_n_ratio(text)
             z = zlib_ratio(text)
             assert is_degenerate(distinct, z) is not True, (
                 f"{path.name}: distinct={distinct:.3f} zlib={z:.3f}"
             )
-            margin = min(distinct / DISTINCT_FLOOR, z / ZLIB_FLOOR)
-            if tightest is None or margin < tightest:
-                tightest = margin
-    assert tightest is not None
-    # Pinned so a future floor raise that eats the observed headroom
-    # fails here instead of silently flagging healthy committed output.
-    assert 1.3 < tightest < 1.5
+            worst_distinct = distinct if worst_distinct is None else min(worst_distinct, distinct)
+            worst_zlib = z if worst_zlib is None else min(worst_zlib, z)
+    assert seen == 248
+    # Both headrooms pinned, so a future floor raise that eats the
+    # observed margin fails here instead of silently flagging healthy
+    # committed output. Neither floor clears 2x.
+    assert worst_distinct == pytest.approx(0.5952, abs=1e-4)
+    assert worst_zlib == pytest.approx(0.2752, abs=1e-4)
+    assert worst_distinct / DISTINCT_FLOOR < 2.0
+    assert worst_zlib / ZLIB_FLOOR < 2.0
