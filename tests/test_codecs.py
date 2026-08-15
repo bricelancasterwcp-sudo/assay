@@ -381,6 +381,20 @@ def json_four_of_five_script(prompt):
     return "no patch for you"
 
 
+def json_one_of_five_script(prompt):
+    """Lands exactly ONE of the json cell's five tasks, so a round adds
+    one landing: 1/5 at the first look is undecided (unusable/risky),
+    2/10 at the second is decided unusable. The cell must stop at an
+    INTERMEDIATE look — not the schedule's first entry, not its cap."""
+    from assay.codecs import JSON_DIRECTIVE, JSON_TASKS
+
+    if prompt.startswith(JSON_DIRECTIVE):
+        if prompt.endswith(JSON_TASKS[0]):
+            return '{"name": "x", "count": 3, "tags": ["t"]}'
+        return "sorry, no json today"
+    return "no patch for you"
+
+
 def applies_but_not_equal_script(prompt):
     """Patch replies that APPLY and parse but are never byte-equal (a
     trailing comment). lands_applies == 1.0 while lands == 0.0, so the
@@ -438,6 +452,27 @@ def test_sequential_runs_undecided_cell_to_cap():
         for grade in GRADES:
             assert result[codec][grade].n == 5
     assert len(backend.calls) == 3 * 35 + 6 * 5
+
+
+def test_sequential_stops_at_an_intermediate_look():
+    """EVERY look is a stopping point, not just the first and the cap.
+    A cell landing one task in five is undecided at look 5
+    (wilson95(1, 5) = [0.036, 0.624], unusable/risky) and decided at
+    look 10 (wilson95(2, 10) = [0.057, 0.510], both unusable), so it
+    must report n == 10 — the middle of the schedule."""
+    from assay.codecs import GRADES, probe_codecs
+    from assay.stats import LOOK_SCHEDULE
+
+    backend = ScriptedBackend(json_one_of_five_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=35,
+                          look_schedule=LOOK_SCHEDULE)
+
+    for grade in GRADES:
+        cell = result["json_object"][grade]
+        assert cell.n == 10, "a look after the first one never fired"
+        assert cell.n not in (LOOK_SCHEDULE[0], LOOK_SCHEDULE[-1])
+        assert cell.lands == 2 / 10  # one landing task x two rounds
+    assert len(backend.calls) == 3 * 10 + 6 * 5
 
 
 def test_no_schedule_is_exactly_the_old_behavior():
