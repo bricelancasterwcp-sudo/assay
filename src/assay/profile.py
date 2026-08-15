@@ -268,13 +268,20 @@ def _loop_verdict(loop: Loop | None) -> dict:
                      "fixtures": FIXTURE_SET, "temperature": 0.2}}
 
 
-def _long_output_lens() -> dict:
-    """What a long_output verdict was judged by — floors included.
+def _long_output_lens(scorable: list[LongRung]) -> dict:
+    """What a long_output verdict was judged by — floors and EXTENT.
 
     The floors are ASSUMED, not derived (see long_output's module
     docstring), and the lens carries that provenance string so no reader
     has to go looking for it: a verdict quoted without its thresholds is
     not a model property.
+
+    ``rungs_scored`` and ``deepest_scored_tokens`` are the extent (ruled
+    2026-08-15): "ready" on a ladder the ceiling cut off at 1024 and
+    "ready" verified clean to 4096 are the same word for different
+    findings, and report.py/diff.py read this entry, not the rendered
+    table. The keys are present in every shape — 0 and None when nothing
+    was scored — so a consumer parses one lens, not two.
     """
     return {
         "metrics": "distinct4gram+zlib",
@@ -283,6 +290,9 @@ def _long_output_lens() -> dict:
         "thresholds": THRESHOLDS_PROVENANCE,
         "task": LONG_OUTPUT_TASK,
         "temperature": 0.2,
+        "rungs_scored": len(scorable),
+        "deepest_scored_tokens": (max(rung.target_tokens for rung in scorable)
+                                  if scorable else None),
     }
 
 
@@ -313,7 +323,7 @@ def _long_output_verdict(long_output: LongOutput | None) -> dict:
     ]
     if not scorable:
         return {"verdict": "unmeasured", "provisional": False,
-                "lens": _long_output_lens()}
+                "lens": _long_output_lens(scorable)}
     first_bad = next(
         (i for i, rung in enumerate(scorable) if rung.degenerate), None)
     if first_bad is None:
@@ -324,7 +334,7 @@ def _long_output_verdict(long_output: LongOutput | None) -> dict:
         verdict = f"degrades-at-{scorable[first_bad].target_tokens}"
     return {"verdict": verdict,
             "provisional": THRESHOLDS_PROVENANCE.startswith("assumed"),
-            "lens": _long_output_lens()}
+            "lens": _long_output_lens(scorable)}
 
 
 def _long_context(ceiling: Ceiling | None) -> str:

@@ -261,6 +261,11 @@ def test_schema_version_and_package_version_move_together():
     assert assay.__version__ == "0.6.0"
     assert 'version = "0.6.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    # The README states the schema version to a reader who will never
+    # open profile.py. It sat two versions stale through a green suite
+    # (it said 3 while PROFILE_VERSION was 4) because nothing pinned it.
+    assert f"assay_profile_version: {PROFILE_VERSION}" in (
+        _REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
 
 def test_long_output_round_trips_as_tuples_of_rungs():
@@ -319,7 +324,54 @@ def test_long_output_lens_names_floors_task_and_threshold_provenance():
         "thresholds": THRESHOLDS_PROVENANCE,
         "task": LONG_OUTPUT_TASK,
         "temperature": 0.2,
+        "rungs_scored": 3,
+        "deepest_scored_tokens": 2048,
     }
+
+
+def test_the_lens_says_how_far_the_ladder_actually_got():
+    # Ruled 2026-08-15: "ready" alone has no extent. A model whose
+    # ceiling stopped the ladder at 1024 and a model verified clean to
+    # 4096 both read "ready", and report.py/diff.py consume the verdict
+    # entry, not the rendered table — so the extent must live in the
+    # lens or it does not exist for them.
+    shallow = compute_verdicts(
+        None, None, None, None, None, None,
+        make_long_output(targets=(512, 1024)))["long_output"]["lens"]
+    assert shallow["rungs_scored"] == 2
+    assert shallow["deepest_scored_tokens"] == 1024
+
+    deep = compute_verdicts(
+        None, None, None, None, None, None,
+        make_long_output(targets=(512, 1024, 2048, 4096)))["long_output"]["lens"]
+    assert deep["rungs_scored"] == 4
+    assert deep["deepest_scored_tokens"] == 4096
+
+
+def test_the_lens_counts_only_scored_rungs():
+    # A rung that measured nothing adds no extent: it neither counts
+    # nor deepens the reach the verdict claims.
+    healthy = make_long_output(targets=(512,)).rungs[0]
+    ladder = LongOutput(rungs=(healthy, unscorable_rung(4096)), skipped=())
+    lens = compute_verdicts(None, None, None, None, None, None,
+                            ladder)["long_output"]["lens"]
+    assert lens["rungs_scored"] == 1
+    assert lens["deepest_scored_tokens"] == 512
+
+
+def test_an_unmeasured_lens_keeps_the_same_shape():
+    # Same keys either way — a consumer reads one lens shape, and the
+    # unmeasured case says 0 rungs and a None depth rather than going
+    # silent on the question.
+    measured = compute_verdicts(None, None, None, None, None, None,
+                                make_long_output())["long_output"]["lens"]
+    for long_output in (None, LongOutput(rungs=(), skipped=()),
+                        LongOutput(rungs=(unscorable_rung(512),), skipped=())):
+        lens = compute_verdicts(None, None, None, None, None, None,
+                                long_output)["long_output"]["lens"]
+        assert set(lens) == set(measured)
+        assert lens["rungs_scored"] == 0
+        assert lens["deepest_scored_tokens"] is None
 
 
 def test_unmeasured_long_output_is_unmeasured_and_not_provisional():

@@ -361,6 +361,70 @@ def test_verdict_present_on_one_side_only_is_dropped():
     assert "verdict.patch_editing" in result.dropped
 
 
+def _long_output(verdict):
+    return {"verdict": verdict, "provisional": True, "lens": {}}
+
+
+def _long_output_change(old_verdict, new_verdict):
+    result = diff_profiles(
+        make_profile(verdicts=make_verdicts(
+            long_output=_long_output(old_verdict))),
+        make_profile(verdicts=make_verdicts(
+            long_output=_long_output(new_verdict))))
+    (change,) = [c for c in result.changes if c.cell == "long_output"]
+    return change
+
+
+@pytest.mark.parametrize(("old", "new", "expected"), [
+    # ready > risky > degrades-at-N > unusable (ruled 2026-08-15).
+    ("ready", "degrades-at-2048", "regression"),
+    ("degrades-at-2048", "ready", "improvement"),
+    ("risky", "degrades-at-2048", "regression"),
+    ("degrades-at-2048", "risky", "improvement"),
+    ("degrades-at-1024", "unusable", "regression"),
+    ("unusable", "degrades-at-512", "improvement"),
+    # ...and between two degrades-at rungs, the LARGER N is better:
+    # holding together to 2048 before looping beats looping at 1024.
+    ("degrades-at-1024", "degrades-at-2048", "improvement"),
+    ("degrades-at-2048", "degrades-at-1024", "regression"),
+    ("degrades-at-512", "degrades-at-4096", "improvement"),
+])
+def test_the_degrades_at_rung_takes_its_place_on_the_ladder(old, new, expected):
+    change = _long_output_change(old, new)
+    assert change.direction == expected
+    assert change.basis == "flip"
+    assert (change.old, change.new) == (old, new)
+
+
+def test_degrades_at_is_its_own_rung_not_a_flavour_of_unusable():
+    # The extent term alone would ORDER these correctly by accident
+    # (any degrades-at-N outranks unusable on N), which is why the rung
+    # term is asserted directly: degrades-at is a position on the
+    # ladder, strictly between unusable and risky, and a model that
+    # loops from 512 is not the same finding as one that never held
+    # together at all.
+    from assay.diff import _rung_rank
+
+    order = ["unusable", "degrades-at-512", "degrades-at-4096",
+             "risky", "ready"]
+    ranks = [_rung_rank(value) for value in order]
+    assert ranks == sorted(ranks), "the ladder must be strictly ordered"
+    assert len(set(ranks)) == len(ranks)
+    assert _rung_rank("unusable")[0] < _rung_rank("degrades-at-512")[0]
+    assert _rung_rank("degrades-at-4096")[0] < _rung_rank("risky")[0]
+    # Rungs that carry no extent all sit at extent 0, so the second
+    # term never reorders them against each other.
+    assert {_rung_rank(v)[1] for v in ("unusable", "risky", "ready")} == {0}
+
+
+def test_a_rung_name_this_comparator_cannot_read_is_not_ranked():
+    # Something moved and the diff says so, but an unparsable rung is
+    # not scored as a regression: ranking it would be a guess, and a
+    # guessed direction is what a gate would act on.
+    change = _long_output_change("ready", "degrades-at-soon")
+    assert change.direction == "neutral"
+
+
 def test_provisional_flip_alone_is_neutral():
     result = diff_profiles(
         make_profile(),

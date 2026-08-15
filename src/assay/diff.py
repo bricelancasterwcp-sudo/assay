@@ -25,7 +25,10 @@ schema-era gap is not read as two machines disagreeing.
 reads. Each family is judged by the strongest evidence its cells carry:
 
 - ceiling / shapes / verdicts: exact values, so any move is real
-  (``rung-change`` and ``flip``);
+  (``rung-change`` and ``flip``). The verdict ladder is
+  ready > risky > degrades-at-N > unusable, and between two
+  ``degrades-at`` rungs the LARGER N is the better one — degrading
+  later is an improvement, not a regression;
 - codecs: Wilson-95 per side, flagged only when the intervals are
   DISJOINT (``disjoint-intervals``) — 4/5 vs 5/5 is not a finding;
 - speed: Welch 2-SE over the per-call samples (``beyond-2se``) when
@@ -57,10 +60,14 @@ BASIS_FLIP = "flip"
 BASIS_DISJOINT = "disjoint-intervals"
 BASIS_2SE = "beyond-2se"
 
-# ready > risky > unusable (assay.stats.ladder's order). "unmeasured"
-# is that ladder's fourth value and deliberately absent here: it is
-# dropped, never ranked.
-_LADDER_RANK = {"unusable": 0, "risky": 1, "ready": 2}
+# ready > risky > degrades-at-N > unusable. The first three come from
+# assay.stats.ladder; degrades-at-N is the long_output family's own
+# rung (v1.5), and it sits above unusable — a model that holds together
+# for a while is better than one that never does — and below risky.
+# "unmeasured" is the ladder's fourth value and deliberately absent
+# here: it is dropped, never ranked.
+_LADDER_RANK = {"unusable": 0, "degrades-at": 1, "risky": 2, "ready": 3}
+_DEGRADES_PREFIX = "degrades-at-"
 _LYING_MODES = frozenset({"silent_truncation", "missing_stats"})
 _GRADES = ("tiny", "small", "medium")
 _LENSES = ("lands", "lands_applies")
@@ -176,10 +183,39 @@ def _mode_direction(old: object, new: object) -> str:
     return "neutral"
 
 
+def _rung_rank(value: object) -> tuple[int, int] | None:
+    """(rung, extent) for one verdict string, or None when it is not a
+    rung this comparator can read.
+
+    The extent term only ever breaks ties INSIDE ``degrades-at``, where
+    the larger N is better: a model that holds together to 2048 before
+    it loops is better than one that loops at 1024, and a gate told the
+    opposite would fail a build for an improvement. Every named rung
+    carries extent 0, so the ordering among them is unchanged.
+
+    An unparsable ``degrades-at-<something>`` returns None rather than a
+    guessed position: a direction nobody can derive is not one a CI gate
+    should act on.
+    """
+    if not isinstance(value, str):
+        return None
+    if value.startswith(_DEGRADES_PREFIX):
+        extent = value[len(_DEGRADES_PREFIX):]
+        if not extent.isdigit():
+            return None
+        return _LADDER_RANK["degrades-at"], int(extent)
+    rank = _LADDER_RANK.get(value)
+    return None if rank is None else (rank, 0)
+
+
 def _ladder_direction(old: object, new: object) -> str:
-    old_rank, new_rank = _LADDER_RANK.get(old), _LADDER_RANK.get(new)
+    old_rank, new_rank = _rung_rank(old), _rung_rank(new)
     if old_rank is None or new_rank is None:
         return "neutral"  # an unknown rung is not a rung
+    if new_rank == old_rank:
+        # Two spellings of one position (the caller only asks when the
+        # strings differ): nothing moved on the ladder.
+        return "neutral"
     return "regression" if new_rank < old_rank else "improvement"
 
 

@@ -438,6 +438,10 @@ def test_long_output_family_climbs_the_full_ladder_on_a_healthy_endpoint():
     assert all(rung.degenerate is False for rung in profile.long_output.rungs)
     assert profile.verdicts["long_output"]["verdict"] == "ready"
     assert profile.verdicts["long_output"]["provisional"] is True
+    # The verdict carries HOW FAR it was verified, not just that it was.
+    lens = profile.verdicts["long_output"]["lens"]
+    assert lens["rungs_scored"] == 4
+    assert lens["deepest_scored_tokens"] == 4096
     assert profile.provenance["dropped"] == []
 
 
@@ -468,6 +472,12 @@ def test_long_output_rungs_above_the_measured_ceiling_are_skipped_by_name():
     assert profile.long_output.skipped == ("2048: above measured ceiling",
                                            "4096: above measured ceiling")
     assert profile.verdicts["long_output"]["verdict"] == "ready"
+    # ...and "ready" here means ready THROUGH 1024, which the lens says
+    # so a consumer cannot read it as the 4096-deep ready of a model
+    # whose ceiling never truncated the ladder.
+    lens = profile.verdicts["long_output"]["lens"]
+    assert lens["rungs_scored"] == 2
+    assert lens["deepest_scored_tokens"] == 1024
 
 
 def test_long_output_skipped_when_the_budget_died_earlier():

@@ -234,6 +234,32 @@ def test_cli_diff_gate_fails_only_on_regressions(tmp_path, capsys):
     capsys.readouterr()
 
 
+def test_cli_diff_gate_fails_when_long_output_starts_degrading(tmp_path, capsys):
+    # A model that used to hold together to the top of the ladder and
+    # now loops at 2048 is a REGRESSION the CI gate must fail on —
+    # before the rung ordering existed, "degrades-at-2048" was an
+    # unknown string, scored neutral, and sailed through --gate.
+    def payload(verdict):
+        return _diff_payload(verdicts={"long_output": {
+            "verdict": verdict, "provisional": True, "lens": {}}})
+
+    ready = _write_profile(tmp_path / "ready.json", payload("ready"))
+    at_2048 = _write_profile(tmp_path / "at2048.json",
+                             payload("degrades-at-2048"))
+    at_4096 = _write_profile(tmp_path / "at4096.json",
+                             payload("degrades-at-4096"))
+    unusable = _write_profile(tmp_path / "unusable.json", payload("unusable"))
+
+    assert cli.main(["diff", ready, at_2048, "--gate"]) == 1
+    assert "regression" in capsys.readouterr().out
+    # Degrading LATER is an improvement: it moved, so a bare diff says
+    # 1, but the gate must not fail a model that got better.
+    assert cli.main(["diff", at_2048, at_4096, "--gate"]) == 0
+    assert cli.main(["diff", at_2048, at_4096]) == 1
+    assert cli.main(["diff", at_2048, unusable, "--gate"]) == 1
+    capsys.readouterr()
+
+
 def test_cli_diff_json_writes_the_whole_result(tmp_path, capsys):
     old = _write_profile(tmp_path / "old.json", _diff_payload())
     worse = _write_profile(tmp_path / "worse.json",
