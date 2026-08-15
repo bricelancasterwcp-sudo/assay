@@ -143,14 +143,26 @@ class LongOutput:
 def _score(text: str) -> tuple[float | None, float | None, bool | None]:
     """(distinct, zlib, degenerate) for one reply body.
 
-    A reply with no non-whitespace content is unmeasurable on all three:
-    ``zlib_ratio`` would happily score ``"   "`` at 3.7 (the header
-    outweighs three bytes), which clears the floor and would report a
-    reply that said NOTHING as checked-and-healthy.
+    A reply too short for the n-gram window — fewer than 4 words, which
+    includes the empty and whitespace-only cases — is unmeasurable on
+    all three, ``degenerate=None`` rather than False. ``zlib_ratio``
+    alone would not stop there: it scores ``"ok"`` at 5.0 and
+    ``"Sorry, I cannot."`` at 1.5, both far ABOVE ``ZLIB_FLOOR``,
+    because compressing a handful of bytes measures zlib's own header
+    and not the output. Deferring to that number would report a
+    three-word refusal against a 4096-token target as checked-and-
+    healthy — a value that looks like a measurement on text the
+    instrument cannot measure.
+
+    Task 7's pure functions are unchanged: ``is_degenerate`` correctly
+    defers to whichever metric measured something, and this honesty
+    rule is the probe's, where the target the reply fell short of is
+    known. ``generated_tokens`` still passes through on the rung, so a
+    consumer can see the target-vs-generated gap for itself.
     """
-    if not text.strip():
-        return None, None, None
     distinct = distinct_n_ratio(text)
+    if distinct is None:
+        return None, None, None
     z = zlib_ratio(text)
     return distinct, z, is_degenerate(distinct, z)
 

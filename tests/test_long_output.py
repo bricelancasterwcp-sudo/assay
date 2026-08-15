@@ -30,6 +30,7 @@ from assay.long_output import (
     ZLIB_FLOOR,
     LongOutput,
     LongRung,
+    _LONG_SEED,
     _PROMPT,
     distinct_n_ratio,
     is_degenerate,
@@ -258,9 +259,12 @@ def long_meter(max_calls: int = 99, max_prompt_tokens: int = 10**9) -> BudgetMet
     return BudgetMeter(Budget(max_calls=max_calls, max_prompt_tokens=max_prompt_tokens))
 
 
-def test_the_ladder_and_the_task_name_are_registered():
+def test_the_ladder_the_task_name_and_the_seed_base_are_registered():
     assert RUNGS == (512, 1024, 2048, 4096)
     assert LONG_OUTPUT_TASK == "enumeration-v1"
+    # The seed base travels in provenance; a run that quietly moved it
+    # would not be comparable with the profiles already recorded.
+    assert _LONG_SEED == 1100
 
 
 def test_each_rung_is_scored_from_its_own_reply():
@@ -410,6 +414,40 @@ def test_a_whitespace_only_reply_is_unmeasurable_too():
     assert zlib_ratio("   \n\n  ") > ZLIB_FLOOR  # the trap this avoids
     assert out.rungs[0].zlib_ratio is None
     assert out.rungs[0].degenerate is None
+
+
+def test_a_reply_too_short_to_measure_is_unmeasurable_never_healthy():
+    """A three-word refusal against a 4096-token target is not health.
+
+    zlib on a handful of bytes measures zlib's own header, not the
+    output: "ok" scores 5.0 and "Sorry, I cannot." scores 1.5, both far
+    above ZLIB_FLOOR, and distinct-n has no window at all. Deferring to
+    that number would stamp `degenerate=False` — checked and found
+    healthy — on text the instrument cannot measure.
+    """
+    assert distinct_n_ratio("Sorry, I cannot.") is None
+    assert zlib_ratio("Sorry, I cannot.") > ZLIB_FLOOR  # the trap
+    assert zlib_ratio("ok") > ZLIB_FLOOR
+    backend = LongFake(["Sorry, I cannot.", "ok"] + [VARIED_PROSE] * 2)
+    out = probe_long_output(backend, long_meter(), ceiling_max=None)
+    for rung in out.rungs[:2]:
+        assert (rung.distinct_ratio, rung.zlib_ratio) == (None, None)
+        assert rung.degenerate is None
+    # The counts still pass through, so a consumer can see the gap
+    # between what was asked for and what came back.
+    assert out.rungs[0].target_tokens == 512
+    assert out.rungs[0].generated_tokens == 3
+    assert out.rungs[2].degenerate is False
+
+
+def test_the_short_reply_cut_is_the_n_gram_window_not_a_new_threshold():
+    # Exactly 4 words is where Task 7's distinct-n becomes measurable
+    # (one gram, trivially unique), and that is the same boundary this
+    # probe uses — no second, probe-only threshold to keep in sync.
+    backend = LongFake(["one two three four"] + [VARIED_PROSE] * 3)
+    out = probe_long_output(backend, long_meter(), ceiling_max=None)
+    assert out.rungs[0].distinct_ratio == 1.0
+    assert out.rungs[0].degenerate is False
 
 
 def test_generated_tokens_is_none_when_the_backend_reports_nothing():
