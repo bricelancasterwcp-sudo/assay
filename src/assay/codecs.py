@@ -276,6 +276,30 @@ def _stop_count(codec: str, landed: int, landed_applies: int) -> int:
     return landed if codec == "json_object" else landed_applies
 
 
+def stopped_on_rule(codec: str, cell: Landing,
+                    look_schedule: tuple[int, ...]) -> bool:
+    """True if a sequential cell ended on the STOPPING RULE, not a dead meter.
+
+    A cell stops when a look decides its rung or when it reaches the
+    cap; either way its n is the honest cost of a decision. The caller
+    needs the distinction because under a schedule an n below the cap
+    is the rule WORKING — reading it as budget death would skip every
+    family that follows codecs (and say so in ``dropped``) on a run
+    that never ran out of anything.
+    """
+    if cell.n == 0 or cell.lands is None or cell.lands_applies is None:
+        return False
+    if cell.n == look_schedule[-1]:
+        return True  # the cap: every scheduled attempt was made
+    if cell.n not in look_schedule:
+        return False  # stopped between looks: nothing but the meter does that
+    return decided(
+        _stop_count(codec, round(cell.lands * cell.n),
+                    round(cell.lands_applies * cell.n)),
+        cell.n,
+    )
+
+
 def probe_codecs(
     backend, meter, *, n_per_cell: int, seed_base: int = 500,
     directives: CodecDirectives | None = None,

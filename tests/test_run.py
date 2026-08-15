@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from fakes import MetadataFreeBackend, ScriptedBackend
+from fakes import CodecFailingBackend, MetadataFreeBackend, ScriptedBackend
 
 from assay import Budget, Profile, probe
 
@@ -275,6 +275,134 @@ def test_tier_and_emulation_travel_in_provenance():
     )
     assert bare.provenance["tier"] is None
     assert bare.provenance["emulated"] is None
+
+
+def test_full_mode_verdicts_carry_sequential_lens():
+    # v1.5: the default mode samples codec cells sequentially, so the
+    # verdict lens must say HOW the sample ended — the stopping rule and
+    # the n it actually reached. A cell stopped at n=5 and a fixed-n=5
+    # cell are the same number under different instruments; only the
+    # lens tells them apart.
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=500, max_prompt_tokens=2_000_000),
+        mode="full", _backend_override=ScriptedBackend(),
+    )
+    for name in ("structured_extraction", "patch_editing"):
+        lens = profile.verdicts[name]["lens"]
+        assert lens["stopping_rule"] == "wilson95-looks-5-10-20-35", name
+    assert (profile.verdicts["structured_extraction"]["lens"]["n_used"]
+            == profile.codecs["json_object"]["small"].n)
+    # A perfect cell is only decided at the terminal look (Wilson lower
+    # on 35/35 is 0.9011): the schedule runs to the cap here.
+    assert profile.codecs["json_object"]["small"].n == 35
+    assert profile.verdicts["patch_editing"]["lens"]["n_used"] == 35
+
+
+def test_quick_mode_lens_is_fixed_n():
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", _backend_override=ScriptedBackend(),
+    )
+    for name in ("structured_extraction", "patch_editing"):
+        lens = profile.verdicts[name]["lens"]
+        assert lens["stopping_rule"] == "fixed-n", name
+        assert lens["n_used"] == 5, name
+
+
+def test_unmeasured_codecs_have_no_n_used_in_the_lens():
+    # None-vs-zero at the lens layer: a cell that was never sampled has
+    # NO n_used entry. `n_used: 0` would read as "measured zero times
+    # and still graded", which is not what happened.
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=_CALLS_THROUGH_CEILING, max_prompt_tokens=100_000),
+        mode="full", _backend_override=ScriptedBackend(),
+    )
+    assert profile.codecs is None
+    for name in ("structured_extraction", "patch_editing"):
+        lens = profile.verdicts[name]["lens"]
+        assert "n_used" not in lens, name
+        assert lens["stopping_rule"] == "wilson95-looks-5-10-20-35", name
+
+
+def test_sequential_early_stop_is_not_read_as_budget_death():
+    # Every codec cell decides "unusable" at its first look and stops at
+    # n=5 with the meter still full. The orchestrator must not confuse a
+    # cell that STOPPED with a cell that was CUT OFF: loop and speed
+    # still run, and nothing claims the budget was exhausted.
+    backend = CodecFailingBackend()
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=500, max_prompt_tokens=2_000_000),
+        mode="full", _backend_override=backend,
+    )
+    assert profile.codecs is not None
+    for codec, grades in profile.codecs.items():
+        for grade, cell in grades.items():
+            assert cell.n == 5, (codec, grade)
+            assert cell.lands_applies == 0.0, (codec, grade)
+    assert profile.verdicts["structured_extraction"]["verdict"] == "unusable"
+    assert profile.verdicts["structured_extraction"]["provisional"] is False
+    assert profile.loop is not None
+    assert profile.speed is not None
+    assert profile.provenance["dropped"] == []
+    assert backend.calls < 500
+
+
+def test_budget_death_mid_sequential_cell_still_reads_as_budget_death():
+    # The other side of the early-stop rule: a cell cut off BETWEEN
+    # looks (n=12 is neither a look point nor the cap) is a dead meter,
+    # not a decision, and the families after codecs must be skipped and
+    # named — never quietly attempted on an exhausted budget.
+    pre_codec_calls = 2 + 12 + 9 + 30  # calibration, ladder x2 seeds, shapes, envelope
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=pre_codec_calls + 12,
+                      max_prompt_tokens=2_000_000),
+        mode="full", _backend_override=ScriptedBackend(),
+    )
+    first = profile.codecs["search_replace"]["tiny"]
+    assert first.n == 12, "the meter must really die between looks"
+    assert profile.loop is None and profile.speed is None
+    dropped = profile.provenance["dropped"]
+    assert "loop: skipped, budget exhausted earlier" in dropped
+    assert "speed: skipped, budget exhausted earlier" in dropped
+
+
+def test_n_used_names_the_cell_each_verdict_was_actually_graded_on():
+    # Sequential sampling lets the cells of one run end at DIFFERENT n.
+    # patch_editing is graded on whichever patch codec lands best under
+    # applies-and-parses, so its n_used must come from that cell — not
+    # from json's, and not from the patch codec that lost.
+    from assay.codecs import Landing
+    from assay.run import _codec_n_used
+
+    def cell(applies, n):
+        return Landing(lands=applies, lands_applies=applies, n=n)
+
+    codecs = {
+        "json_object": {"small": cell(0.0, 5)},
+        "search_replace": {"small": cell(0.5, 35)},
+        "whole_file": {"small": cell(0.9, 20)},  # the graded cell
+    }
+    assert _codec_n_used(codecs) == {"structured_extraction": 5,
+                                     "patch_editing": 20}
+    # Unmeasured cells contribute no entry at all, never a zero.
+    unmeasured = {codec: {"small": Landing(lands=None, lands_applies=None, n=0)}
+                  for codec in ("json_object", "search_replace", "whole_file")}
+    assert _codec_n_used(unmeasured) == {}
+    assert _codec_n_used(None) == {}
+
+
+def test_thorough_params_equal_full_params():
+    # v1.5: --thorough is an alias. Its old fixed n=35 is exactly the
+    # sequential cap, so it buys nothing full does not already buy; the
+    # key stays so the documented flag still parses.
+    from assay.run import MODE_PARAMS
+
+    assert MODE_PARAMS["thorough"] == MODE_PARAMS["full"]
 
 
 def test_thorough_mode_buys_a_decidable_ready():

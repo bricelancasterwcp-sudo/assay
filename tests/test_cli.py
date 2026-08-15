@@ -9,7 +9,8 @@ backend factory and the VRAM reader are always replaced.
 import json
 
 import pytest
-from fakes import MetadataFreeBackend, ScriptedBackend, UnreachableBackend
+from fakes import (CodecFailingBackend, MetadataFreeBackend, ScriptedBackend,
+                   UnreachableBackend)
 
 from assay import cli
 
@@ -107,4 +108,46 @@ def test_envelope_subcommand_prints_single_family_slice(monkeypatch, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert set(payload) == {"envelope"}
     assert payload["envelope"]["fidelity"] == 1.0
-    assert payload["envelope"]["n"] == 10
+    # v1.5: the default mode is full, so the family subcommand runs
+    # full's 30 envelope probes (it was quick's 10 before the remap).
+    assert payload["envelope"]["n"] == 30
+
+
+def test_cli_default_mode_is_full():
+    # v1.5: sequential stopping made the honest mode affordable, so it
+    # is what an operator gets without asking (spec §1 amendment).
+    args = cli._build_parser().parse_args(
+        ["probe", "http://x", "--model", "m"])
+    assert args.mode == "full"
+    quick = cli._build_parser().parse_args(
+        ["probe", "http://x", "--model", "m", "--quick"])
+    assert quick.mode == "quick"
+
+
+def test_default_budget_for_the_default_mode_covers_the_worst_case():
+    # The default mode's worst case is now thorough's old worst case
+    # (a codec matrix that never decides early runs to the 315-call
+    # cap); the default budget must cover it, not the old full suite.
+    assert cli.DEFAULT_BUDGETS["full"].max_calls == 500
+    assert cli.DEFAULT_BUDGETS["full"].max_prompt_tokens == 1_000_000
+    assert cli.DEFAULT_BUDGETS["full"] == cli.DEFAULT_BUDGETS["thorough"]
+
+
+@pytest.mark.parametrize("flags", [[], ["--full"], ["--thorough"]])
+def test_codecs_subcommand_stops_sequentially_like_the_probe_command(
+    flags, monkeypatch, capsys
+):
+    # The family subcommand shares the mode table, so it must share the
+    # stopping rule too: without the schedule this default-mode run
+    # would spend 315 fixed calls on cells decided at n=5.
+    backend = CodecFailingBackend()
+    _use_backend(monkeypatch, backend)
+
+    code = cli.main(["codecs", _URL, "--model", "fake-model", *flags])
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)["codecs"]
+    for codec, grades in payload.items():
+        for grade, cell in grades.items():
+            assert cell["n"] == 5, (codec, grade)
+    assert backend.calls == 45

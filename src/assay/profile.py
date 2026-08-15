@@ -223,6 +223,48 @@ def _speed_ladder(rate: float | None, ready: float, risky: float) -> str:
     return "unusable"
 
 
+def verdict_cell(
+    codecs: dict[str, dict[str, Landing]] | None, codec: str
+) -> Landing | None:
+    """The cell a codec verdict is read from: the ``small`` grade."""
+    if codecs is None:
+        return None
+    return codecs.get(codec, {}).get(_GRADE_FOR_VERDICTS)
+
+
+def best_patch_cell(
+    codecs: dict[str, dict[str, Landing]] | None
+) -> Landing | None:
+    """The cell ``patch_editing`` is judged on: whichever patch codec
+    lands best under applies-and-parses (either codec can carry the
+    verdict). Public because the orchestrator stamps this cell's n into
+    the lens — reading it from anywhere else could name an n that
+    belongs to a cell no verdict used."""
+    best = None
+    for codec in ("search_replace", "whole_file"):
+        cell = verdict_cell(codecs, codec)
+        if cell is not None and cell.lands_applies is not None:
+            if best is None or cell.lands_applies > best.lands_applies:
+                best = cell
+    return best
+
+
+def _codec_lens(landing: str, presentation: str, stopping_rule: str,
+                n_used: dict[str, int] | None, verdict_name: str,
+                sampler: dict) -> dict:
+    """One codec verdict's lens: what landed, under what presentation,
+    ended by what rule, at what n. ``n_used`` is ABSENT for a cell that
+    was never measured — a zero there would read as "graded on zero
+    samples", which is a different (and false) claim."""
+    lens = {"landing": landing, "presentation": presentation,
+            "stopping_rule": stopping_rule}
+    n = (n_used or {}).get(verdict_name)
+    if n is not None:
+        lens["n_used"] = n
+    lens.update(sampler)
+    return lens
+
+
 def compute_verdicts(
     geometry: Geometry | None,
     ceiling: Ceiling | None,
@@ -232,6 +274,8 @@ def compute_verdicts(
     loop: Loop | None = None,
     *,
     presentation: str = "default-v1",
+    stopping_rule: str = "fixed-n",
+    n_used: dict[str, int] | None = None,
 ) -> dict[str, dict]:
     """Spec §8 verdict rules, v2: every verdict NAMES ITS LENS.
 
@@ -242,6 +286,11 @@ def compute_verdicts(
     landing definition, the presentation (``default-v1`` or the
     consumer's ``custom`` directive), the pinned sampler, and — for
     long_context — the evidence class.
+
+    The two codec lenses also carry ``stopping_rule`` and ``n_used``
+    (v1.5): under sequential sampling a cell that stopped at n=5 and a
+    fixed-n=5 cell hold the same number for different reasons, and the
+    caller who ran the sampling is the one who knows which.
 
     ``patch_editing`` is judged under the **applies-and-parses** lens:
     an application accepting a patch validates the result by running
@@ -255,12 +304,7 @@ def compute_verdicts(
     del geometry, envelope  # no verdict consumes them
     sampler = {"temperature": 0.2, "fixtures": FIXTURE_SET}
 
-    def cell_of(codec):
-        if codecs is None:
-            return None
-        return codecs.get(codec, {}).get(_GRADE_FOR_VERDICTS)
-
-    jo = cell_of("json_object")
+    jo = verdict_cell(codecs, "json_object")
     jo_rate = None if jo is None else jo.lands
     jo_lo, jo_hi = (0.0, 1.0)
     if jo is not None and jo.lands is not None:
@@ -269,12 +313,7 @@ def compute_verdicts(
         jo_rate, jo_lo, jo_hi,
         ready_blocked=_truncates_below_4k(ceiling))
 
-    best_patch = None
-    for codec in ("search_replace", "whole_file"):
-        cell = cell_of(codec)
-        if cell is not None and cell.lands_applies is not None:
-            if best_patch is None or cell.lands_applies > best_patch.lands_applies:
-                best_patch = cell
+    best_patch = best_patch_cell(codecs)
     patch_rate = None if best_patch is None else best_patch.lands_applies
     p_lo, p_hi = (0.0, 1.0)
     if best_patch is not None:
@@ -289,16 +328,18 @@ def compute_verdicts(
             "provisional": jo_prov,
             "interval95": ([round(jo_lo, 3), round(jo_hi, 3)]
                            if jo_rate is not None else None),
-            "lens": {"landing": "json_valid_required_keys",
-                     "presentation": presentation, **sampler},
+            "lens": _codec_lens("json_valid_required_keys", presentation,
+                                stopping_rule, n_used,
+                                "structured_extraction", sampler),
         },
         "patch_editing": {
             "verdict": patch_verdict,
             "provisional": patch_prov,
             "interval95": ([round(p_lo, 3), round(p_hi, 3)]
                            if patch_rate is not None else None),
-            "lens": {"landing": "applies_and_parses(python)",
-                     "presentation": presentation, **sampler},
+            "lens": _codec_lens("applies_and_parses(python)", presentation,
+                                stopping_rule, n_used,
+                                "patch_editing", sampler),
         },
         "long_context": {
             "verdict": _long_context(ceiling),

@@ -10,9 +10,9 @@ Exit codes (the robigo taxonomy, minus model-outcome codes):
   2  budget exhausted before ANY family completed
   4  infrastructure failure before any measurement
 
-The CLI supplies documented budget defaults (quick: 80 calls / 120k
-prompt tokens; full: 250 / 500k); the library requires an explicit
-Budget — consent to burn GPU time is never implicit.
+The CLI supplies documented budget defaults (the default full mode: 500
+calls / 1M prompt tokens; quick: 110 / 200k); the library requires an
+explicit Budget — consent to burn GPU time is never implicit.
 """
 
 import argparse
@@ -37,11 +37,15 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 # default below the suite's own call count exhausts mid-family on every
 # run (this bit once at 60 and nearly again at 80). Quick: 2 calibration
 # + 5 ladder + ~7 bisection + 9 shape probes + 10 envelope + 45 codecs +
-# 9 loop + 2 speed ≈ 89. Full adds seeds/reps; thorough adds 315 codec
-# calls.
+# 9 loop + 2 speed ≈ 89. Full is now sequential, so its worst case IS
+# thorough's old worst case (no cell decides early and every one runs to
+# the 35-sample cap): 2 calibration + ~12 ladder + 9 shapes + 30
+# envelope + up to 315 codec + 15 loop + 4 speed ≈ 387. A typical run
+# stops well short of that — the budget covers the case where nothing
+# decides.
 DEFAULT_BUDGETS = {
     "quick": Budget(max_calls=110, max_prompt_tokens=200_000),
-    "full": Budget(max_calls=320, max_prompt_tokens=600_000),
+    "full": Budget(max_calls=500, max_prompt_tokens=1_000_000),
     "thorough": Budget(max_calls=500, max_prompt_tokens=1_000_000),
 }
 
@@ -69,19 +73,21 @@ def _build_parser() -> argparse.ArgumentParser:
         mode = sub.add_mutually_exclusive_group()
         mode.add_argument(
             "--quick", dest="mode", action="store_const", const="quick",
-            help="short ladder, reduced probe counts (default)",
+            help="short ladder, reduced probe counts "
+                 "(fixed n=5, fixed-n lens)",
         )
         mode.add_argument(
             "--full", dest="mode", action="store_const", const="full",
-            help="full seeds, full ladder, full probe counts",
+            help="full seeds, full ladder, full probe counts (default; "
+                 "sequential codec sampling, stops at the first decided "
+                 "look)",
         )
         mode.add_argument(
             "--thorough", dest="mode", action="store_const", const="thorough",
-            help="35 samples per codec cell: the smallest n where a "
-                 "perfect cell clears ready WITHOUT provisional "
-                 "(Wilson lower 0.9011)",
+            help="alias of --full (its old fixed n=35 is subsumed by the "
+                 "sequential cap)",
         )
-        sub.set_defaults(mode="quick")
+        sub.set_defaults(mode="full")
         sub.add_argument(
             "--backend", choices=("ollama", "openai"),
             help="force the backend kind instead of auto-detecting",
@@ -208,7 +214,13 @@ def _run_family(args: argparse.Namespace, budget: Budget) -> int:
     elif args.command == "envelope":
         result = probe_envelope(backend, meter, n=params.envelope_n)
     else:  # codecs
-        result = probe_codecs(backend, meter, n_per_cell=params.codecs_n_per_cell)
+        # The mode's stopping rule travels with the mode: a family run
+        # must sample exactly as the probe command would, or --full here
+        # would silently mean 315 fixed calls instead of the sequential
+        # matrix (controller ruling, v1.5).
+        result = probe_codecs(backend, meter,
+                              n_per_cell=params.codecs_n_per_cell,
+                              look_schedule=params.codec_look_schedule)
 
     text = json.dumps({args.command: _slice_payload(result)}, indent=2)
     print(text)

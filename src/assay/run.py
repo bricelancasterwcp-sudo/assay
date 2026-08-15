@@ -24,15 +24,18 @@ from assay.backends.openai_compat import OpenAICompat
 from assay.budget import Budget, BudgetMeter
 from assay.ceiling import (Calibration, Ceiling, ShapeCeiling,
                            calibrate, probe_ceiling, probe_fixed_shapes)
-from assay.codecs import CodecDirectives, DEFAULT_PRESENTATION, probe_codecs
+from assay.codecs import (CodecDirectives, DEFAULT_PRESENTATION, Landing,
+                          probe_codecs, stopped_on_rule)
 from assay.fixtures import FIXTURE_SET
 from assay.loop import Loop, probe_loop
 from assay.envelope import probe_envelope
 from assay.errors import BudgetExhausted
 from assay.geometry import free_vram_mib, plan_window
-from assay.profile import PROFILE_VERSION, Profile, compute_verdicts
+from assay.profile import (PROFILE_VERSION, Profile, best_patch_cell,
+                           compute_verdicts, verdict_cell)
 from assay.replay import CallRecorder
 from assay.speed import Speed, probe_speed
+from assay.stats import LOOK_SCHEDULE
 
 
 @dataclass(frozen=True)
@@ -42,23 +45,38 @@ class ModeParams:
     codecs_n_per_cell: int
     loop_runs: int
     shape_probes: tuple[int, ...]
+    # None = fixed-n codec sampling; a schedule = sequential looks, and
+    # then codecs_n_per_cell is the cap the schedule already carries.
+    codec_look_schedule: tuple[int, ...] | None
+    speed_decode_calls: int
 
 
 MODE_PARAMS = {
     "quick": ModeParams(seeds=(0,), envelope_n=10, codecs_n_per_cell=5,
-                        loop_runs=3, shape_probes=(2048, 4096, 8192)),
-    "full": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=10,
-                       loop_runs=5, shape_probes=(2048, 4096, 8192)),
-    # 35 = the smallest n at which a PERFECT cell clears `ready`
-    # non-provisionally (Wilson lower bound on 35/35 is 0.9011 against
-    # the 0.9 floor) — and 7 reps x 5 fixture tasks exactly. quick and
-    # full verdicts are honest but almost always provisional at their n;
-    # this mode exists so a decided `ready` is PURCHASABLE. A future
-    # sequential rule (keep sampling a cell only while its interval
-    # straddles a boundary) would spend the same certainty for less
-    # budget; deferred until thorough sees enough use to earn it.
+                        loop_runs=3, shape_probes=(2048, 4096, 8192),
+                        codec_look_schedule=None, speed_decode_calls=1),
+    # v1.5: the default mode samples codec cells SEQUENTIALLY — every
+    # cell is examined at 5/10/20/35 and stops at the first look whose
+    # Wilson-95 interval decides a rung. A decided cell costs what it
+    # costs (an unusable one settles at 5); an undecided one runs to 35,
+    # the smallest n at which a perfect cell clears `ready`
+    # non-provisionally (Wilson lower on 35/35 is 0.9011 against the 0.9
+    # floor). That is why the honest mode is now affordable enough to be
+    # the default: the old fixed n=10 bought verdicts that were almost
+    # always provisional, and the old thorough spent 315 calls to buy
+    # certainty this rule usually reaches for far less.
+    "full": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=35,
+                       loop_runs=5, shape_probes=(2048, 4096, 8192),
+                       codec_look_schedule=LOOK_SCHEDULE,
+                       speed_decode_calls=3),
+    # thorough is an ALIAS of full (v1.5): its whole point was buying a
+    # decidable `ready` at n=35, which is exactly the sequential cap.
+    # Kept as its own key so the documented --thorough flag still
+    # parses and old invocations keep working.
     "thorough": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=35,
-                           loop_runs=5, shape_probes=(2048, 4096, 8192)),
+                           loop_runs=5, shape_probes=(2048, 4096, 8192),
+                           codec_look_schedule=LOOK_SCHEDULE,
+                           speed_decode_calls=3),
 }
 
 _QUICK_CEILING_CAP = 16384
@@ -102,6 +120,51 @@ def _calibration_payload(calibration: Calibration | None) -> dict | None:
         "counts_available": calibration.counts_available,
         "deterministic": calibration.deterministic,
     }
+
+
+def _stopping_rule(look_schedule: tuple[int, ...] | None) -> str:
+    """The name of the rule that ended each codec cell's sampling."""
+    if look_schedule is None:
+        return "fixed-n"
+    return "wilson95-looks-" + "-".join(str(look) for look in look_schedule)
+
+
+def _codec_n_used(
+    codecs: dict[str, dict[str, Landing]] | None
+) -> dict[str, int]:
+    """The n each codec verdict was actually computed from.
+
+    Read from the SAME cells compute_verdicts grades, so the lens can
+    never quote an n belonging to a cell no verdict used. An unmeasured
+    cell gets NO entry (spec §8 None-vs-zero): ``n_used: 0`` would read
+    as a verdict graded on zero samples.
+    """
+    used: dict[str, int] = {}
+    json_cell = verdict_cell(codecs, "json_object")
+    if json_cell is not None and json_cell.n > 0:
+        used["structured_extraction"] = json_cell.n
+    patch_cell = best_patch_cell(codecs)
+    if patch_cell is not None and patch_cell.n > 0:
+        used["patch_editing"] = patch_cell.n
+    return used
+
+
+def _codecs_were_cut_off(
+    codecs: dict[str, dict[str, Landing]], params: ModeParams
+) -> bool:
+    """Did the meter end the codec matrix, or did the matrix end itself?
+
+    Fixed n: any cell short of n_per_cell was cut off. Sequential: a
+    short cell is the stopping rule working, so each cell is asked
+    whether IT ended on the rule (``codecs.stopped_on_rule``).
+    """
+    cells = ((codec, cell)
+             for codec, grades in codecs.items()
+             for cell in grades.values())
+    if params.codec_look_schedule is None:
+        return any(cell.n < params.codecs_n_per_cell for _, cell in cells)
+    return any(not stopped_on_rule(codec, cell, params.codec_look_schedule)
+               for codec, cell in cells)
 
 
 def probe(
@@ -245,7 +308,8 @@ def probe(
     else:
         codecs = probe_codecs(active, meter,
                               n_per_cell=params.codecs_n_per_cell,
-                              directives=directives)
+                              directives=directives,
+                              look_schedule=params.codec_look_schedule)
         if all(
             cell.n == 0 for grades in codecs.values() for cell in grades.values()
         ):
@@ -263,11 +327,7 @@ def probe(
                             f"codecs: {codec}.{grade} budget exhausted "
                             "before any probe completed"
                         )
-            if any(
-                cell.n < params.codecs_n_per_cell
-                for grades in codecs.values()
-                for cell in grades.values()
-            ):
+            if _codecs_were_cut_off(codecs, params):
                 budget_death = BudgetExhausted("budget exhausted during codec probes")
 
     if budget_death is not None:
@@ -320,6 +380,8 @@ def probe(
             geometry, ceiling, envelope, codecs, speed, loop,
             presentation=("custom" if directives is not None
                           else DEFAULT_PRESENTATION),
+            stopping_rule=_stopping_rule(params.codec_look_schedule),
+            n_used=_codec_n_used(codecs),
         ),
         provenance={
             "started": started,

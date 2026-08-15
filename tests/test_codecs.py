@@ -627,3 +627,41 @@ def test_schedule_seeds_increment_once_per_attempt():
     seeds = [call["kwargs"]["seed"] for call in backend.calls]
     assert len(seeds) == 3 * 35 + 6 * 5
     assert seeds == list(range(500, 500 + len(seeds)))
+
+
+def test_stopped_on_rule_separates_a_decision_from_a_dead_meter():
+    """The orchestrator asks each cell whether it ended ITSELF. A cell
+    at the cap did; a cell decided at a look did; a cell cut off between
+    looks (or never attempted) did not — and only the last kind means
+    the budget died."""
+    from assay.codecs import Landing, stopped_on_rule
+    from assay.stats import LOOK_SCHEDULE
+
+    def cell(rate, n):
+        return Landing(lands=rate, lands_applies=rate, n=n)
+
+    # The cap: every scheduled attempt was made, decided or not.
+    assert stopped_on_rule("json_object", cell(1.0, 35), LOOK_SCHEDULE)
+    # A look that decided the rung (0/5 is entirely below the risky floor).
+    assert stopped_on_rule("json_object", cell(0.0, 5), LOOK_SCHEDULE)
+    # A look that did NOT decide cannot be where sampling ended.
+    assert not stopped_on_rule("json_object", cell(1.0, 5), LOOK_SCHEDULE)
+    # Between looks, and never attempted: the meter, not the rule.
+    assert not stopped_on_rule("json_object", cell(0.0, 12), LOOK_SCHEDULE)
+    assert not stopped_on_rule(
+        "json_object", Landing(lands=None, lands_applies=None, n=0),
+        LOOK_SCHEDULE)
+
+
+def test_stopped_on_rule_reads_each_codec_s_verdict_lens():
+    """Same rates, different lens: a patch cell that applies every time
+    but never matches byte-for-byte is undecided at n=5 (its verdict
+    reads applies-and-parses), while the json cell IS decided."""
+    from assay.codecs import Landing, stopped_on_rule
+    from assay.stats import LOOK_SCHEDULE
+
+    applies_only = Landing(lands=0.0, lands_applies=1.0, n=5)
+    assert not stopped_on_rule("search_replace", applies_only, LOOK_SCHEDULE)
+    assert not stopped_on_rule("whole_file", applies_only, LOOK_SCHEDULE)
+    assert stopped_on_rule("json_object", Landing(lands=0.0, lands_applies=0.0,
+                                                  n=5), LOOK_SCHEDULE)

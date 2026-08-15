@@ -125,6 +125,26 @@ class ScriptedBackend:
         )
 
 
+class CodecFailingBackend(ScriptedBackend):
+    """Answers every family EXCEPT codecs, where nothing ever lands.
+
+    A cell of 0/5 is DECIDED unusable at the first look (Wilson-95 on
+    0/5 is [0.0, 0.434] — both ends unusable), so under a look schedule
+    every cell honestly stops at n=5. That is the case a fixed-n
+    orchestrator misreads as budget death.
+    """
+
+    def _reply_text(self, prompt: str, seed: int) -> str:
+        if prompt.startswith("You are repairing one bug"):
+            return super()._reply_text(prompt, seed)  # the loop family
+        if prompt.startswith(JSON_DIRECTIVE):
+            return "sorry, I would rather describe it in prose."
+        for _, _, _, _, original, _expected in fixtures.EXPECTED:
+            if original in prompt:
+                return "sorry, I would rather describe it in prose."
+        return super()._reply_text(prompt, seed)
+
+
 class MetadataFreeBackend(ScriptedBackend):
     """Answers probes but reports no architecture metadata (geometry None)."""
 

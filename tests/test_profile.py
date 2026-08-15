@@ -388,6 +388,43 @@ def test_codec_lens_declares_the_fixture_set():
     assert FIXTURE_SET == "codec-fixtures-v2"
 
 
+def test_codec_lens_names_its_stopping_rule_and_n_used():
+    # v1.5: two cells reading 1.00 mean different things when one was
+    # sampled 5 times under a fixed n and the other stopped at 35 under
+    # a sequential rule. The lens carries both facts or the number is
+    # not interpretable.
+    verdicts = compute_verdicts(
+        None, None, None, make_codecs(),
+        stopping_rule="wilson95-looks-5-10-20-35",
+        n_used={"structured_extraction": 20, "patch_editing": 35},
+    )
+    jo = verdicts["structured_extraction"]["lens"]
+    patch = verdicts["patch_editing"]["lens"]
+    assert jo["stopping_rule"] == "wilson95-looks-5-10-20-35"
+    assert jo["n_used"] == 20
+    assert patch["stopping_rule"] == "wilson95-looks-5-10-20-35"
+    assert patch["n_used"] == 35
+
+
+def test_codec_lens_stopping_rule_defaults_to_fixed_n():
+    verdicts = compute_verdicts(None, None, None, make_codecs())
+    assert verdicts["structured_extraction"]["lens"]["stopping_rule"] == "fixed-n"
+    assert verdicts["patch_editing"]["lens"]["stopping_rule"] == "fixed-n"
+
+
+def test_absent_n_used_is_absent_from_the_lens_never_zero():
+    # None-vs-zero: a cell nobody measured has no n_used at all.
+    verdicts = compute_verdicts(
+        None, None, None, make_codecs(),
+        n_used={"structured_extraction": 10},
+    )
+    assert verdicts["structured_extraction"]["lens"]["n_used"] == 10
+    assert "n_used" not in verdicts["patch_editing"]["lens"]
+    unlensed = compute_verdicts(None, None, None, None)
+    assert "n_used" not in unlensed["structured_extraction"]["lens"]
+    assert "n_used" not in unlensed["patch_editing"]["lens"]
+
+
 def test_loop_verdict_downgrades_follow_without_advance():
     # The 14B shape: envelope discipline perfect, nothing ever advances.
     # High fidelity + patch_rate 0 must read risky, never ready.
