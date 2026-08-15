@@ -647,9 +647,15 @@ def render_table(profile: Profile) -> str:
         "verdicts   "
         + " | ".join(f"{name}: {entry['verdict']}"
                      for name, entry in profile.verdicts.items()),
+        # ``_show`` here too, and for the same reason as every other
+        # line: a lens field is as unmeasured as a metric can be — a
+        # capped ladder scores nothing, so ``deepest_scored_tokens`` is
+        # None — and printing Python's ``None`` beside a table that says
+        # "unmeasured" everywhere else asks the reader to know Python.
         "lenses     "
         + " | ".join(
-            f"{name}: " + ",".join(f"{k}={v}" for k, v in entry["lens"].items())
+            f"{name}: "
+            + ",".join(f"{k}={_show(v)}" for k, v in entry["lens"].items())
             for name, entry in profile.verdicts.items()),
     ]
     dropped = profile.provenance.get("dropped") or []

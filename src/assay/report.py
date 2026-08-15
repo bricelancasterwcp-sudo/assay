@@ -75,7 +75,32 @@ table.grid { border-collapse:collapse; margin:.6rem 0; }
 
 
 def _esc(value: object) -> str:
+    """Every profile-sourced value reaches the page through here.
+
+    A profile is an UNTRUSTED document: it is written from an endpoint's
+    replies, it travels by email, and this page opens in a browser. The
+    rule is the whole defence and it has no exceptions — a value that
+    "is obviously a number" is only a number in the profiles we wrote
+    ourselves, and the one that isn't is the one that ships the markup.
+    ``_num`` is the numeric wrapper and falls back here for anything it
+    cannot format, so a cell is escaped whichever of the two it uses.
+    """
     return html.escape(str(value))
+
+
+def _num(value: object, spec: str = ".2f") -> str:
+    """A measured number, or a dash. Never 0 for "not measured".
+
+    Anything that is not a number it can format falls through to
+    ``_esc``: a profile that wrote text where a rate belongs still
+    reaches the page, escaped, instead of raising a ``ValueError`` out
+    of the formatter and taking the whole report with it.
+    """
+    if value is None:
+        return "—"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return format(value, spec)
+    return _esc(value)
 
 
 def _lens_title(entry: dict) -> str:
@@ -111,8 +136,8 @@ def _badge(entry: dict | None) -> str:
     interval = entry.get("interval95")
     extra = ""
     if interval:
-        extra = (f'<span class="interval">[{interval[0]:.2f}, '
-                 f'{interval[1]:.2f}]</span>')
+        extra = (f'<span class="interval">[{_num(interval[0])}, '
+                 f'{_num(interval[1])}]</span>')
     return (f'<span class="{classes}" title="{_esc(_lens_title(entry))}">'
             f'{label}</span>{extra}')
 
@@ -134,18 +159,9 @@ def _speed_cell(profile: dict) -> str:
         return '<span class="k">unmeasured</span>'
     d = speed.get("decode_tps")
     p = speed.get("prefill_tps")
-    fmt = lambda v: "—" if v is None else f"{v:.0f}"
+    fmt = lambda v: _num(v, ".0f")
     return (f'<span class="mono">{fmt(d)} / {fmt(p)} tok/s</span> '
             f'<span class="k">({_esc(speed.get("evidence", "?"))})</span>')
-
-
-def _num(value: object, spec: str = ".2f") -> str:
-    """A measured number, or a dash. Never 0 for "not measured"."""
-    if value is None:
-        return "—"
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return format(value, spec)
-    return _esc(value)
 
 
 def _codec_grid(codecs: dict | None) -> str:
@@ -166,8 +182,8 @@ def _codec_grid(codecs: dict | None) -> str:
                 # `lands_applies`. Dash the half that was not measured:
                 # 0.00 there would read as "nothing applied cleanly",
                 # a finding v1 never made.
-                tds.append(f'<td class="mono">{lands:.2f} / {_num(applies)} '
-                           f'<span class="k">n={n}</span></td>')
+                tds.append(f'<td class="mono">{_num(lands)} / {_num(applies)} '
+                           f'<span class="k">n={_esc(n)}</span></td>')
         rows.append(f"<tr><td>{_esc(codec)}</td>{''.join(tds)}</tr>")
     return (f'<table class="grid"><tr><th>codec '
             f'<span class="k">(byte-eq / applies)</span></th>{head}</tr>'
@@ -178,8 +194,10 @@ def _shapes_grid(shapes: list | None) -> str:
     if not shapes:
         return ""
     rows = "".join(
-        f"<tr><td class='mono'>{s['shape']}</td>"
-        f"<td class='mono'>{s['max_verified'] if s['max_verified'] is not None else '—'}</td>"
+        f"<tr><td class='mono'>{_esc(s['shape'])}</td>"
+        f"<td class='mono'>"
+        f"{_esc(s['max_verified']) if s['max_verified'] is not None else '—'}"
+        f"</td>"
         f"<td>{_esc(s['failure_mode'])}</td></tr>"
         for s in shapes)
     return ('<table class="grid"><tr><th>num_ctx shape</th>'
@@ -239,25 +257,29 @@ def _detail(profile: dict) -> str:
     if geo:
         bits.append(
             f"<p><span class='k'>geometry</span> "
-            f"{geo['kv_kib_per_token']} KiB/token · usable "
-            f"{geo['usable_window']} (limited by {_esc(geo['limited_by'])})</p>")
+            f"{_esc(geo['kv_kib_per_token'])} KiB/token · usable "
+            f"{_esc(geo['usable_window'])} "
+            f"(limited by {_esc(geo['limited_by'])})</p>")
     if ceiling:
         bits.append(
             f"<p><span class='k'>ceiling</span> max verified "
-            f"{ceiling.get('max_verified')} · mode "
+            f"{_esc(ceiling.get('max_verified'))} · mode "
             f"{_esc(ceiling.get('failure_mode'))}</p>")
     bits.append(_shapes_grid(profile.get("ceiling_shapes")))
     if envelope:
         bits.append(f"<p><span class='k'>envelope</span> fidelity "
-                    f"{envelope['fidelity']} (n={envelope['n']})</p>")
+                    f"{_esc(envelope['fidelity'])} "
+                    f"(n={_esc(envelope['n'])})</p>")
     bits.append(_codec_grid(profile.get("codecs")))
     if loop:
         bits.append(
             f"<p><span class='k'>loop</span> action fidelity "
-            f"{loop['action_fidelity']} · patch {loop['patch_rate']} · "
-            f"finish {loop['finish_rate']} · repeats {loop['repeat_rate']} · "
-            f"anchor violations {loop['anchor_violations']} "
-            f"(runs={loop['n_runs']})</p>")
+            f"{_esc(loop['action_fidelity'])} · "
+            f"patch {_esc(loop['patch_rate'])} · "
+            f"finish {_esc(loop['finish_rate'])} · "
+            f"repeats {_esc(loop['repeat_rate'])} · "
+            f"anchor violations {_esc(loop['anchor_violations'])} "
+            f"(runs={_esc(loop['n_runs'])})</p>")
     bits.append(_long_output_grid(profile.get("long_output")))
     dropped = prov.get("dropped") or []
     if dropped:

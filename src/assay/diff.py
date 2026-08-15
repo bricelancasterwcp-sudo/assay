@@ -71,6 +71,8 @@ _DEGRADES_PREFIX = "degrades-at-"
 _LYING_MODES = frozenset({"silent_truncation", "missing_stats"})
 _GRADES = ("tiny", "small", "medium")
 _LENSES = ("lands", "lands_applies")
+#: Codecs whose two lens columns are one measurement (see ``_lenses_for``).
+_COINCIDING_LENS_CODECS = frozenset({"json_object"})
 _SPEED_CELLS = (("decode_tps", "decode_samples"),
                 ("prefill_tps", "prefill_samples"))
 
@@ -358,6 +360,21 @@ def _diff_codec_cell(codec: str, grade: str, lens: str,
     return _Cells(within_noise=(f"codec.{name}",))
 
 
+def _lenses_for(codec: str) -> tuple[str, ...]:
+    """The lenses that are separate MEASUREMENTS for this codec.
+
+    ``json_object``'s two are not: validation IS the application there
+    (codecs.py, ``_verdict_lens``), so the probe writes both columns
+    from one count and they move together always. Diffing both turned
+    one measured change into two Change rows — ``json_object.small.lands``
+    and ``.lands_applies``, same numbers, same basis — and a reader
+    counting the report would double every json_object finding. One
+    cell, one Change. The patch codecs keep both: there the lenses are
+    different instruments that disagreed by 100 points on one live model.
+    """
+    return ("lands",) if codec in _COINCIDING_LENS_CODECS else _LENSES
+
+
 def _ordered_grades(old_grades: dict, new_grades: dict) -> list[str]:
     seen = set(old_grades) | set(new_grades)
     known = [grade for grade in _GRADES if grade in seen]
@@ -372,7 +389,7 @@ def _diff_codecs(old: dict, new: dict) -> _Cells:
         old_grades = old_codecs.get(codec) or {}
         new_grades = new_codecs.get(codec) or {}
         for grade in _ordered_grades(old_grades, new_grades):
-            for lens in _LENSES:
+            for lens in _lenses_for(codec):
                 parts.append(_diff_codec_cell(codec, grade, lens,
                                               old_grades.get(grade),
                                               new_grades.get(grade)))

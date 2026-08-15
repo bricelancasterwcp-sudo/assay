@@ -363,6 +363,49 @@ def test_cli_diff_rejects_an_object_that_is_not_a_profile(tmp_path, capsys):
         assert "not a profile document" in capsys.readouterr().err, name
 
 
+def test_cli_rejects_a_version_key_with_no_model_behind_it(tmp_path, capsys):
+    """The version key alone does not make a document a profile.
+
+    ``{"assay_profile_version": 5}`` satisfies the key check and then
+    behaves exactly like the ``{}`` the key check was added to catch:
+    the identity gate reads ``None == None`` on the model name and calls
+    the pair comparable, no family finds a cell, and a self-diff exits
+    0 — a green CI check for a file nobody measured. What a profile
+    must actually SAY is which model was measured.
+    """
+    old = _write_profile(tmp_path / "old.json", _diff_payload())
+    for name, payload in (
+        ("stub", {"assay_profile_version": 5}),
+        ("nameless", {"assay_profile_version": 5, "model": {"quant": "Q8_0"}}),
+        ("blank", {"assay_profile_version": 5, "model": {"name": "  "}}),
+        ("notadict", {"assay_profile_version": 5, "model": "granite"}),
+    ):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        assert cli.main(["diff", str(path), str(path)]) == 4, name
+        assert "model.name" in capsys.readouterr().err, name
+        assert cli.main(["diff", old, str(path), "--gate"]) == 4, name
+        capsys.readouterr()
+        out = tmp_path / "report.html"
+        assert cli.main(["report", str(path), "--out", str(out)]) == 4, name
+        capsys.readouterr()
+        assert not out.exists(), name
+
+
+def test_cli_still_loads_the_committed_evidence_profiles(tmp_path, capsys):
+    """The guard must not reject the real thing: every committed profile
+    names its model, v1 included."""
+    evidence = Path(__file__).resolve().parents[1] / "docs/superpowers/evidence"
+    files = sorted(path
+                   for folder in ("live", "live-run2", "tier-enthusiast")
+                   for path in (evidence / folder).glob("*.json"))
+    assert len(files) >= 20
+    out = tmp_path / "report.html"
+    assert cli.main(["report", *[str(f) for f in files], "--out", str(out)]) == 0
+    capsys.readouterr()
+
+
 def test_cli_diff_reads_the_committed_live_rerun_pair(tmp_path, capsys):
     """End to end on real files: the v1 profiles under
     ``docs/superpowers/evidence`` are same-day same-daemon reruns, so

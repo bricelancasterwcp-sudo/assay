@@ -66,6 +66,33 @@ def test_report_escapes_hostile_model_names():
     assert "&lt;script&gt;" in html
 
 
+def test_report_escapes_every_profile_sourced_cell_not_just_the_name():
+    """The model name was escaped; the grids around it were not.
+
+    A profile is an untrusted document — it can arrive by email, or be
+    written by the endpoint under test — and the module's own comments
+    claim a hostile one cannot write markup through the page. That claim
+    has to hold for every cell that carries profile text, not the one
+    cell somebody remembered.
+    """
+    payload = "<script>alert(1)</script>"
+    p = profile_dict()
+    p["ceiling_shapes"][0]["shape"] = payload            # shapes grid
+    p["ceiling_shapes"][0]["max_verified"] = payload
+    p["codecs"]["json_object"]["small"]["n"] = payload   # codec grid n=
+    p["loop"]["patch_rate"] = payload                    # loop line
+    p["geometry"]["kv_kib_per_token"] = payload          # geometry line
+    p["ceiling"]["max_verified"] = payload               # ceiling line
+    p["envelope"]["fidelity"] = payload                  # envelope line
+
+    html = render_report([p])
+
+    assert "<script>" not in html
+    # ...and every one of them still reached the page, escaped: dropping
+    # the cell would hide the finding instead of neutering the markup.
+    assert html.count("&lt;script&gt;alert(1)&lt;/script&gt;") == 7
+
+
 # --- v1.5: the long_output column and its rung grid ------------------------
 
 

@@ -519,10 +519,42 @@ def test_a_stated_rate_over_zero_samples_is_still_dropped():
 
 def test_lens_missing_on_one_side_is_dropped():
     """A v1 cell has no ``lands_applies`` column; absence is not zero."""
-    old = _one_cell_codecs(1.0, 5)                      # v1 shape
-    new = _one_cell_codecs(0.0, 5, lands_applies=0.0)   # v5 shape
+    old = {"whole_file": {"small": codec_cell(1.0, _MISSING, 5)}}   # v1 shape
+    new = {"whole_file": {"small": codec_cell(0.0, 0.0, 5)}}        # v5 shape
     result = diff_profiles(make_profile(codecs=old), make_profile(codecs=new))
-    assert "codec.json_object.small.lands_applies" in result.dropped
+    assert "codec.whole_file.small.lands_applies" in result.dropped
+
+
+def test_json_objects_coinciding_lenses_report_one_change_not_two():
+    """``json_object``'s two lenses are the SAME measurement.
+
+    Validation IS the application for that codec (codecs.py says so
+    where it picks the verdict lens), so ``lands`` and ``lands_applies``
+    are written from one count. Diffing both turned one measured move
+    into two Change rows and two within-noise names — a reader counting
+    the report would double every json_object finding.
+    """
+    old = {"json_object": {"small": codec_cell(2 / 35, 2 / 35, 35)}}
+    new = {"json_object": {"small": codec_cell(33 / 35, 33 / 35, 35)}}
+    result = diff_profiles(make_profile(codecs=old), make_profile(codecs=new))
+
+    (change,) = [c for c in result.changes if c.family == "codec"]
+    assert change.cell == "json_object.small.lands"
+    assert not [name for name in result.within_noise + result.dropped
+                if name.startswith("codec.json_object")
+                and name.endswith(".lands_applies")]
+
+
+def test_the_other_codecs_keep_both_lenses():
+    """The skip is json_object's alone: for the patch codecs the two
+    lenses are different instruments and disagreed by 100 points live."""
+    cells = {"small": codec_cell(1.0, 1.0, 5)}
+    result = diff_profiles(
+        make_profile(codecs={"search_replace": cells, "whole_file": cells}),
+        make_profile(codecs={"search_replace": cells, "whole_file": cells}))
+    for codec in ("search_replace", "whole_file"):
+        for lens in ("lands", "lands_applies"):
+            assert f"codec.{codec}.small.{lens}" in result.within_noise
 
 
 def test_codec_absent_on_one_side_is_dropped():

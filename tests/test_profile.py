@@ -705,6 +705,24 @@ def test_render_table_says_unmeasured_for_a_ladder_that_scored_nothing():
     assert "long_output unmeasured" in render_table(nothing)
 
 
+def test_the_lens_line_says_unmeasured_where_the_lens_holds_none():
+    """``render_table``'s one rule, applied to the last line that broke it.
+
+    A ladder the ceiling capped scores nothing, so its lens carries
+    ``deepest_scored_tokens: None`` — and the lens line interpolated that
+    straight, printing ``deepest_scored_tokens=None`` beside a column of
+    fields that all say "unmeasured". A reader has to know Python to read
+    the difference, and there isn't one.
+    """
+    capped = make_profile(
+        long_output=LongOutput(rungs=(unscorable_rung(512),), skipped=()),
+        verdicts=compute_verdicts(None, None, None, None, long_output=None),
+    )
+    rendered = render_table(capped)
+    assert "deepest_scored_tokens=unmeasured" in rendered
+    assert "None" not in rendered
+
+
 def test_patch_verdict_is_judged_under_the_applies_lens():
     # v1.1: byte-equality says unusable (0.0), applies-and-parses says
     # ready (0.95) — patch_editing must follow the applies lens and SAY

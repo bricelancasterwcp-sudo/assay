@@ -223,6 +223,14 @@ def _load_profile(path: Path) -> dict:
     ever investigates it. So a profile must SAY it is one:
     ``assay_profile_version`` is the key every schema this project has
     written carries, v1 included.
+
+    The version key alone is not enough either, and the gap is the same
+    one: ``{"assay_profile_version": 5}`` passes the key check and then
+    reads ``None == None`` on the model name, so the identity gate calls
+    it comparable and a self-diff still exits 0. A document that names
+    no model has not said WHICH model was measured — the one fact every
+    verdict, matrix row and gate result is about — so ``model.name``
+    must be there and must not be blank.
     """
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -240,6 +248,14 @@ def _load_profile(path: Path) -> dict:
             f"{path} is not a profile document: no {PROFILE_VERSION_KEY} key "
             f"(an object without it compares clean against anything, which "
             f"would exit 0 for a file that measured nothing)"
+        )
+    model = payload.get("model")
+    name = model.get("name") if isinstance(model, dict) else None
+    if not (isinstance(name, str) and name.strip()):
+        raise InfrastructureError(
+            f"{path} is not a profile document: no model.name "
+            f"(a document that names no model compares clean against "
+            f"anything, which would exit 0 for a file that measured nothing)"
         )
     return payload
 
