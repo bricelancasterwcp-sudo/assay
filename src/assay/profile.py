@@ -115,7 +115,17 @@ def _envelope_from(payload: dict | None) -> Envelope | None:
 
 
 def _speed_from(payload: dict | None) -> Speed | None:
-    return None if payload is None else Speed(**payload)
+    if payload is None:
+        return None
+    data = dict(payload)
+    # JSON has no tuples: the samples come back as lists (or absent, for
+    # a profile written before v1.5). Absent stays absent — None means
+    # "not recorded", and coercing it to () would claim a sampling run
+    # that never happened.
+    for key in ("decode_samples", "prefill_samples"):
+        if data.get(key) is not None:
+            data[key] = tuple(data[key])
+    return Speed(**data)
 
 
 def _shapes_from(payload) -> tuple[ShapeCeiling, ...] | None:

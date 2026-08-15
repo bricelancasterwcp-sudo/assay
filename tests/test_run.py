@@ -396,6 +396,30 @@ def test_n_used_names_the_cell_each_verdict_was_actually_graded_on():
     assert _codec_n_used(None) == {}
 
 
+@pytest.mark.parametrize("mode,budget,expected", [
+    # The literals are pinned here, not read off the table: one decode
+    # call in quick (cheap, mean of one, spread unknowable) and three in
+    # full/thorough (the smallest count whose samples show a spread).
+    ("quick", Budget(max_calls=200, max_prompt_tokens=200_000), 1),
+    ("full", Budget(max_calls=500, max_prompt_tokens=2_000_000), 3),
+    ("thorough", Budget(max_calls=500, max_prompt_tokens=2_000_000), 3),
+])
+def test_speed_decode_calls_follow_the_mode(mode, budget, expected):
+    # The mode table owns how many decode calls are affordable, and the
+    # orchestrator must SPEND that number — a mode that says 3 and
+    # probes once buys none of the spread the samples exist to show.
+    from assay.run import MODE_PARAMS
+
+    assert MODE_PARAMS[mode].speed_decode_calls == expected
+    profile = probe(
+        _URL, "fake-model", budget=budget, mode=mode,
+        _backend_override=ScriptedBackend(),
+    )
+    assert profile.speed.n_decode == expected
+    assert len(profile.speed.decode_samples) == expected
+    assert len(profile.speed.prefill_samples) == profile.speed.n_prefill == 1
+
+
 def test_thorough_params_equal_full_params():
     # v1.5: --thorough is an alias. Its old fixed n=35 is exactly the
     # sequential cap, so it buys nothing full does not already buy; the

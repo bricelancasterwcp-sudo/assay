@@ -23,6 +23,12 @@ evidence class is always named (the ceiling probe's honesty pattern):
   fall back to the calibration's chars-per-token estimate. The weakest
   class, named so a consumer can discount it.
 
+Every accepted per-call rate is kept beside its mean
+(``decode_samples`` / ``prefill_samples``, v1.5). Two runs of the same
+model differ by some amount of run-to-run noise; a reader comparing
+their means cannot tell a real regression from that noise unless the
+samples the means came from are on the page.
+
 The clock is injectable; the suite never depends on real time.
 """
 
@@ -55,6 +61,14 @@ class Speed:
                                 # wall_clock_estimated | mixed
     n_decode: int
     n_prefill: int
+    # Every per-call rate that went into the mean above (v1.5). A diff
+    # of two runs cannot say whether a gap is real without knowing the
+    # run-to-run spread, and a mean of three calls hides it entirely.
+    # None-vs-empty is load-bearing: None = this probe predates
+    # sampling (a pre-v1.5 profile reloaded from disk), () = sampling
+    # ran and accepted nothing, and a 1-tuple = measured exactly once.
+    decode_samples: tuple[float, ...] | None = None
+    prefill_samples: tuple[float, ...] | None = None
 
 
 def server_timings(reply: Reply) -> tuple[float | None, float | None]:
@@ -167,4 +181,8 @@ def probe_speed(
                   else next(iter(evidence)) if evidence else "unmeasured"),
         n_decode=len(decode_rates),
         n_prefill=len(prefill_rates),
+        # The samples ARE the rates that were averaged — same list, not
+        # a re-derivation that could drift from the reported mean.
+        decode_samples=tuple(decode_rates),
+        prefill_samples=tuple(prefill_rates),
     )

@@ -341,7 +341,8 @@ def probe(
     if budget_death is not None:
         dropped.append("speed: skipped, budget exhausted earlier")
     else:
-        speed = probe_speed(active, meter, calibration=calibration)
+        speed = probe_speed(active, meter, calibration=calibration,
+                            decode_calls=params.speed_decode_calls)
         if speed.n_decode == 0 and speed.n_prefill == 0:
             speed = None
             dropped.append("speed: budget exhausted before any probe completed")

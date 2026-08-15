@@ -71,8 +71,11 @@ def make_loop():
 
 def make_speed():
     from assay.speed import Speed
+    # Two decode samples whose mean is the reported rate: the round-trip
+    # test then covers the tuple coercion, not just the scalars.
     return Speed(decode_tps=16.0, prefill_tps=1024.0,
-                 evidence="server_timings", n_decode=1, n_prefill=1)
+                 evidence="server_timings", n_decode=2, n_prefill=1,
+                 decode_samples=(15.0, 17.0), prefill_samples=(1024.0,))
 
 
 def make_codecs(
@@ -148,6 +151,40 @@ def test_round_trips_through_json_with_dataclass_equality():
     assert isinstance(restored.ceiling.evidence[0], CallEvidence)
     assert isinstance(restored.envelope, Envelope)
     assert isinstance(restored.codecs["json_object"]["small"], Landing)
+
+
+def test_speed_samples_survive_the_round_trip_as_tuples():
+    # asdict() writes tuples as JSON arrays; the parser must put them
+    # back as tuples or the frozen dataclass no longer compares equal.
+    restored = Profile.from_json(json.loads(make_profile().to_json()))
+    assert restored.speed.decode_samples == (15.0, 17.0)
+    assert isinstance(restored.speed.decode_samples, tuple)
+    assert restored.speed.prefill_samples == (1024.0,)
+    assert isinstance(restored.speed.prefill_samples, tuple)
+
+
+def test_speed_payload_predating_samples_parses_as_none():
+    # A profile written before v1.5 has no samples keys. It reloads with
+    # None — "not recorded" — never with an empty tuple, which would
+    # claim a sampling run that never happened.
+    from assay.profile import _speed_from
+    speed = _speed_from({"decode_tps": 66.0, "prefill_tps": 3765.0,
+                         "evidence": "server_timings",
+                         "n_decode": 1, "n_prefill": 1})
+    assert speed.decode_samples is None
+    assert speed.prefill_samples is None
+
+
+def test_speed_samples_explicitly_null_stay_none():
+    # An unmeasured probe serialized with nulls must not be coerced into
+    # tuple(None) — the parser has to guard the None case.
+    from assay.profile import _speed_from
+    speed = _speed_from({"decode_tps": None, "prefill_tps": None,
+                         "evidence": "unmeasured",
+                         "n_decode": 0, "n_prefill": 0,
+                         "decode_samples": None, "prefill_samples": None})
+    assert speed.decode_samples is None
+    assert speed.prefill_samples is None
 
 
 def test_every_profile_field_is_wired_into_the_payload():
