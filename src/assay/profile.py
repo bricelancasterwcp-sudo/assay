@@ -271,8 +271,10 @@ def _loop_verdict(loop: Loop | None) -> dict:
 def _long_output_lens(scorable: list[LongRung]) -> dict:
     """What a long_output verdict was judged by — floors and EXTENT.
 
-    The floors are ASSUMED, not derived (see long_output's module
-    docstring), and the lens carries that provenance string so no reader
+    The floors are MIXED: ``ZLIB_FLOOR`` was derived 2026-08-15 from the
+    captured anchor, ``DISTINCT_FLOOR`` is still assumed because the
+    clusters overlap on it (see long_output's module docstring). The lens
+    carries the provenance string, which says both halves, so no reader
     has to go looking for it: a verdict quoted without its thresholds is
     not a model property.
 
@@ -313,10 +315,23 @@ def _long_output_verdict(long_output: LongOutput | None) -> dict:
     stand in for healthy ones, which is why the index is taken over the
     scorable rungs rather than over the ladder.
 
-    ``provisional`` is forced True for any measured verdict while the
-    floors are assumed rather than derived — the spec's cap. It is False
-    for "unmeasured", which claims nothing a better threshold could
-    revise.
+    ``provisional`` is LADDER COMPLETENESS (ruled 2026-08-15): True
+    whenever the instrument did not finish the ladder it was configured
+    to climb — any rung skipped (ceiling or budget) or any attempted rung
+    that came back unscorable. A four-rung ladder scored end to end is
+    settled; "ready" on a two-rung ladder the ceiling cut off at 1024 is
+    not the same finding and must not wear the same badge. Extent is in
+    the lens for a reader who looks; this flag is for the one who does
+    not.
+
+    The threshold cap ORs in: while the floors are assumed rather than
+    derived, every measured verdict is provisional whatever the ladder
+    did. Task 12 derived ``ZLIB_FLOOR`` and the cap is currently
+    released, but it re-applies by itself if the provenance ever returns
+    to an ``assumed`` prefix.
+
+    "unmeasured" is False on both counts — it claims nothing that a
+    finished ladder or a better threshold could revise.
     """
     scorable = [] if long_output is None else [
         rung for rung in long_output.rungs if rung.degenerate is not None
@@ -332,8 +347,11 @@ def _long_output_verdict(long_output: LongOutput | None) -> dict:
         verdict = "unusable"
     else:
         verdict = f"degrades-at-{scorable[first_bad].target_tokens}"
+    ladder_unfinished = (bool(long_output.skipped)
+                         or len(scorable) != len(long_output.rungs))
     return {"verdict": verdict,
-            "provisional": THRESHOLDS_PROVENANCE.startswith("assumed"),
+            "provisional": (ladder_unfinished
+                            or THRESHOLDS_PROVENANCE.startswith("assumed")),
             "lens": _long_output_lens(scorable)}
 
 

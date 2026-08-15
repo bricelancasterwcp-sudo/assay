@@ -439,7 +439,12 @@ def test_long_output_family_climbs_the_full_ladder_on_a_healthy_endpoint():
     assert profile.verdicts["long_output"]["verdict"] == "ready"
     # UPDATED BY TASK 12: this pinned True while the floors were assumed
     # and the verdict layer capped them. The anchor capture derived
-    # ZLIB_FLOOR, the cap released, and a clean ladder now reads settled.
+    # ZLIB_FLOOR, the cap released, and — under the completeness ruling
+    # of 2026-08-15 — a ladder that climbed and scored all four rungs
+    # with nothing skipped is exactly the case that reads settled. The
+    # ceiling-truncated ladder below is the contrast.
+    assert profile.long_output.skipped == ()
+    assert all(rung.degenerate is not None for rung in profile.long_output.rungs)
     assert profile.verdicts["long_output"]["provisional"] is False
     # The verdict carries HOW FAR it was verified, not just that it was.
     lens = profile.verdicts["long_output"]["lens"]
@@ -481,6 +486,11 @@ def test_long_output_rungs_above_the_measured_ceiling_are_skipped_by_name():
     lens = profile.verdicts["long_output"]["lens"]
     assert lens["rungs_scored"] == 2
     assert lens["deepest_scored_tokens"] == 1024
+    # UPDATED BY TASK 12 (ruled 2026-08-15): the extent lives in the lens
+    # for a reader who opens it, and in `provisional` for the one who
+    # only sees the badge. This ladder did not finish — two rungs the
+    # ceiling put out of reach — so the verdict is not settled.
+    assert profile.verdicts["long_output"]["provisional"] is True
 
 
 def test_long_output_skipped_when_the_budget_died_earlier():

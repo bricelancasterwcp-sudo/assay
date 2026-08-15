@@ -332,8 +332,14 @@ cluster's best value and the healthy cluster's worst:
   the zlib metric is there to catch instead.
 
 Because the derived floor alone flags all ten degenerate samples,
-measured `long_output` verdicts are no longer forced `provisional`; the
-cap still fires for any provenance that starts with `assumed`.
+measured `long_output` verdicts are no longer forced `provisional` by the
+threshold cap — which still fires for any provenance that starts with
+`assumed`. For this family `provisional` now reports **ladder
+completeness**: it is True whenever a rung was skipped (ceiling or
+budget) or came back unscorable, and False only when every configured
+rung was climbed and scored. `ready` verified clean to 4096 and `ready`
+on a two-rung ladder the ceiling cut off at 1024 are different findings,
+and only the first one wears a settled badge.
 
 The committed transcripts under `docs/evidence-transcripts/` are code
 and JSON — the wrong genre to calibrate prose degeneracy on its own,

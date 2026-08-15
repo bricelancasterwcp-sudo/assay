@@ -152,8 +152,10 @@ The cost is false-positive headroom, and it is the honest bad news here:
 | ZLIB_FLOOR 0.2557 (derived) | 0.275208 | **1.076x** |
 | DISTINCT_FLOOR 0.30 (assumed) | 0.595238 | 1.984x |
 
-The derived floor sits 7.6% below the worst healthy reply ever recorded here
-and 8.3% above the best degenerate one. That band is narrow because the two
+The derived floor sits 7.1% below the worst healthy reply ever recorded here
+and 8.3% above the best degenerate one — each percentage taken over the value
+it is being compared against, `(0.275208 - 0.2557) / 0.275208` and
+`(0.2557 - 0.236194) / 0.236194`. That band is narrow because the two
 genres nearly touch: repetitive-but-healthy code compresses almost as well as
 looping prose. A future code reply slightly more repetitive than any of the
 248 would false-positive, and if one appears the floor must yield to it — it

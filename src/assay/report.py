@@ -295,7 +295,8 @@ def render_report(profiles: Iterable[dict]) -> str:
 <h1>assay capability report</h1>
 <p class="sub">{len(profiles)} profile(s) · schema version(s)
 {_esc(sorted(v for v in versions if v is not None))} · every verdict wears its
-lens (hover a badge); &#8224; = provisional at this sample size.</p>
+lens (hover a badge); &#8224; = provisional — this sample cannot separate the
+verdict from its neighbours, or the ladder behind it did not finish.</p>
 <table class="matrix"><tr><th>model / tier</th>
 <th>decode / prefill</th>{header}</tr>{"".join(rows)}</table>
 {details}

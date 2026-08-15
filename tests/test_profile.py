@@ -301,30 +301,71 @@ def test_long_output_verdict_ladder(degenerate_from, expected):
     assert verdicts["long_output"]["verdict"] == expected
 
 
-def test_long_output_verdicts_are_no_longer_forced_provisional():
-    # UPDATED BY TASK 12, deliberately. The cap held while both floors
-    # were guesses; the anchor capture (2026-08-15) derived ZLIB_FLOOR
-    # from 276 real replies, and every degenerate sample in it is caught
-    # by that derived floor alone. So a measured long_output verdict now
-    # follows the normal rules — and for this family "normal" means not
-    # provisional, since there is no interval to straddle a rung.
+def full_ladder(*, degenerate_from: int | None = None) -> LongOutput:
+    """Every configured rung attempted and scored, nothing skipped."""
+    return make_long_output(degenerate_from=degenerate_from,
+                            targets=(512, 1024, 2048, 4096), skipped=())
+
+
+def test_a_ladder_scored_end_to_end_is_not_provisional():
+    # UPDATED BY TASK 12, deliberately, twice over. The old cap forced
+    # True while both floors were guesses; the anchor capture derived
+    # ZLIB_FLOOR and released it. What decides the flag now (ruled
+    # 2026-08-15) is LADDER COMPLETENESS — and this ladder climbed every
+    # rung it was configured to climb and scored all four, so there is
+    # nothing left for a finished run to revise.
     assert not THRESHOLDS_PROVENANCE.startswith("assumed")
     for degenerate_from in (None, 512, 2048):
         entry = compute_verdicts(
             None, None, None, None, None, None,
-            make_long_output(degenerate_from=degenerate_from))["long_output"]
+            full_ladder(degenerate_from=degenerate_from))["long_output"]
         assert entry["provisional"] is False, degenerate_from
+
+
+def test_a_ladder_the_ceiling_or_budget_cut_short_stays_provisional():
+    # Ruled 2026-08-15. "ready" through 2048 because the ceiling stopped
+    # the ladder there is NOT the finding "ready, verified to 4096", and
+    # the badge must not read the same. The lens carries the extent for a
+    # reader who looks; this flag is for the one who does not.
+    for reason in ("4096: above measured ceiling", "4096: budget exhausted"):
+        for degenerate_from in (None, 512, 2048):
+            entry = compute_verdicts(
+                None, None, None, None, None, None,
+                make_long_output(degenerate_from=degenerate_from,
+                                 skipped=(reason,)))["long_output"]
+            assert entry["provisional"] is True, (reason, degenerate_from)
+            # The verdict itself is unaffected — completeness is a
+            # confidence claim, not a grade.
+            assert entry["verdict"] != "unmeasured"
+
+
+def test_an_unscorable_rung_leaves_the_ladder_unfinished_too():
+    # A rung that spent a call and measured nothing did not climb: the
+    # ladder has a hole in it even though nothing was skipped.
+    ladder = LongOutput(
+        rungs=full_ladder().rungs[:3] + (unscorable_rung(4096),), skipped=())
+    entry = compute_verdicts(None, None, None, None, None, None,
+                             ladder)["long_output"]
+    assert entry["verdict"] == "ready"
+    assert entry["provisional"] is True
+    assert entry["lens"]["rungs_scored"] == 3
+    assert entry["lens"]["deepest_scored_tokens"] == 2048
 
 
 def test_the_forced_provisional_cap_still_works_if_a_floor_goes_back_to_assumed():
     # The cap was not deleted, only released: DISTINCT_FLOOR is still
     # assumed, and if a future change makes the provenance say so at the
     # front of the string, every measured verdict must go provisional
-    # again without anyone re-implementing the rule.
+    # again without anyone re-implementing the rule. The ladder here is
+    # COMPLETE on purpose — otherwise the flag would come back True from
+    # the completeness rule and this test would pin nothing.
     import assay.profile as profile_module
 
     for degenerate_from in (None, 512, 2048):
-        long_output = make_long_output(degenerate_from=degenerate_from)
+        long_output = full_ladder(degenerate_from=degenerate_from)
+        baseline = compute_verdicts(None, None, None, None, None, None,
+                                    long_output)["long_output"]
+        assert baseline["provisional"] is False  # the cap is what moves it
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(profile_module, "THRESHOLDS_PROVENANCE",
                           "assumed-not-derived-2099-01-01")

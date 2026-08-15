@@ -176,8 +176,12 @@ def test_committed_code_replies_do_not_false_positive():
 
     Code replies from the committed transcripts are healthy output of a
     repetitive GENRE — docstrings, imports, repeated ``def`` lines. If
-    the assumed thresholds flagged them the thresholds would be too hot,
-    and the floors (assumed) would have to yield to this data (real).
+    the floors flagged them they would be too hot, and they would have
+    to yield to this data: a derived floor comes from 276 samples, a
+    transcript reply is real output that a real model really produced.
+    That is not hypothetical for the zlib floor, which Task 12 derived
+    2026-08-15 with only 1.076x clearance over the worst of these; the
+    distinct floor is still assumed and clears them by 1.98x.
     """
     texts = [t for t in _replies("qwen2.5-coder-7b-instruct-q8_0-quick.jsonl")
              if len(t.split()) >= 50]
@@ -327,6 +331,12 @@ def test_the_derived_zlib_floor_is_the_midpoint_of_the_measured_band():
     reply available — the anchor's enumeration replies AND the committed
     code corpus, whose worst case (0.2752) is lower than any healthy
     enumeration and is therefore what actually caps the floor.
+
+    LOAD-BEARING BEYOND THE ARITHMETIC: ``degenerate_best < ZLIB_FLOOR``
+    IS the claim that released Task 9's forced-provisional cap — the
+    derived floor alone catches every degenerate sample, 10/10, which is
+    why a still-assumed DISTINCT_FLOOR does not make the verdict
+    unsettled. Weaken this assertion and that justification goes with it.
     """
     samples = _anchor_samples()
     degenerate_best = max(zlib_ratio(s["text"])
