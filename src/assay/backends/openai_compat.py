@@ -18,6 +18,9 @@ from assay.backends.base import (
     BackendCaps,
     ModelInfo,
     Reply,
+    ToolReply,
+    parse_tool_calls,
+    raise_for_tools_status,
     validate_reply,
 )
 from assay.errors import ContractViolation, InfrastructureError
@@ -29,6 +32,14 @@ DEFAULT_TIMEOUT = 120.0
 
 
 def _read_json(url: str, data: bytes | None, timeout: float) -> tuple[int, dict]:
+    """Return ``(status, body)`` — an error status is data, not a raise.
+
+    A non-2xx body is the only evidence that distinguishes "this endpoint
+    does not do tools" from "this endpoint is broken", so it is read and
+    handed back (``{}`` when unreadable) exactly as the Ollama transport
+    does. Deciding what a status MEANS belongs to the caller: generate
+    raises on any non-200, chat_tools classifies first.
+    """
     headers = {"Content-Type": "application/json"} if data is not None else {}
     request = urllib.request.Request(url, data=data, headers=headers)
     try:
@@ -36,7 +47,11 @@ def _read_json(url: str, data: bytes | None, timeout: float) -> tuple[int, dict]
             status = response.status
             raw = response.read()
     except urllib.error.HTTPError as exc:
-        raise InfrastructureError(f"HTTP {exc.code} from {url}") from exc
+        try:
+            body = json.loads(exc.read())
+        except (ValueError, OSError):
+            body = {}
+        return exc.code, body if isinstance(body, dict) else {}
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise InfrastructureError(f"transport failure for {url}: {exc}") from exc
     try:
@@ -55,6 +70,21 @@ def _default_post(url: str, payload: dict, *,
 
 def _default_get(url: str, *, timeout: float = DEFAULT_TIMEOUT) -> tuple[int, dict]:
     return _read_json(url, None, timeout)
+
+
+def _decode_arguments(raw) -> dict | None:
+    """Tool arguments come over this wire as a JSON **string**.
+
+    A malformed string is DATA — the probe scores it as an invalid call —
+    so it becomes ``arguments=None``, never an exception. Anything that
+    parses to something other than an object is equally unreadable.
+    """
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None
+    return raw if isinstance(raw, dict) else None
 
 
 class OpenAICompat:
@@ -117,6 +147,55 @@ class OpenAICompat:
         usage = usage if isinstance(usage, dict) else {}
         reply = Reply(
             text=text,
+            tokens_in=usage.get("prompt_tokens"),
+            tokens_out=usage.get("completion_tokens"),
+            stop_reason=choice.get("finish_reason"),
+            raw=body,
+        )
+        return validate_reply(reply, self.caps)
+
+    def chat_tools(self, messages: list[dict], tools: list[dict], *,
+                   seed: int, max_tokens: int) -> ToolReply:
+        """Tool call over /chat/completions; a refusal is classified, not raised.
+
+        The status is handed to the shared classifier BEFORE the body is
+        read as a reply: a 4xx complaining about tools is the endpoint
+        declaring a capability, and only the raw error body says so.
+        """
+        url = f"{self.base_url}/chat/completions"
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "tools": tools,
+            "max_tokens": max_tokens,
+            "seed": seed,
+            "temperature": PROBE_TEMPERATURE,
+        }
+        status, body = self._http_post(url, payload)
+        raise_for_tools_status(status, body, url)
+        if not isinstance(body, dict):
+            error = ContractViolation(f"body from {url} is not a JSON object")
+            error.raw = {"body": body}
+            raise error
+        try:
+            choice = body["choices"][0]
+            message = choice["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            error = ContractViolation(f"200 from {url} lacks choices[0].message")
+            error.raw = body
+            raise error from exc
+        if not isinstance(message, dict):
+            error = ContractViolation(f"message from {url} is not an object")
+            error.raw = body
+            raise error
+        # content is null on this wire when the model calls a tool: an
+        # empty visible answer, not a broken response.
+        content = message.get("content")
+        usage = body.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        reply = ToolReply(
+            text=content if isinstance(content, str) else "",
+            tool_calls=parse_tool_calls(message, _decode_arguments),
             tokens_in=usage.get("prompt_tokens"),
             tokens_out=usage.get("completion_tokens"),
             stop_reason=choice.get("finish_reason"),

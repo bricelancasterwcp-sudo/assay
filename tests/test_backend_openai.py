@@ -5,13 +5,17 @@ tested against a local fake injected at ``assay.backends.ollama`` so this
 file never imports another task's code.
 """
 
+import io
 import sys
 import types
+import urllib.error
+import urllib.request
 
 import pytest
 
 from assay.backends import detect_backend
-from assay.backends.openai_compat import OpenAICompat
+from assay.backends.base import ToolsUnsupported
+from assay.backends.openai_compat import OpenAICompat, _default_get, _default_post
 from assay.errors import ContractViolation, InfrastructureError
 
 
@@ -291,3 +295,216 @@ def test_generate_pins_the_probe_temperature():
     backend.generate("anything", seed=0, max_tokens=8)
 
     assert post.calls[0][1]["temperature"] == 0.2
+
+
+# --- the transport refactor (chat_tools needs the error body) --------------
+
+
+class FakeHTTPError(urllib.error.HTTPError):
+    """A real HTTPError with a readable body, as urlopen would raise."""
+
+    def __init__(self, url, code, payload: bytes):
+        super().__init__(url, code, "Error", {}, io.BytesIO(payload))
+
+
+def install_urlopen(monkeypatch, error):
+    """Make urlopen raise ``error`` — no socket is ever opened."""
+
+    def fake_urlopen(request, timeout=None):
+        raise error
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+
+def test_http_error_returns_status_and_body_instead_of_raising(monkeypatch):
+    # The classifier needs the body a 4xx carries; raising here would
+    # discard the only evidence that tools were refused.
+    url = "http://x:8080/v1/chat/completions"
+    install_urlopen(
+        monkeypatch, FakeHTTPError(url, 400, b'{"error": "no tools here"}')
+    )
+
+    assert _default_post(url, {"model": "m"}) == (400, {"error": "no tools here"})
+
+
+def test_unreadable_error_body_becomes_an_empty_dict(monkeypatch):
+    url = "http://x:8080/v1/chat/completions"
+    install_urlopen(monkeypatch, FakeHTTPError(url, 503, b"<html>gateway</html>"))
+
+    assert _default_post(url, {"model": "m"}) == (503, {})
+
+
+def test_non_dict_error_body_becomes_an_empty_dict(monkeypatch):
+    url = "http://x:8080/v1/models"
+    install_urlopen(monkeypatch, FakeHTTPError(url, 404, b"[1, 2, 3]"))
+
+    assert _default_get(url) == (404, {})
+
+
+def test_transport_failure_still_raises_infrastructure_error(monkeypatch):
+    url = "http://x:8080/v1/chat/completions"
+    install_urlopen(monkeypatch, urllib.error.URLError("connection refused"))
+
+    with pytest.raises(InfrastructureError):
+        _default_post(url, {"model": "m"})
+
+
+# --- OpenAICompat.chat_tools ----------------------------------------------
+
+MESSAGES = [{"role": "user", "content": "read tiny.py"}]
+TOOLSET = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+            },
+        },
+    }
+]
+
+
+def tool_body(content=None, arguments='{"path": "tiny.py"}', name="read_file",
+              usage=None, finish_reason="tool_calls"):
+    message = {"role": "assistant", "content": content}
+    if arguments is not None:
+        message["tool_calls"] = [
+            {
+                "id": "call_0",
+                "type": "function",
+                "function": {"name": name, "arguments": arguments},
+            }
+        ]
+    choice = {"index": 0, "message": message, "finish_reason": finish_reason}
+    body = {"object": "chat.completion", "choices": [choice]}
+    if usage is not None:
+        body["usage"] = usage
+    return body
+
+
+def tools_backend(status=200, body=None):
+    post = RecordingPost(status=status, body=body if body is not None else tool_body())
+    backend = OpenAICompat(
+        "http://x:8080/v1", "m", http_post=post, http_get=forbidden_get
+    )
+    return backend, post
+
+
+def test_chat_tools_sends_the_tools_payload():
+    backend, post = tools_backend()
+
+    backend.chat_tools(MESSAGES, TOOLSET, seed=7, max_tokens=256)
+
+    url, payload = post.calls[0]
+    assert url == "http://x:8080/v1/chat/completions"
+    assert payload == {
+        "model": "m",
+        "messages": MESSAGES,
+        "tools": TOOLSET,
+        "max_tokens": 256,
+        "seed": 7,
+        "temperature": 0.2,
+    }
+
+
+def test_chat_tools_parses_json_string_arguments():
+    backend, _ = tools_backend(
+        body=tool_body(usage={"prompt_tokens": 41, "completion_tokens": 9})
+    )
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert len(reply.tool_calls) == 1
+    assert reply.tool_calls[0].name == "read_file"
+    # arguments arrives as a JSON STRING on this wire and must be parsed.
+    assert reply.tool_calls[0].arguments == {"path": "tiny.py"}
+    # content: null (the OpenAI shape when the model calls a tool) is "".
+    assert reply.text == ""
+    assert reply.tokens_in == 41
+    assert reply.tokens_out == 9
+    assert reply.stop_reason == "tool_calls"
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        '{"path": "tiny.py"',  # truncated — the classic malformed call
+        "not json at all",
+        "[1, 2]",  # valid JSON, but not an arguments object
+        "null",
+    ],
+)
+def test_malformed_arguments_are_data_not_an_exception(arguments):
+    backend, _ = tools_backend(body=tool_body(arguments=arguments))
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert reply.tool_calls[0].name == "read_file"
+    assert reply.tool_calls[0].arguments is None
+
+
+def test_already_parsed_arguments_pass_through():
+    # Some compat servers deliver an object where the spec says string.
+    # That is a readable call, not a malformed one — scoring it invalid
+    # would be an instrument error, not a model result.
+    backend, _ = tools_backend(body=tool_body(arguments={"path": "tiny.py"}))
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert reply.tool_calls[0].arguments == {"path": "tiny.py"}
+
+
+def test_chat_tools_prose_answer_yields_an_empty_tuple():
+    backend, _ = tools_backend(
+        body=tool_body(content="I would just open tiny.py.", arguments=None,
+                       finish_reason="stop")
+    )
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert reply.tool_calls == ()
+    assert reply.text == "I would just open tiny.py."
+    assert reply.stop_reason == "stop"
+
+
+def test_chat_tools_missing_usage_leaves_counts_none():
+    # reports_counts is None here (unknown until calibration), so a
+    # count-free tool reply passes — unreported is None, never estimated.
+    backend, _ = tools_backend(body=tool_body(usage=None))
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert reply.tokens_in is None
+    assert reply.tokens_out is None
+
+
+def test_chat_tools_4xx_naming_tools_is_a_capability_fact():
+    body = {
+        "error": {
+            "message": "'tools' is not supported by this model",
+            "type": "invalid_request_error",
+            "param": "tools",
+        }
+    }
+    backend, _ = tools_backend(status=400, body=body)
+
+    with pytest.raises(ToolsUnsupported) as excinfo:
+        backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+    assert excinfo.value.raw == body
+    assert not isinstance(excinfo.value, InfrastructureError)
+
+
+def test_chat_tools_5xx_is_infrastructure_error():
+    backend, _ = tools_backend(status=500, body={"error": "boom"})
+
+    with pytest.raises(InfrastructureError):
+        backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+
+def test_chat_tools_body_without_choices_is_contract_violation():
+    backend, _ = tools_backend(body={"object": "chat.completion"})
+
+    with pytest.raises(ContractViolation):
+        backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)

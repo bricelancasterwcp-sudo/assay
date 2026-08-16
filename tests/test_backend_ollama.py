@@ -9,7 +9,7 @@ size from /api/tags, loaded flag from /api/ps, and the stats-free-200
 
 import pytest
 
-from assay.backends.base import ModelInfo
+from assay.backends.base import ModelInfo, ToolsUnsupported
 from assay.backends.ollama import OllamaNative
 from assay.errors import ContractViolation, InfrastructureError
 
@@ -208,6 +208,175 @@ def test_ps_sets_loaded_flag(ps_models, expected):
     backend = make_backend(transport)
 
     assert backend.model_info().loaded is expected
+
+
+# --- chat_tools (v1.6) -----------------------------------------------------
+
+MESSAGES = [{"role": "user", "content": "read tiny.py, then tell me the bug"}]
+TOOLSET = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read a file",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+    }
+]
+
+GOOD_CHAT_BODY = {
+    "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"function": {"name": "read_file", "arguments": {"path": "tiny.py"}}}
+        ],
+    },
+    "done": True,
+    "done_reason": "stop",
+    "prompt_eval_count": 41,
+    "eval_count": 9,
+}
+
+
+def chat_transport(response) -> FakeTransport:
+    return FakeTransport(post_routes={"/api/chat": response})
+
+
+def test_chat_tools_posts_api_chat_with_pinned_sampler():
+    transport = chat_transport((200, GOOD_CHAT_BODY))
+    backend = make_backend(transport)
+
+    backend.chat_tools(MESSAGES, TOOLSET, seed=7, max_tokens=256)
+
+    url, payload = transport.post_calls[0]
+    assert url == f"{BASE_URL}/api/chat"
+    assert payload["model"] == MODEL
+    assert payload["messages"] == MESSAGES
+    assert payload["tools"] == TOOLSET
+    assert payload["stream"] is False
+    # Thinking off here too: the probe measures the VISIBLE channel.
+    assert payload["think"] is False
+    assert payload["options"] == {
+        "seed": 7,
+        "num_predict": 256,
+        "temperature": 0.2,
+    }
+    # /api/chat takes no truncate flag; nothing extra goes on the wire.
+    assert set(payload) == {"model", "messages", "tools", "stream", "think", "options"}
+
+
+def test_chat_tools_parses_native_tool_call():
+    transport = chat_transport((200, GOOD_CHAT_BODY))
+    backend = make_backend(transport)
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert reply.text == ""
+    assert len(reply.tool_calls) == 1
+    call = reply.tool_calls[0]
+    assert call.name == "read_file"
+    # Ollama delivers arguments already parsed as a dict.
+    assert call.arguments == {"path": "tiny.py"}
+    assert reply.tokens_in == 41
+    assert reply.tokens_out == 9
+    assert reply.stop_reason == "stop"
+    assert reply.raw == GOOD_CHAT_BODY
+
+
+def test_chat_tools_prose_answer_is_data_not_an_error():
+    # A model answering in prose instead of calling is a measurement the
+    # probe scores, never an exception.
+    body = {
+        "message": {"role": "assistant", "content": "You should read tiny.py."},
+        "done_reason": "stop",
+        "prompt_eval_count": 30,
+        "eval_count": 7,
+    }
+    backend = make_backend(chat_transport((200, body)))
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert reply.tool_calls == ()
+    assert reply.text == "You should read tiny.py."
+
+
+def test_chat_tools_missing_content_is_empty_text():
+    body = dict(GOOD_CHAT_BODY)
+    body["message"] = {"role": "assistant", "tool_calls": [
+        {"function": {"name": "read_file", "arguments": {}}}
+    ]}
+    backend = make_backend(chat_transport((200, body)))
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert reply.text == ""
+    # An empty arguments dict is "called with no arguments" — NOT None.
+    assert reply.tool_calls[0].arguments == {}
+
+
+def test_chat_tools_non_dict_arguments_become_none():
+    body = dict(GOOD_CHAT_BODY)
+    body["message"] = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"function": {"name": "read_file", "arguments": "tiny.py"}}],
+    }
+    backend = make_backend(chat_transport((200, body)))
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert reply.tool_calls[0].name == "read_file"
+    assert reply.tool_calls[0].arguments is None
+
+
+def test_chat_tools_stats_free_200_raises_contract_violation():
+    # The ~11.5k signature again: a valid-looking tool call, no counts.
+    body = {
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"function": {"name": "read_file", "arguments": {"path": "t.py"}}}
+            ],
+        },
+        "done": False,
+    }
+    backend = make_backend(chat_transport((200, body)))
+
+    with pytest.raises(ContractViolation) as excinfo:
+        backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+    assert excinfo.value.raw == body
+
+
+def test_chat_tools_400_without_tool_support_is_a_capability_fact():
+    body = {"error": "registry.ollama.ai/library/gemma2:9b does not support tools"}
+    backend = make_backend(chat_transport((400, body)))
+
+    with pytest.raises(ToolsUnsupported) as excinfo:
+        backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+    assert excinfo.value.raw == body
+    # Never an infrastructure failure: the probe records it as data.
+    assert not isinstance(excinfo.value, InfrastructureError)
+
+
+def test_chat_tools_5xx_is_infrastructure_error():
+    backend = make_backend(chat_transport((500, {"error": "boom"})))
+
+    with pytest.raises(InfrastructureError) as excinfo:
+        backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+    assert not isinstance(excinfo.value, ContractViolation)
+
+
+def test_chat_tools_non_dict_body_raises_contract_violation():
+    backend = make_backend(chat_transport((200, ["not", "a", "dict"])))
+
+    with pytest.raises(ContractViolation):
+        backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
 
 
 def test_generate_pins_the_probe_temperature():

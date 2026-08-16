@@ -23,6 +23,9 @@ from assay.backends.base import (
     BackendCaps,
     ModelInfo,
     Reply,
+    ToolReply,
+    parse_tool_calls,
+    raise_for_tools_status,
     validate_reply,
 )
 from assay.errors import ContractViolation, InfrastructureError
@@ -174,6 +177,53 @@ class OllamaNative:
         body = self._post("/api/generate", payload)
         reply = Reply(
             text=body.get("response", ""),
+            tokens_in=body.get("prompt_eval_count"),
+            tokens_out=body.get("eval_count"),
+            stop_reason=body.get("done_reason"),
+            raw=body,
+        )
+        return validate_reply(reply, self.caps)
+
+    def chat_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        seed: int,
+        max_tokens: int,
+    ) -> ToolReply:
+        """Native tool call: POST /api/chat with the same pinned sampler.
+
+        A 4xx refusing tools is a capability fact, not a failure — the
+        classifier in base.py decides, and the raw body travels with it.
+        """
+        path = "/api/chat"
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+            # Same reason as generate: probes measure the VISIBLE channel.
+            "think": False,
+            "options": {
+                "seed": seed,
+                "num_predict": max_tokens,
+                "temperature": PROBE_TEMPERATURE,
+            },
+        }
+        status, body = self._http_post(f"{self.base_url}{path}", payload)
+        raise_for_tools_status(status, body, path)
+        if not isinstance(body, dict):
+            raise ContractViolation(
+                f"non-dict JSON body from {path}: {type(body).__name__}"
+            )
+        message = body.get("message")
+        message = message if isinstance(message, dict) else {}
+        content = message.get("content")
+        reply = ToolReply(
+            text=content if isinstance(content, str) else "",
+            # Ollama's arguments are already a dict — the default rule.
+            tool_calls=parse_tool_calls(message),
             tokens_in=body.get("prompt_eval_count"),
             tokens_out=body.get("eval_count"),
             stop_reason=body.get("done_reason"),
