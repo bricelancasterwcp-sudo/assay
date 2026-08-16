@@ -9,7 +9,7 @@ size from /api/tags, loaded flag from /api/ps, and the stats-free-200
 
 import pytest
 
-from assay.backends.base import ModelInfo, ToolsUnsupported
+from assay.backends.base import ModelInfo, ToolCall, ToolsUnsupported
 from assay.backends.ollama import OllamaNative
 from assay.errors import ContractViolation, InfrastructureError
 
@@ -332,6 +332,28 @@ def test_chat_tools_non_dict_arguments_become_none():
 
     assert reply.tool_calls[0].name == "read_file"
     assert reply.tool_calls[0].arguments is None
+
+
+def test_chat_tools_keeps_a_malformed_entry_instead_of_dropping_it():
+    # A junk entry the model emitted is DATA the probe scores as an
+    # invalid call; dropping it would read as "no call was made" and
+    # quietly turn a bad call into a missing one.
+    body = dict(GOOD_CHAT_BODY)
+    body["message"] = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"id": "no-function-here"},
+            {"function": {"name": "read_file", "arguments": {"path": "t.py"}}},
+        ],
+    }
+    backend = make_backend(chat_transport((200, body)))
+
+    reply = backend.chat_tools(MESSAGES, TOOLSET, seed=0, max_tokens=256)
+
+    assert len(reply.tool_calls) == 2
+    assert reply.tool_calls[0] == ToolCall(name="", arguments=None)
+    assert reply.tool_calls[1].name == "read_file"
 
 
 def test_chat_tools_stats_free_200_raises_contract_violation():
