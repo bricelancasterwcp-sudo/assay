@@ -92,7 +92,10 @@ def _error_text(body) -> str:
         return payload
     try:
         return json.dumps(payload, default=str)
-    except (TypeError, ValueError):  # pragma: no cover - default=str catches it
+    except (TypeError, ValueError):
+        # Belt and braces: a body off the wire is always serializable and
+        # default=str absorbs the rest, but a classifier must not be the
+        # thing that crashes while explaining a failure.
         return str(payload)
 
 
