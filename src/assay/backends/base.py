@@ -78,25 +78,56 @@ class ToolsUnsupported(Exception):
     raw: dict | None = None
 
 
-def _error_text(body) -> str:
-    """The error string a server's body carries, however it nests it.
+_ERROR_KEYS = ("error", "message", "detail", "param")
+"""The fields servers put an error in — and the ONLY fields scanned.
 
-    Ollama returns ``{"error": "<model> does not support tools"}``;
-    OpenAI-compat servers nest an object (``{"error": {"message": ...,
-    "param": "tools"}}``) where only ``param`` may name the culprit. The
-    whole error value is serialized so the signal is not lost in either
-    shape.
-    """
-    payload = body.get("error", body) if isinstance(body, dict) else body
-    if isinstance(payload, str):
-        return payload
+Never the whole body: a server that echoes the failing request echoes
+the ``tools`` array we sent, and reading our own payload back as the
+endpoint's refusal would fabricate a capability fact. Every key is read
+(not just the first present one) because ``{"error": null, "message":
+"...tools..."}`` is a real shape — a present-but-null ``error`` must not
+stop the scan.
+"""
+
+
+def _stringify(value) -> str:
+    if isinstance(value, str):
+        return value
     try:
-        return json.dumps(payload, default=str)
+        return json.dumps(value, default=str)
     except (TypeError, ValueError):
         # Belt and braces: a body off the wire is always serializable and
         # default=str absorbs the rest, but a classifier must not be the
         # thing that crashes while explaining a failure.
-        return str(payload)
+        return str(value)
+
+
+def _error_text(body) -> str:
+    """The error text a server's body carries, however it nests it.
+
+    Ollama returns ``{"error": "<model> does not support tools"}``;
+    OpenAI-compat servers nest an object (``{"error": {"message": ...,
+    "param": "tools"}}``) where only ``param`` may name the culprit, so a
+    dict-valued key is descended one level for its own error fields.
+    """
+    if isinstance(body, str):
+        return body
+    if not isinstance(body, dict):
+        return ""
+    parts = []
+    for key in _ERROR_KEYS:
+        value = body.get(key)
+        if value is None:
+            continue
+        if isinstance(value, dict):
+            parts.extend(
+                _stringify(value[nested])
+                for nested in _ERROR_KEYS
+                if value.get(nested) is not None
+            )
+        else:
+            parts.append(_stringify(value))
+    return " ".join(parts)
 
 
 ArgumentsReader = Callable[[object], dict | None]

@@ -188,3 +188,30 @@ def test_bare_body_naming_tools_counts_when_there_is_no_error_key():
     body = {"message": "the model does not support tools"}
     with pytest.raises(ToolsUnsupported):
         raise_for_tools_status(400, body, "/api/chat")
+
+
+def test_an_echoed_request_body_does_not_fake_an_unsupported_verdict():
+    # A server that echoes the failing request echoes the `tools` array
+    # we sent. Scanning the whole body would read our own payload back as
+    # the endpoint's refusal — a FABRICATED capability fact, the exact
+    # bug class this instrument exists to catch. Only error-bearing
+    # fields are scanned.
+    body = {
+        "message": "unknown field 'temprature'",
+        "request": {
+            "model": "m",
+            "tools": [{"type": "function", "function": {"name": "read_file"}}],
+        },
+    }
+    with pytest.raises(InfrastructureError) as excinfo:
+        raise_for_tools_status(400, body, "/api/chat")
+    assert not isinstance(excinfo.value, ToolsUnsupported)
+
+
+def test_a_null_error_field_does_not_hide_the_real_refusal():
+    # The mirror gap: `error` is PRESENT but null, so a default-on-missing
+    # lookup stops there and a genuine refusal misfiles as infrastructure.
+    body = {"error": None, "message": "'tools' not supported by this model"}
+    with pytest.raises(ToolsUnsupported) as excinfo:
+        raise_for_tools_status(400, body, "/api/chat")
+    assert excinfo.value.raw == body
