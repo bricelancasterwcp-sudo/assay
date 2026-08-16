@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from assay import fixtures
 from assay.errors import BudgetExhausted
-from assay.stats import decided
+from assay.stats import VERDICT_LENS, decided
 
 _SEARCH_MARKER = "<<<<<<< SEARCH"
 _DIVIDER = "======="
@@ -268,12 +268,17 @@ def _attempt_order(n_tasks: int, n_per_cell: int,
 def _stop_count(codec: str, landed: int, landed_applies: int) -> int:
     """The count the stop test reads: the codec's VERDICT lens.
 
-    ``json_object``'s two lenses coincide by construction (validation IS
-    the landing). The patch codecs are graded applies-and-parses, so
-    stopping on byte-equality would decide a cell on a lens no verdict
-    uses — a reply that applies and parses but editorializes a comment
-    is a landing for the verdict and must not end the cell early."""
-    return landed if codec == "json_object" else landed_applies
+    Which lens that is per codec is registered ONCE, in
+    ``stats.VERDICT_LENS``, and profile's verdict layer reads the same
+    entry — the rule used to be spelled in both modules, so a change to
+    one was a silent disagreement with the other (v1.5 review debt).
+
+    An unregistered codec counts applies-and-parses, the stricter stop
+    (byte-equality can decide a cell the verdict would still call open)
+    and the behaviour every non-``json_object`` codec has always had.
+    """
+    counts = {"lands": landed, "lands_applies": landed_applies}
+    return counts[VERDICT_LENS.get(codec, "lands_applies")]
 
 
 def stopped_on_rule(codec: str, cell: Landing,

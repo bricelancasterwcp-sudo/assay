@@ -103,8 +103,22 @@ def _num(value: object, spec: str = ".2f") -> str:
     return _esc(value)
 
 
+def _show(value: object) -> str:
+    """``None`` is unmeasured, in words. Same convention as
+    ``profile.render_table`` — the two views of one profile must not
+    disagree about what a missing measurement is called."""
+    return "unmeasured" if value is None else str(value)
+
+
 def _lens_title(entry: dict) -> str:
-    parts = [f"{k}={v}" for k, v in (entry.get("lens") or {}).items()]
+    """The hover text: every lens field, with unmeasured ones SAID.
+
+    A capped ladder scores nothing, so its lens carries
+    ``deepest_scored_tokens: None``; interpolating that straight hovered
+    as ``=None`` — Python's word for unmeasured, on a page that says
+    "unmeasured" everywhere else. A measured 0 still prints as 0.
+    """
+    parts = [f"{k}={_show(v)}" for k, v in (entry.get("lens") or {}).items()]
     return "; ".join(parts)
 
 

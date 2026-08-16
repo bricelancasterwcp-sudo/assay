@@ -31,6 +31,7 @@ from assay.speed import Speed
 # thresholds stay readable under their old names.
 from assay.stats import READY_THRESHOLD as _READY_THRESHOLD  # noqa: F401
 from assay.stats import RISKY_THRESHOLD as _RISKY_THRESHOLD  # noqa: F401
+from assay.stats import VERDICT_LENS
 from assay.stats import ladder as _ladder
 from assay.stats import wilson95
 
@@ -44,6 +45,8 @@ _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
 #: nothing, and ``from_json`` keeps the two apart (spec §4).
 _POST_V1_FAMILIES = ("ceiling_shapes", "speed", "loop", "long_output")
 _GRADE_FOR_VERDICTS = "small"
+#: The codecs ``patch_editing`` may be carried by — either can carry it.
+_PATCH_CODECS = ("search_replace", "whole_file")
 _LONG_CONTEXT_TOKENS = 16384
 _TRUNCATION_GUARD_TOKENS = 4096
 # Speed floors (v1.2): tok/s a verdict is judged against. Defaults are
@@ -401,6 +404,34 @@ def verdict_cell(
     return codecs.get(codec, {}).get(_GRADE_FOR_VERDICTS)
 
 
+def _verdict_rate(cell: Landing | None, codec: str) -> float | None:
+    """The rate a codec's verdict is read from — the lens named in the
+    shared registry (``stats.VERDICT_LENS``), which is the same entry
+    ``codecs``' sequential stop test counts. None wherever the cell is
+    missing or that lens was never measured (a v1 cell has no
+    applies-and-parses column at all)."""
+    if cell is None:
+        return None
+    return getattr(cell, VERDICT_LENS.get(codec, "lands_applies"))
+
+
+def _best_patch(
+    codecs: dict[str, dict[str, Landing]] | None
+) -> tuple[Landing | None, float | None]:
+    """(cell, rate) for the patch codec that lands best under its own
+    registered lens. Returned together because the caller needs both and
+    re-deriving the rate from the cell would mean naming the lens a
+    second time — the duplication this consolidation removes."""
+    best: Landing | None = None
+    best_rate: float | None = None
+    for codec in _PATCH_CODECS:
+        cell = verdict_cell(codecs, codec)
+        rate = _verdict_rate(cell, codec)
+        if rate is not None and (best_rate is None or rate > best_rate):
+            best, best_rate = cell, rate
+    return best, best_rate
+
+
 def best_patch_cell(
     codecs: dict[str, dict[str, Landing]] | None
 ) -> Landing | None:
@@ -409,13 +440,7 @@ def best_patch_cell(
     verdict). Public because the orchestrator stamps this cell's n into
     the lens — reading it from anywhere else could name an n that
     belongs to a cell no verdict used."""
-    best = None
-    for codec in ("search_replace", "whole_file"):
-        cell = verdict_cell(codecs, codec)
-        if cell is not None and cell.lands_applies is not None:
-            if best is None or cell.lands_applies > best.lands_applies:
-                best = cell
-    return best
+    return _best_patch(codecs)[0]
 
 
 def _codec_lens(landing: str, presentation: str, stopping_rule: str,
@@ -466,7 +491,10 @@ def compute_verdicts(
     an application accepting a patch validates the result by running
     it, so byte-equality's compliance-with-incidentals is the wrong
     predictor there. The raw byte-equality column stays in
-    ``codecs`` for consumers who want the stricter number.
+    ``codecs`` for consumers who want the stricter number. Which lens
+    each codec is graded under is registered once, in
+    ``stats.VERDICT_LENS`` — the same entry ``codecs``' sequential stop
+    test counts, so a cell can never stop on a lens its verdict ignores.
 
     Unmeasured inputs -> "unmeasured", never worse. ``geometry`` and
     ``envelope`` inform no verdict but are part of the stable signature.
@@ -475,20 +503,18 @@ def compute_verdicts(
     sampler = {"temperature": 0.2, "fixtures": FIXTURE_SET}
 
     jo = verdict_cell(codecs, "json_object")
-    jo_rate = None if jo is None else jo.lands
+    jo_rate = _verdict_rate(jo, "json_object")
     jo_lo, jo_hi = (0.0, 1.0)
-    if jo is not None and jo.lands is not None:
-        jo_lo, jo_hi = wilson95(round(jo.lands * jo.n), jo.n)
+    if jo_rate is not None:
+        jo_lo, jo_hi = wilson95(round(jo_rate * jo.n), jo.n)
     jo_verdict, jo_prov = _ladder_provisional(
         jo_rate, jo_lo, jo_hi,
         ready_blocked=_truncates_below_4k(ceiling))
 
-    best_patch = best_patch_cell(codecs)
-    patch_rate = None if best_patch is None else best_patch.lands_applies
+    best_patch, patch_rate = _best_patch(codecs)
     p_lo, p_hi = (0.0, 1.0)
-    if best_patch is not None:
-        p_lo, p_hi = wilson95(round(best_patch.lands_applies * best_patch.n),
-                              best_patch.n)
+    if patch_rate is not None:
+        p_lo, p_hi = wilson95(round(patch_rate * best_patch.n), best_patch.n)
     patch_verdict, patch_prov = _ladder_provisional(patch_rate, p_lo, p_hi)
 
     counts = None if ceiling is None else ceiling.counts_available
@@ -621,8 +647,39 @@ def _render_long_output(long_output: LongOutput | None) -> str:
     return line
 
 
+def _verdict_word(entry: object) -> str:
+    """The verdict word, from either schema.
+
+    v1 wrote each verdict as a BARE STRING; v2 onward writes a dict that
+    carries the verdict plus its lens. Indexing the string as a dict is
+    what made the human view of an archived profile raise TypeError —
+    report.py's ``_badge`` already drew this distinction, render_table
+    did not.
+    """
+    if isinstance(entry, dict):
+        return str(entry.get("verdict", "unmeasured"))
+    return str(entry)
+
+
+def _lens_line(verdicts: dict) -> str:
+    """One ``name: k=v,...`` per verdict THAT HAS a lens.
+
+    A bare-string (v1) verdict carries no lens, and a made-up one would
+    be the exact overclaim the lens exists to prevent; a profile with no
+    lenses at all says ``unmeasured``, which is what it is.
+    """
+    parts = [
+        f"{name}: "
+        + ",".join(f"{k}={_show(v)}" for k, v in entry["lens"].items())
+        for name, entry in verdicts.items()
+        if isinstance(entry, dict) and entry.get("lens")
+    ]
+    return "lenses     " + (" | ".join(parts) if parts else "unmeasured")
+
+
 def render_table(profile: Profile) -> str:
-    """Human view of a profile. Unmeasured is SAID, never shown as 0."""
+    """Human view of a profile, of ANY schema version. Unmeasured is
+    SAID, never shown as 0 — and never shown as Python's ``None``."""
     endpoint = profile.endpoint
     model = profile.model
     detected = "autodetected" if endpoint.get("autodetected") else "forced"
@@ -645,18 +702,15 @@ def render_table(profile: Profile) -> str:
          f"({profile.speed.evidence})"),
         _render_long_output(profile.long_output),
         "verdicts   "
-        + " | ".join(f"{name}: {entry['verdict']}"
+        + " | ".join(f"{name}: {_verdict_word(entry)}"
                      for name, entry in profile.verdicts.items()),
-        # ``_show`` here too, and for the same reason as every other
-        # line: a lens field is as unmeasured as a metric can be — a
-        # capped ladder scores nothing, so ``deepest_scored_tokens`` is
-        # None — and printing Python's ``None`` beside a table that says
-        # "unmeasured" everywhere else asks the reader to know Python.
-        "lenses     "
-        + " | ".join(
-            f"{name}: "
-            + ",".join(f"{k}={_show(v)}" for k, v in entry["lens"].items())
-            for name, entry in profile.verdicts.items()),
+        # ``_show`` inside the lens line too, and for the same reason as
+        # every other line: a lens field is as unmeasured as a metric can
+        # be — a capped ladder scores nothing, so
+        # ``deepest_scored_tokens`` is None — and printing Python's
+        # ``None`` beside a table that says "unmeasured" everywhere else
+        # asks the reader to know Python.
+        _lens_line(profile.verdicts),
     ]
     dropped = profile.provenance.get("dropped") or []
     if dropped:

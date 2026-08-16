@@ -14,6 +14,26 @@ RISKY_THRESHOLD = 0.6
 # is the terminal look, not a promise that 35 calls will be spent.
 LOOK_SCHEDULE = (5, 10, 20, 35)
 
+#: codec -> the ``Landing`` field its VERDICT is read from, and therefore
+#: the field its sequential stop test must count (v1.6 consolidation).
+#:
+#: ``json_object`` is graded on byte-equality because validation IS the
+#: landing there — the two lenses coincide by construction. The patch
+#: codecs are graded applies-and-parses: an application accepting a
+#: patch validates the result by running it, so a reply that applies and
+#: parses but editorialises a comment is a landing for the verdict, and
+#: stopping the cell on byte-equality would decide it on a lens no
+#: verdict uses.
+#:
+#: One dict, two consumers: ``codecs._stop_count`` and ``profile``'s
+#: codec verdict layer. Through v1.5 each spelled the rule itself, which
+#: is two places to disagree; the tests pin that both read THIS object.
+VERDICT_LENS = {
+    "json_object": "lands",
+    "search_replace": "lands_applies",
+    "whole_file": "lands_applies",
+}
+
 
 def wilson95(passes: int, n: int) -> tuple[float, float]:
     """95% Wilson score interval for a binomial proportion. Reported so

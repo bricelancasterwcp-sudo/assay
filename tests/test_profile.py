@@ -723,6 +723,33 @@ def test_the_lens_line_says_unmeasured_where_the_lens_holds_none():
     assert "None" not in rendered
 
 
+def test_render_table_reads_a_v1_profile_without_raising():
+    """v1 wrote verdicts as BARE STRINGS. ``render_table`` indexed them
+    as dicts, so the one human view of an archived profile raised
+    TypeError — on real committed evidence, not a hypothetical. A string
+    carries no lens; it renders as the word it is and the lens line says
+    so rather than inventing one."""
+    payload = json.loads(_V1_PROFILE.read_text(encoding="utf-8"))
+    assert isinstance(payload["verdicts"]["structured_extraction"], str)
+
+    rendered = render_table(Profile.from_json(payload))
+
+    assert "structured_extraction: ready" in rendered
+    assert "patch_editing: unusable" in rendered
+    assert "long_context: ready" in rendered
+    assert "lenses     unmeasured" in rendered
+    assert "None" not in rendered
+
+
+def test_render_table_still_prints_lenses_for_a_modern_profile():
+    # The v1 fix must not cost the v5 lens line: a dict verdict keeps
+    # rendering its lens fields.
+    rendered = render_table(make_profile())
+    assert "lenses     " in rendered
+    assert "landing=" in rendered
+    assert "lenses     unmeasured" not in rendered
+
+
 def test_patch_verdict_is_judged_under_the_applies_lens():
     # v1.1: byte-equality says unusable (0.0), applies-and-parses says
     # ready (0.95) — patch_editing must follow the applies lens and SAY
@@ -738,6 +765,35 @@ def test_patch_verdict_is_judged_under_the_applies_lens():
     verdicts = compute_verdicts(None, None, None, codecs)
     assert verdicts["patch_editing"]["verdict"] == "ready"
     assert verdicts["patch_editing"]["lens"]["landing"] == "applies_and_parses(python)"
+
+
+def test_codec_verdicts_read_the_shared_lens_registry(monkeypatch):
+    """The verdict layer's lens choice is the SAME object codecs' stop
+    test reads (v1.6 consolidation). Move the registry and both verdicts
+    move with it — that is the whole guarantee, and it is why the rule
+    is no longer spelled twice."""
+    from assay import stats
+    from assay.profile import VERDICT_LENS
+
+    assert VERDICT_LENS is stats.VERDICT_LENS  # the object, not a copy
+
+    codecs = {
+        codec: {
+            grade: Landing(lands=0.0, lands_applies=0.95, n=20)
+            for grade in _GRADES
+        }
+        for codec in _CODECS
+    }
+    verdicts = compute_verdicts(None, None, None, codecs)
+    assert verdicts["structured_extraction"]["verdict"] == "unusable"
+    assert verdicts["patch_editing"]["verdict"] == "ready"
+
+    monkeypatch.setitem(stats.VERDICT_LENS, "json_object", "lands_applies")
+    monkeypatch.setitem(stats.VERDICT_LENS, "search_replace", "lands")
+    monkeypatch.setitem(stats.VERDICT_LENS, "whole_file", "lands")
+    flipped = compute_verdicts(None, None, None, codecs)
+    assert flipped["structured_extraction"]["verdict"] == "ready"
+    assert flipped["patch_editing"]["verdict"] == "unusable"
 
 
 def test_custom_presentation_is_named_in_every_codec_lens():

@@ -7,10 +7,13 @@ provisional. Every interval pinned below was computed with this
 module's own ``wilson95`` before being written down.
 """
 
+import dataclasses
+
 from assay.stats import (
     LOOK_SCHEDULE,
     READY_THRESHOLD,
     RISKY_THRESHOLD,
+    VERDICT_LENS,
     decided,
     ladder,
     wilson95,
@@ -94,6 +97,26 @@ def test_profile_reexports_wilson95():
 def test_profile_ladder_alias_is_the_stats_ladder():
     from assay.profile import _ladder
     assert _ladder is ladder
+
+
+def test_verdict_lens_registry_names_each_codec_s_verdict_lens():
+    # v1.6 consolidation: the rule that json_object is graded on
+    # byte-equality (validation IS the landing) while the patch codecs
+    # are graded applies-and-parses lived in TWO places — codecs'
+    # stop test and profile's verdict layer. One registry now.
+    assert VERDICT_LENS == {
+        "json_object": "lands",
+        "search_replace": "lands_applies",
+        "whole_file": "lands_applies",
+    }
+
+
+def test_verdict_lens_covers_every_codec_and_names_real_landing_fields():
+    from assay.codecs import CODECS, Landing
+
+    assert set(VERDICT_LENS) == set(CODECS)
+    fields = {field.name for field in dataclasses.fields(Landing)}
+    assert set(VERDICT_LENS.values()) <= fields
 
 
 def test_stats_is_a_leaf_module():

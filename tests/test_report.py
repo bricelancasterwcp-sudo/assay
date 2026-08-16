@@ -169,6 +169,27 @@ def test_v1_payloads_still_render_through_the_v15_report():
     assert "long_output unmeasured" in html
 
 
+def test_a_none_in_a_lens_reads_unmeasured_in_the_badge_tooltip():
+    """The tooltip is a lens, and a lens obeys the None-vs-zero rule.
+
+    A ladder the ceiling capped scores nothing, so its lens carries
+    ``deepest_scored_tokens: None``; the tooltip interpolated that
+    straight and hovered as ``deepest_scored_tokens=None`` — Python's
+    word for unmeasured, beside a page that says "unmeasured"
+    everywhere else (``render_table`` was fixed for this in v1.5; the
+    HTML view was not).
+    """
+    p = profile_dict()
+    p["verdicts"]["long_output"] = {
+        "verdict": "unmeasured",
+        "lens": {"rungs_scored": 0, "deepest_scored_tokens": None},
+    }
+    html = render_report([p])
+    assert "deepest_scored_tokens=unmeasured" in html
+    assert "deepest_scored_tokens=None" not in html
+    assert "rungs_scored=0" in html  # a measured zero is still a zero
+
+
 def test_a_verdict_the_stylesheet_does_not_know_borrows_no_colour():
     # The class attribute is no longer built from profile text: an
     # unknown verdict renders uncoloured (it earned no colour) and a

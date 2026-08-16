@@ -665,3 +665,25 @@ def test_stopped_on_rule_reads_each_codec_s_verdict_lens():
     assert not stopped_on_rule("whole_file", applies_only, LOOK_SCHEDULE)
     assert stopped_on_rule("json_object", Landing(lands=0.0, lands_applies=0.0,
                                                   n=5), LOOK_SCHEDULE)
+
+
+def test_the_stop_test_reads_the_shared_lens_registry(monkeypatch):
+    """The stop lens is NOT a rule this module keeps for itself.
+
+    v1.5 spelled ``codec == "json_object"`` here and spelled the same
+    rule again in profile's verdict layer; a change to one was a silent
+    disagreement with the other. Both now read ``stats.VERDICT_LENS``,
+    and this test proves it by moving the registry underneath them.
+    """
+    from assay import stats
+    from assay.codecs import VERDICT_LENS, Landing, stopped_on_rule
+
+    assert VERDICT_LENS is stats.VERDICT_LENS  # the object, not a copy
+
+    # 0/5 byte-equality decides unusable; 5/5 applies-and-parses decides
+    # nothing (three rungs still live). Same cell, opposite answers.
+    cell = Landing(lands=0.0, lands_applies=1.0, n=5)
+    assert stopped_on_rule("json_object", cell, stats.LOOK_SCHEDULE) is True
+
+    monkeypatch.setitem(stats.VERDICT_LENS, "json_object", "lands_applies")
+    assert stopped_on_rule("json_object", cell, stats.LOOK_SCHEDULE) is False
