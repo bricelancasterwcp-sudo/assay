@@ -208,6 +208,22 @@ def test_an_echoed_request_body_does_not_fake_an_unsupported_verdict():
     assert not isinstance(excinfo.value, ToolsUnsupported)
 
 
+def test_an_echo_nested_inside_the_error_object_is_not_scanned_either():
+    # Same fabrication one level down: serializing the whole error object
+    # would read an echoed `tools` array back as a refusal. The descent
+    # into a dict-valued key reads ITS error fields, not all of it.
+    body = {
+        "error": {
+            "message": "unknown field 'temprature'",
+            "type": "invalid_request_error",
+            "request": {"tools": [{"type": "function"}]},
+        }
+    }
+    with pytest.raises(InfrastructureError) as excinfo:
+        raise_for_tools_status(400, body, "/api/chat")
+    assert not isinstance(excinfo.value, ToolsUnsupported)
+
+
 def test_a_null_error_field_does_not_hide_the_real_refusal():
     # The mirror gap: `error` is PRESENT but null, so a default-on-missing
     # lookup stops there and a genuine refusal misfiles as infrastructure.
