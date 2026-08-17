@@ -26,8 +26,8 @@ reads. Each family is judged by the strongest evidence its cells carry:
 
 - ceiling / shapes / verdicts: exact values, so any move is real
   (``rung-change`` and ``flip``). The verdict ladder is
-  ready > risky > degrades-at-N > unusable, and between two
-  ``degrades-at`` rungs the LARGER N is the better one — degrading
+  ready > risky > degrades-at-N > unusable > unsupported, and between
+  two ``degrades-at`` rungs the LARGER N is the better one — degrading
   later is an improvement, not a regression;
 - codecs: Wilson-95 per side, flagged only when the intervals are
   DISJOINT (``disjoint-intervals``) — 4/5 vs 5/5 is not a finding;
@@ -40,7 +40,9 @@ reads. Each family is judged by the strongest evidence its cells carry:
 ``dropped`` and is never scored — as does a verdict that is
 ``unmeasured`` on either side, and (same rule, extended from the spec's
 verdict clause) a ``failure_mode`` whose literal value is
-``"unmeasured"``. Absence is not a regression.
+``"unmeasured"``. Absence is not a regression. ``unsupported`` is the
+one word that looks like absence and is not: the endpoint was asked and
+said no, so it ranks (bottom rung) instead of dropping.
 """
 
 from __future__ import annotations
@@ -60,13 +62,23 @@ BASIS_FLIP = "flip"
 BASIS_DISJOINT = "disjoint-intervals"
 BASIS_2SE = "beyond-2se"
 
-# ready > risky > degrades-at-N > unusable. The first three come from
-# assay.stats.ladder; degrades-at-N is the long_output family's own
-# rung (v1.5), and it sits above unusable — a model that holds together
-# for a while is better than one that never does — and below risky.
-# "unmeasured" is the ladder's fourth value and deliberately absent
-# here: it is dropped, never ranked.
-_LADDER_RANK = {"unusable": 0, "degrades-at": 1, "risky": 2, "ready": 3}
+# ready > risky > degrades-at-N > unusable > unsupported. ready/risky/
+# unusable come from assay.stats.ladder; degrades-at-N is the
+# long_output family's own rung (v1.5), and it sits above unusable — a
+# model that holds together for a while is better than one that never
+# does — and below risky. "unsupported" is the tools family's rung
+# (v1.6): the endpoint REFUSED the tools parameter, so the model was
+# never asked to do the task. That is the bottom of the ladder and not
+# a tie with unusable — being asked and failing every task is more than
+# never being asked — which is what makes ready -> unsupported a
+# regression a --gate must fail on, and unsupported -> anything measured
+# an improvement it must not.
+#
+# "unmeasured" is the ladder's remaining value and deliberately absent
+# here: it is dropped, never ranked. unsupported is NOT dropped, because
+# the refusal is a measurement.
+_LADDER_RANK = {"unsupported": 0, "unusable": 1, "degrades-at": 2,
+                "risky": 3, "ready": 4}
 _DEGRADES_PREFIX = "degrades-at-"
 _LYING_MODES = frozenset({"silent_truncation", "missing_stats"})
 _GRADES = ("tiny", "small", "medium")

@@ -443,6 +443,110 @@ def test_provisional_flip_alone_is_neutral():
     assert change.direction == "neutral" and change.basis == "flip"
 
 
+# --- v1.6: unsupported, the rung below unusable ----------------------
+
+
+def _tool_calling(verdict):
+    """A ``tool_calling`` verdict entry as ``profile.py`` writes the
+    unsupported one: no interval, because there is no proportion to
+    bound."""
+    return {"verdict": verdict, "provisional": False,
+            "interval95": None, "lens": {}}
+
+
+def _tool_calling_change(old_verdict, new_verdict):
+    result = diff_profiles(
+        make_profile(verdicts=make_verdicts(
+            tool_calling=_tool_calling(old_verdict))),
+        make_profile(verdicts=make_verdicts(
+            tool_calling=_tool_calling(new_verdict))))
+    (change,) = [c for c in result.changes if c.cell == "tool_calling"]
+    return change
+
+
+@pytest.mark.parametrize(("old", "new", "expected"), [
+    # ready > risky > degrades-at-N > unusable > unsupported.
+    # An endpoint that used to take the tools parameter and now refuses
+    # it lost a capability: every rung above falls to unsupported.
+    ("ready", "unsupported", "regression"),
+    ("risky", "unsupported", "regression"),
+    ("degrades-at-2048", "unsupported", "regression"),
+    ("unusable", "unsupported", "regression"),
+    # ...and any measured rung is an improvement on a refusal, INCLUDING
+    # unusable: being asked and failing is more than never being asked.
+    ("unsupported", "ready", "improvement"),
+    ("unsupported", "risky", "improvement"),
+    ("unsupported", "degrades-at-512", "improvement"),
+    ("unsupported", "unusable", "improvement"),
+])
+def test_unsupported_is_the_bottom_rung_of_the_ladder(old, new, expected):
+    change = _tool_calling_change(old, new)
+    assert change.direction == expected
+    assert change.basis == "flip"
+    assert (change.old, change.new) == (old, new)
+
+
+def test_unsupported_is_a_rung_below_unusable_not_a_flavour_of_it():
+    # Asserted on the rank directly, not only through directions: a
+    # comparator that gave unsupported the SAME rank as unusable would
+    # pass every ordering pair above that does not involve the two of
+    # them, and would then score unusable -> unsupported as neutral —
+    # the flip a gate exists to catch.
+    from assay.diff import _rung_rank
+
+    order = ["unsupported", "unusable", "degrades-at-512",
+             "degrades-at-4096", "risky", "ready"]
+    ranks = [_rung_rank(value) for value in order]
+    assert ranks == sorted(ranks), "the ladder must be strictly ordered"
+    assert len(set(ranks)) == len(ranks)
+    assert _rung_rank("unsupported")[0] < _rung_rank("unusable")[0]
+    # It carries no extent, like every other named rung: the second term
+    # must never reorder it against unusable.
+    assert _rung_rank("unsupported")[1] == 0
+
+
+def test_unsupported_is_scored_not_dropped_the_way_unmeasured_is():
+    """The refusal IS a measurement. ``unmeasured`` drops (nothing was
+    observed); ``unsupported`` is a fact about the endpoint and has to
+    reach the gate."""
+    result = diff_profiles(
+        make_profile(verdicts=make_verdicts(
+            tool_calling=_tool_calling("ready"))),
+        make_profile(verdicts=make_verdicts(
+            tool_calling=_tool_calling("unsupported"))))
+    assert "verdict.tool_calling" not in result.dropped
+    assert [c.cell for c in result.changes if c.family == "verdict"] == [
+        "tool_calling"]
+
+
+def test_two_unsupported_sides_are_checked_and_clean_not_a_change():
+    result = diff_profiles(
+        make_profile(verdicts=make_verdicts(
+            tool_calling=_tool_calling("unsupported"))),
+        make_profile(verdicts=make_verdicts(
+            tool_calling=_tool_calling("unsupported"))))
+    assert [c for c in result.changes if c.cell == "tool_calling"] == []
+    assert "verdict.tool_calling" in result.within_noise
+
+
+def test_a_committed_v4_profile_still_diffs_against_itself():
+    """The v1.6 rung must not change how a pre-v1.6 document reads: a
+    real v4 profile — no tools family, no tool_calling verdict — against
+    itself is comparable, clean, and non-vacuous."""
+    payload = json.loads(
+        (EVIDENCE / "tier-enthusiast/qwen3-14b.json").read_text(
+            encoding="utf-8"))
+    assert payload["assay_profile_version"] == 4
+    assert "tools" not in payload and "tool_calling" not in payload["verdicts"]
+
+    result = diff_profiles(payload, payload)
+
+    assert result.comparable
+    assert result.changes == ()
+    assert "verdict.tool_calling" not in result.dropped
+    assert len(result.within_noise) >= 13, result.within_noise
+
+
 def test_old_schema_verdicts_do_not_manufacture_a_provisional_cell():
     """Neither v1 profile HAS a provisional flag, so there is nothing to
     drop — a cell absent from both sides is not a cell."""

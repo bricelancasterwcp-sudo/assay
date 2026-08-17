@@ -298,6 +298,33 @@ def test_cli_diff_gate_fails_when_long_output_starts_degrading(tmp_path, capsys)
     capsys.readouterr()
 
 
+def test_cli_diff_gate_fails_when_tool_support_disappears(tmp_path, capsys):
+    # v1.6. ``unsupported`` is the ladder's bottom rung, not an unknown
+    # string: an endpoint that used to take the tools parameter and now
+    # refuses it is a REGRESSION a CI gate must fail on, and going the
+    # other way is an improvement it must not fail on.
+    def payload(verdict):
+        return _diff_payload(verdicts={"tool_calling": {
+            "verdict": verdict, "provisional": False,
+            "interval95": None, "lens": {}}})
+
+    ready = _write_profile(tmp_path / "ready.json", payload("ready"))
+    refused = _write_profile(tmp_path / "refused.json", payload("unsupported"))
+    unusable = _write_profile(tmp_path / "unusable.json", payload("unusable"))
+
+    assert cli.main(["diff", ready, refused, "--gate"]) == 1
+    assert "regression" in capsys.readouterr().out
+    assert cli.main(["diff", refused, ready, "--gate"]) == 0
+    # ...it still MOVED, so the bare diff reports it.
+    assert cli.main(["diff", refused, ready]) == 1
+    capsys.readouterr()
+    # And the rung immediately above: being asked and failing every task
+    # is more than never being asked at all.
+    assert cli.main(["diff", unusable, refused, "--gate"]) == 1
+    assert cli.main(["diff", refused, unusable, "--gate"]) == 0
+    capsys.readouterr()
+
+
 def test_cli_diff_json_writes_the_whole_result(tmp_path, capsys):
     old = _write_profile(tmp_path / "old.json", _diff_payload())
     worse = _write_profile(tmp_path / "worse.json",

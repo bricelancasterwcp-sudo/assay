@@ -17,6 +17,11 @@ from typing import Iterable
 
 VERDICT_ORDER = (
     "structured_extraction", "patch_editing", "loop_discipline",
+    # v1.6, beside loop_discipline deliberately: one says whether the
+    # model can follow a scripted agent loop, the other whether the
+    # endpoint takes native tools at all, and the reader wiring a model
+    # into an agent needs both at once.
+    "tool_calling",
     "long_context", "long_output", "chat_speed", "agent_speed",
 )
 
@@ -30,6 +35,13 @@ _VERDICT_CLASSES = ("ready", "risky", "unusable", "unmeasured")
 #: the family means the same thing to a reader deciding whether to
 #: trust the model: it works, up to a point. That is risky.
 _DEGRADES_PREFIX = "degrades-at"
+#: ``unsupported`` (v1.6) is a rung the model never got to attempt: the
+#: endpoint refused the tools parameter. It earns no rung colour, so it
+#: borrows the grey the page already uses for "nothing to show here" —
+#: bucketed like ``degrades-at``, and for the same reason: the CSS is
+#: not extended for a word, and the LABEL still says which of the two
+#: greys this one is.
+_UNRATED_VERDICTS = frozenset({"unsupported"})
 
 _CSS = """
 :root { --bg:#fafaf7; --fg:#1c1c1a; --muted:#6b6b66; --card:#ffffff;
@@ -134,6 +146,8 @@ def _verdict_class(verdict: str) -> str:
     """
     if verdict.startswith(_DEGRADES_PREFIX):
         return " b-risky"
+    if verdict in _UNRATED_VERDICTS:
+        return " b-unmeasured"
     return f" b-{verdict}" if verdict in _VERDICT_CLASSES else ""
 
 
@@ -275,6 +289,71 @@ def _moe_detail(geo: dict) -> str:
     return f" · MoE {_esc(used)}-of-{_esc(count)}"
 
 
+#: The hover on the tools key. The probe's system line ANNOUNCES the
+#: rubric it scores — call exactly one tool, use the arguments the
+#: request names, quote the result token — so every rate here is a rate
+#: of instructed behaviour. A reader comparing them against a harness
+#: that leaves the rules unsaid should expect these high, and nothing on
+#: this page may be read as a model reaching for tools on its own.
+_TOOLS_TITLE = ("rates of instructed behaviour: the probe's system line "
+                "announces the rubric it scores (one call, named "
+                "arguments, quote the result token)")
+
+
+def _tools_detail(tools: dict | None) -> str:
+    """The tools line, with the three outcomes kept apart.
+
+    ``unsupported`` prints as itself rather than as "unmeasured" — the
+    endpoint was asked and said no, which is a fact about the endpoint
+    and not a gap in the run — exactly as ``profile._render_tools``
+    prints it, because the two views of one profile must not disagree.
+
+    Every rate goes through ``_num``, so the halves a run could not
+    measure read as dashes: ``right_tool_rate`` and ``args_valid_rate``
+    are over the T1s that called at ALL and are None whenever nothing
+    called, while the composite beside them is a measured 0.0.
+    """
+    key = f"<span class='k' title=\"{_esc(_TOOLS_TITLE)}\">tools</span>"
+    if not isinstance(tools, dict):
+        return f"<p>{key} unmeasured</p>"
+    if tools.get("supported") is False:
+        return (f"<p>{key} unsupported "
+                "(the endpoint refused the tools parameter)</p>")
+    if tools.get("supported") is None or tools.get("composite") is None:
+        return f"<p>{key} unmeasured</p>"
+    return (f"<p>{key} composite {_num(tools.get('composite'))} "
+            f"(n={_esc(tools.get('n_tasks'))}) · "
+            f"call {_num(tools.get('call_rate'))} · "
+            f"right-tool {_num(tools.get('right_tool_rate'))} · "
+            f"args {_num(tools.get('args_valid_rate'))} · "
+            f"result-use {_num(tools.get('result_use_rate'))}</p>")
+
+
+def _loop_detail(loop: dict) -> str:
+    """The scripted loop, both scripts.
+
+    Every rate is ``float | None`` and the error-script trio did not
+    exist before v1.6, so all of them reach the page through ``_num``:
+    a schema that had no error script must read as a dash, never as a
+    0.00 recovery rate — that is the page claiming a model never got out
+    of a failed patch when nothing ever handed it one. ``n_error_runs``
+    rides beside the two rates because they do not say how much evidence
+    is behind them: a budget-truncated 1/1 and a complete 5/5 both read
+    1.00, and only the denominator says which was measured.
+    """
+    return (
+        f"<p><span class='k'>loop</span> action fidelity "
+        f"{_num(loop.get('action_fidelity'))} · "
+        f"patch {_num(loop.get('patch_rate'))} · "
+        f"finish {_num(loop.get('finish_rate'))} · "
+        f"repeats {_num(loop.get('repeat_rate'))} · "
+        f"anchor violations {_esc(loop.get('anchor_violations'))} "
+        f"(runs={_esc(loop.get('n_runs'))}) · "
+        f"recovery {_num(loop.get('recovery_rate'))} · "
+        f"doom {_num(loop.get('doom_loop_rate'))} "
+        f"(error runs={_num(loop.get('n_error_runs'), 'g')})</p>")
+
+
 def _detail(profile: dict) -> str:
     model = (profile.get("model") or {}).get("name", "?")
     geo = profile.get("geometry")
@@ -302,15 +381,9 @@ def _detail(profile: dict) -> str:
                     f"(n={_esc(envelope['n'])})</p>")
     bits.append(_codec_grid(profile.get("codecs")))
     if loop:
-        bits.append(
-            f"<p><span class='k'>loop</span> action fidelity "
-            f"{_esc(loop['action_fidelity'])} · "
-            f"patch {_esc(loop['patch_rate'])} · "
-            f"finish {_esc(loop['finish_rate'])} · "
-            f"repeats {_esc(loop['repeat_rate'])} · "
-            f"anchor violations {_esc(loop['anchor_violations'])} "
-            f"(runs={_esc(loop['n_runs'])})</p>")
+        bits.append(_loop_detail(loop))
     bits.append(_long_output_grid(profile.get("long_output")))
+    bits.append(_tools_detail(profile.get("tools")))
     dropped = prov.get("dropped") or []
     if dropped:
         items = "".join(f"<li>{_esc(d)}</li>" for d in dropped)
