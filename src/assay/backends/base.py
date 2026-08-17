@@ -201,6 +201,15 @@ class BackendCaps:
 
 @dataclass(frozen=True)
 class ModelInfo:
+    """Architecture metadata as REPORTED; every unreported part is None.
+
+    The expert fields carry MoE routing when the metadata states it.
+    None-vs-zero is load-bearing here: a dense model is not a 0-expert
+    MoE, so a dense model leaves both None rather than writing 0, which
+    downstream would read as a measured routing fact. They default so
+    that backends with no metadata access construct exactly as before.
+    """
+
     name: str
     quant: str | None
     weights_bytes: int | None
@@ -210,6 +219,8 @@ class ModelInfo:
     head_dim: int | None
     loaded: bool | None  # True if the daemon reports the model resident
     source: str  # "api_show" | "gguf_blob" | "openai_models"
+    expert_count: int | None = None  # MoE: total experts; None = dense/unreported
+    expert_used_count: int | None = None  # MoE: experts routed per token
 
 
 class Backend(Protocol):

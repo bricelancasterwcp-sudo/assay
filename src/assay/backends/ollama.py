@@ -96,6 +96,28 @@ def _arch_value(model_info: dict, suffix: str):
     return None
 
 
+def _head_dim(arch_info: dict) -> int | None:
+    """Attention head dimension: the STATED value first, the derivation after.
+
+    ``attention.key_length`` is what the model file says the head width
+    is. ``embedding_length // head_count`` only DERIVES it, and the
+    derivation assumes attention width == embedding width / heads —
+    false for architectures that size attention independently (qwen3-moe
+    q4: embedding 2048, 32 heads, stated key_length 128, so the
+    derivation says 64). A head_dim off by 2x silently halves every
+    kv-cache number the window law is built on, so the explicit reading
+    wins whenever the metadata carries it. Neither present → None.
+    """
+    key_length = _arch_value(arch_info, "attention.key_length")
+    if key_length is not None:
+        return key_length
+    embedding_length = _arch_value(arch_info, "embedding_length")
+    head_count = _arch_value(arch_info, "attention.head_count")
+    if embedding_length is None or not head_count:
+        return None
+    return embedding_length // head_count
+
+
 class OllamaNative:
     """Backend for Ollama's native API."""
 
@@ -238,12 +260,6 @@ class OllamaNative:
         details = show.get("details")
         details = details if isinstance(details, dict) else {}
 
-        embedding_length = _arch_value(arch_info, "embedding_length")
-        head_count = _arch_value(arch_info, "attention.head_count")
-        head_dim = None
-        if embedding_length is not None and head_count:
-            head_dim = embedding_length // head_count
-
         return ModelInfo(
             name=self.model,
             quant=details.get("quantization_level"),
@@ -251,9 +267,13 @@ class OllamaNative:
             training_ctx=_arch_value(arch_info, "context_length"),
             block_count=_arch_value(arch_info, "block_count"),
             kv_head_count=_arch_value(arch_info, "attention.head_count_kv"),
-            head_dim=head_dim,
+            head_dim=_head_dim(arch_info),
             loaded=self._loaded(),
             source="api_show",
+            # Present only on MoE files; a dense model reports neither
+            # and keeps both None (never 0 — see ModelInfo).
+            expert_count=_arch_value(arch_info, "expert_count"),
+            expert_used_count=_arch_value(arch_info, "expert_used_count"),
         )
 
     def _is_this_model(self, entry) -> bool:

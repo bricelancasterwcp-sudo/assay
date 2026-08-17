@@ -25,14 +25,17 @@ _GRADES = ("tiny", "small", "medium")
 _CODECS = ("search_replace", "whole_file", "json_object")
 
 
-def make_geometry() -> Geometry:
-    return Geometry(
+def make_geometry(**overrides) -> Geometry:
+    """The canonical geometry: a DENSE model, so no expert metadata."""
+    fields = dict(
         kv_kib_per_token=56,
         vram_free_mib=14558,
         usable_window=32768,
         limited_by="training_ctx",
         source="api_show",
     )
+    fields.update(overrides)
+    return Geometry(**fields)
 
 
 def make_ceiling(
@@ -247,6 +250,71 @@ def test_every_profile_field_is_wired_into_the_payload():
     payload = json.loads(make_profile().to_json())
     field_names = {field.name for field in dataclasses.fields(Profile)}
     assert set(payload) == field_names
+
+
+# --- v1.6: MoE metadata rides in the geometry family -----------------------
+
+
+def test_every_geometry_field_is_wired_into_the_payload():
+    # Same rule as the rungs: consumers read the ARTIFACT. A field that
+    # exists on Geometry and not in the JSON is a measurement nobody
+    # downstream can see.
+    payload = json.loads(make_profile().to_json())
+    assert set(payload["geometry"]) == {
+        field.name for field in dataclasses.fields(Geometry)}
+    # The canonical profile is a dense model: the expert cells are
+    # written as null, never as 0.
+    assert payload["geometry"]["expert_count"] is None
+    assert payload["geometry"]["expert_used_count"] is None
+
+
+def test_geometry_round_trips_the_expert_fields():
+    profile = make_profile(
+        geometry=make_geometry(expert_count=128, expert_used_count=8))
+
+    restored = Profile.from_json(json.loads(profile.to_json()))
+
+    assert restored == profile
+    assert restored.geometry.expert_count == 128
+    assert restored.geometry.expert_used_count == 8
+
+
+def test_geometry_payload_predating_the_expert_fields_parses_as_none():
+    # Every profile this project has ever written must still parse: a
+    # pre-v1.6 geometry has no expert keys at all, and that reloads as
+    # None ("not recorded"), never as a routing claim.
+    from assay.profile import _geometry_from
+
+    geometry = _geometry_from({"kv_kib_per_token": 56, "vram_free_mib": 14558,
+                               "usable_window": 32768,
+                               "limited_by": "training_ctx",
+                               "source": "api_show"})
+
+    assert geometry.expert_count is None
+    assert geometry.expert_used_count is None
+
+
+def test_render_marks_a_moe_model_with_used_of_count():
+    profile = make_profile(
+        geometry=make_geometry(expert_count=128, expert_used_count=8))
+
+    assert "MoE 8-of-128" in render_table(profile)
+
+
+def test_render_omits_the_moe_marker_for_a_dense_model():
+    assert "MoE" not in render_table(make_profile())
+
+
+@pytest.mark.parametrize("half", [
+    pytest.param({"expert_count": 128}, id="count_only"),
+    pytest.param({"expert_used_count": 8}, id="used_only"),
+])
+def test_render_omits_the_moe_marker_when_only_one_count_is_measured(half):
+    # One-sided metadata is not an MoE fact. "MoE 8-of-None" would print
+    # an unmeasured half as though it had been measured.
+    profile = make_profile(geometry=make_geometry(**half))
+
+    assert "MoE" not in render_table(profile)
 
 
 # --- schema v5: the long_output family -------------------------------------

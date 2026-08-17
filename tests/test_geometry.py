@@ -31,6 +31,11 @@ def make_info(**overrides) -> ModelInfo:
     return ModelInfo(**fields)
 
 
+def make_moe_info(**overrides) -> ModelInfo:
+    """The same attention geometry, plus MoE routing metadata."""
+    return make_info(**{"expert_count": 128, "expert_used_count": 8, **overrides})
+
+
 # --- kv arithmetic ---------------------------------------------------------
 
 
@@ -49,6 +54,42 @@ def test_kv8_halves_it():
 @pytest.mark.parametrize("missing", ["block_count", "kv_head_count", "head_dim"])
 def test_kv_bytes_is_none_when_any_part_is_none(missing):
     assert kv_bytes_per_token(make_info(**{missing: None})) is None
+
+
+def test_kv_arithmetic_is_expert_invariant():
+    # The formula is unchanged for MoE BY DESIGN, not by omission: K/V
+    # heads are dense in these architectures — the experts live in the
+    # FFN weights, which the kv cache never holds. Identical attention
+    # geometry must cost identically per token whether the model routes
+    # or not; scaling this by expert count would invent a cost the
+    # hardware does not pay.
+    assert kv_bytes_per_token(make_moe_info()) == kv_bytes_per_token(make_info())
+    assert kv_bytes_per_token(make_moe_info(expert_used_count=1)) == 57_344
+
+
+# --- MoE metadata rides along with the geometry ----------------------------
+
+
+def test_plan_window_carries_the_expert_metadata_it_measured():
+    geometry = plan_window(
+        make_moe_info(loaded=True), vram_free_mib=100_000, user_cap=None
+    )
+
+    assert geometry.expert_count == 128
+    assert geometry.expert_used_count == 8
+    # ...and the window law is untouched by the routing metadata.
+    assert geometry.usable_window == 32_768
+    assert geometry.limited_by == "training_ctx"
+
+
+def test_dense_model_geometry_keeps_the_expert_fields_none():
+    # None-vs-zero: a dense model is not a 0-expert MoE.
+    geometry = plan_window(
+        make_info(loaded=True), vram_free_mib=100_000, user_cap=None
+    )
+
+    assert geometry.expert_count is None
+    assert geometry.expert_used_count is None
 
 
 # --- the residency rule ----------------------------------------------------

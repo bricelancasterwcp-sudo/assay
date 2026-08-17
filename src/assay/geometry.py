@@ -29,6 +29,12 @@ class Geometry:
     usable_window: int
     limited_by: str  # "training_ctx" | "vram" | "user_cap"
     source: str  # ModelInfo.source
+    # MoE routing as reported by the metadata; None on a dense model
+    # (which is NOT a 0-expert MoE) and on any backend that cannot read
+    # architecture. Defaulted so a geometry written before v1.6 — which
+    # has no expert keys at all — still parses, as None, not as a claim.
+    expert_count: int | None = None
+    expert_used_count: int | None = None
 
 
 def kv_bytes_per_token(info: ModelInfo, *, kv_bits: int = 16) -> int | None:
@@ -36,6 +42,13 @@ def kv_bytes_per_token(info: ModelInfo, *, kv_bits: int = 16) -> int | None:
 
     None if any architectural part is unreported — kv arithmetic is
     never guessed from model size or name.
+
+    Expert-invariant BY DESIGN, not by omission: K/V heads are dense in
+    MoE architectures — the experts live in the FFN weights, which the
+    kv cache never holds — so a routed model pays exactly this per
+    token, and the formula takes no expert term. The MoE metadata rides
+    in ``Geometry`` because it explains the WEIGHTS footprint, not the
+    cache one.
     """
     parts = (info.block_count, info.kv_head_count, info.head_dim)
     if any(part is None for part in parts):
@@ -114,4 +127,6 @@ def plan_window(
         usable_window=usable_window,
         limited_by=limited_by,
         source=info.source,
+        expert_count=info.expert_count,
+        expert_used_count=info.expert_used_count,
     )

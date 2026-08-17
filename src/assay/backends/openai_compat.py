@@ -214,4 +214,7 @@ class OpenAICompat:
             head_dim=None,
             loaded=None,
             source="openai_models",
+            # No metadata access: MoE routing is unreported, not absent.
+            expert_count=None,
+            expert_used_count=None,
         )

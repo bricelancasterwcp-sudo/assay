@@ -38,6 +38,27 @@ QWEN_SHOW_BODY = {
 
 QWEN_TAGS_BODY = {"models": [{"name": MODEL, "size": 8098524160}]}
 
+MOE_MODEL = "qwen3:30b-a3b-q4_K_M"
+#: A real MoE shape (qwen3-moe): the attention width is NOT
+#: embedding_length // head_count (2048 // 32 = 64), the file states
+#: key_length 128, and the routing metadata is present.
+MOE_SHOW_BODY = {
+    "details": {"quantization_level": "Q4_K_M"},
+    "model_info": {
+        "general.architecture": "qwen3moe",
+        "qwen3moe.block_count": 48,
+        "qwen3moe.attention.head_count": 32,
+        "qwen3moe.attention.head_count_kv": 4,
+        "qwen3moe.attention.key_length": 128,
+        "qwen3moe.embedding_length": 2048,
+        "qwen3moe.context_length": 40960,
+        "qwen3moe.expert_count": 128,
+        "qwen3moe.expert_used_count": 8,
+    },
+}
+
+MOE_TAGS_BODY = {"models": [{"name": MOE_MODEL, "size": 18_600_000_000}]}
+
 
 class FakeTransport:
     """Captures requests; routes canned (status, body) responses by URL suffix."""
@@ -155,6 +176,8 @@ def test_model_info_reads_arch_prefixed_keys_and_tags_size():
     assert info.name == MODEL
     assert info.block_count == 28
     assert info.kv_head_count == 4  # head_count_kv, NOT head_count
+    # No attention.key_length in this file: the derivation is the
+    # FALLBACK reading, and it is the right one here.
     assert info.head_dim == 128  # embedding_length 3584 // head_count 28
     assert info.training_ctx == 32768
     # Weights size comes from /api/tags (/api/show has no size — robigo gotcha).
@@ -208,6 +231,59 @@ def test_ps_sets_loaded_flag(ps_models, expected):
     backend = make_backend(transport)
 
     assert backend.model_info().loaded is expected
+
+
+# --- MoE metadata and the head_dim reading (v1.6) --------------------------
+
+
+def moe_backend() -> OllamaNative:
+    transport = FakeTransport(
+        post_routes={"/api/show": (200, MOE_SHOW_BODY)},
+        get_routes={
+            "/api/tags": (200, MOE_TAGS_BODY),
+            "/api/ps": (200, {"models": []}),
+        },
+    )
+    return OllamaNative(
+        BASE_URL, MOE_MODEL, http_post=transport.post, http_get=transport.get
+    )
+
+
+def test_model_info_prefers_the_stated_key_length_over_the_derivation():
+    # embedding_length // head_count is a DERIVATION, and it is wrong for
+    # architectures whose attention width is set independently of the
+    # embedding width (this qwen3-moe shape: 2048 // 32 = 64, stated 128).
+    # A head_dim off by 2x silently halves every kv-cache number the
+    # window law is built on, so the explicit reading wins when present.
+    info = moe_backend().model_info()
+
+    assert info.head_dim == 128
+    assert info.head_dim != 2048 // 32
+
+
+def test_model_info_reads_the_expert_counts_of_a_moe_model():
+    info = moe_backend().model_info()
+
+    assert info.expert_count == 128
+    assert info.expert_used_count == 8
+
+
+def test_dense_model_reports_no_experts_rather_than_zero():
+    # None-vs-zero at the metadata layer: a dense model is not a
+    # 0-expert MoE, and 0 would render downstream as a measured routing
+    # fact about a model that does no routing.
+    transport = FakeTransport(
+        post_routes={"/api/show": (200, QWEN_SHOW_BODY)},
+        get_routes={
+            "/api/tags": (200, QWEN_TAGS_BODY),
+            "/api/ps": (200, {"models": []}),
+        },
+    )
+
+    info = make_backend(transport).model_info()
+
+    assert info.expert_count is None
+    assert info.expert_used_count is None
 
 
 # --- chat_tools (v1.6) -----------------------------------------------------

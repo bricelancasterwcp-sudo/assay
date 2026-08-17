@@ -7,7 +7,7 @@ from assay.cli import main
 from assay.report import VERDICT_ORDER, render_report
 
 from test_profile import make_profile  # the canonical full-profile builder
-from test_profile import make_long_output, unscorable_rung
+from test_profile import make_geometry, make_long_output, unscorable_rung
 
 _LIVE = Path(__file__).resolve().parents[1] / "docs/superpowers/evidence/live"
 _V1_PROFILE = _LIVE / "qwen2.5-coder-7b-instruct-q8_0-quick.json"
@@ -144,6 +144,37 @@ def test_rung_grid_names_the_rungs_that_never_ran():
     lo = make_long_output(skipped=("4096: budget exhausted",))
     html = render_report([profile_dict(long_output=lo)])
     assert "4096: budget exhausted" in html
+
+
+# --- v1.6: the MoE marker in the geometry detail ---------------------------
+
+
+def test_detail_marks_a_moe_model_with_used_of_count():
+    html = render_report([profile_dict(
+        geometry=make_geometry(expert_count=128, expert_used_count=8))])
+    assert "MoE 8-of-128" in html
+
+
+def test_detail_omits_the_moe_marker_unless_both_counts_are_measured():
+    # A dense model is not a 0-expert MoE, and one measured half is not
+    # an MoE fact — neither gets a marker.
+    assert "MoE" not in render_report([profile_dict()])
+    assert "MoE" not in render_report([
+        profile_dict(geometry=make_geometry(expert_count=128))])
+    assert "MoE" not in render_report([
+        profile_dict(geometry=make_geometry(expert_used_count=8))])
+
+
+def test_detail_geometry_survives_a_profile_predating_the_expert_fields():
+    # The report reads raw dicts off disk, including profiles written
+    # before the expert keys existed: a missing key must not crash the
+    # page it is only a marker on.
+    p = profile_dict()
+    del p["geometry"]["expert_count"]
+    del p["geometry"]["expert_used_count"]
+    html = render_report([p])
+    assert "KiB/token" in html
+    assert "MoE" not in html
 
 
 def test_profiles_without_the_family_render_unmeasured_not_a_crash():

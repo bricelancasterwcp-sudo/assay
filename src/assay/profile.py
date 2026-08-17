@@ -572,6 +572,19 @@ def _show(value: object) -> str:
     return "unmeasured" if value is None else str(value)
 
 
+def _moe_marker(geometry: Geometry) -> str:
+    """`` | MoE <used>-of-<count>`` — only when BOTH counts are measured.
+
+    A dense model carries None on both and gets no marker: it is not a
+    0-expert MoE. One-sided metadata gets none either — "MoE 8-of-None"
+    would print an unmeasured half as though it had been measured, which
+    is the overclaim this whole schema exists to refuse.
+    """
+    if geometry.expert_count is None or geometry.expert_used_count is None:
+        return ""
+    return f" | MoE {geometry.expert_used_count}-of-{geometry.expert_count}"
+
+
 def _render_geometry(geometry: Geometry | None) -> str:
     if geometry is None:
         return "geometry   unmeasured"
@@ -584,6 +597,7 @@ def _render_geometry(geometry: Geometry | None) -> str:
         f"geometry   {geometry.kv_kib_per_token} KiB/token"
         f" | usable window {geometry.usable_window}"
         f" (limited by {geometry.limited_by}) | {vram}"
+        + _moe_marker(geometry)
     )
 
 

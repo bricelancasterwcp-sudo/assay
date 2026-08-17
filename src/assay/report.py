@@ -260,6 +260,21 @@ def _degenerate_cell(value: object) -> str:
     return "yes" if value else "no"
 
 
+def _moe_detail(geo: dict) -> str:
+    """``· MoE <used>-of-<count>``, only when BOTH counts are measured.
+
+    ``.get`` because this reads a raw document: a profile written before
+    the expert keys existed has neither, which is a schema fact, not a
+    crash. A dense model has both null and gets no marker (it is not a
+    0-expert MoE); one measured half gets none either — half a fact
+    printed as a whole one is the overclaim the marker exists to avoid.
+    """
+    used, count = geo.get("expert_used_count"), geo.get("expert_count")
+    if used is None or count is None:
+        return ""
+    return f" · MoE {_esc(used)}-of-{_esc(count)}"
+
+
 def _detail(profile: dict) -> str:
     model = (profile.get("model") or {}).get("name", "?")
     geo = profile.get("geometry")
@@ -273,7 +288,8 @@ def _detail(profile: dict) -> str:
             f"<p><span class='k'>geometry</span> "
             f"{_esc(geo['kv_kib_per_token'])} KiB/token · usable "
             f"{_esc(geo['usable_window'])} "
-            f"(limited by {_esc(geo['limited_by'])})</p>")
+            f"(limited by {_esc(geo['limited_by'])})"
+            f"{_moe_detail(geo)}</p>")
     if ceiling:
         bits.append(
             f"<p><span class='k'>ceiling</span> max verified "
