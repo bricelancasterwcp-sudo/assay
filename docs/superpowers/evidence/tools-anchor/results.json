@@ -1,0 +1,212 @@
+{
+  "captured": "2026-08-16",
+  "probe_version": "0.7.0",
+  "daemon": {
+    "kind": "ollama",
+    "version": "0.32.13",
+    "base_url": "http://127.0.0.1:11434"
+  },
+  "host": {
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "vram_total_mib": 16303
+  },
+  "tools": {
+    "instrument": "scripted-tools-v1",
+    "toolset": "toolset-v1",
+    "seed_base": 1400,
+    "t1_seeds": [1400, 1401, 1402, 1403, 1404],
+    "t2_seeds": [1500, 1501, 1502, 1503, 1504],
+    "temperature": 0.2,
+    "max_tokens": 256,
+    "budget": {"max_calls": 20, "max_prompt_tokens": 200000},
+    "captures": [
+      {
+        "model": "gemma2:9b",
+        "transcript": "tools-gemma2-9b.jsonl",
+        "rows": 1,
+        "calls_charged": 1,
+        "prompt_tokens_charged": 233,
+        "elapsed_s": 0.1,
+        "error_raw": {
+          "error": "registry.ollama.ai/library/gemma2:9b does not support tools"
+        },
+        "result": {
+          "supported": false,
+          "call_rate": null,
+          "right_tool_rate": null,
+          "args_valid_rate": null,
+          "result_use_rate": null,
+          "composite": null,
+          "n_tasks": 0,
+          "n_turns": 0
+        }
+      },
+      {
+        "model": "llama3.1:8b",
+        "transcript": "tools-llama3.1-8b.jsonl",
+        "rows": 10,
+        "calls_charged": 10,
+        "prompt_tokens_charged": 2647,
+        "elapsed_s": 9.1,
+        "result": {
+          "supported": true,
+          "call_rate": 1.0,
+          "right_tool_rate": 1.0,
+          "args_valid_rate": 1.0,
+          "result_use_rate": 0.4,
+          "composite": 1.0,
+          "n_tasks": 5,
+          "n_turns": 10
+        }
+      },
+      {
+        "model": "mistral-nemo:latest",
+        "transcript": "tools-mistral-nemo-latest.jsonl",
+        "rows": 10,
+        "calls_charged": 10,
+        "prompt_tokens_charged": 2647,
+        "elapsed_s": 15.2,
+        "result": {
+          "supported": true,
+          "call_rate": 1.0,
+          "right_tool_rate": 1.0,
+          "args_valid_rate": 1.0,
+          "result_use_rate": 0.0,
+          "composite": 1.0,
+          "n_tasks": 5,
+          "n_turns": 10
+        }
+      },
+      {
+        "model": "qwen2.5-coder:7b-instruct-q8_0",
+        "transcript": "tools-qwen2.5-coder-7b-instruct-q8_0.jsonl",
+        "rows": 10,
+        "calls_charged": 10,
+        "prompt_tokens_charged": 2647,
+        "elapsed_s": 8.5,
+        "result": {
+          "supported": true,
+          "call_rate": 0.0,
+          "right_tool_rate": null,
+          "args_valid_rate": null,
+          "result_use_rate": 0.8,
+          "composite": 0.0,
+          "n_tasks": 5,
+          "n_turns": 10
+        }
+      }
+    ]
+  },
+  "loop": {
+    "instrument": "scripted-loop-v2",
+    "seed_base": 800,
+    "golden_seeds": [800, 801, 802],
+    "error_seeds": [850, 851, 852],
+    "runs": 3,
+    "temperature": 0.2,
+    "max_tokens": 512,
+    "budget": {"max_calls": 30, "max_prompt_tokens": 200000},
+    "captures": [
+      {
+        "model": "qwen2.5-coder:7b-instruct-q8_0",
+        "transcript": "loop-qwen2.5-coder-7b-instruct-q8_0.jsonl",
+        "rows": 15,
+        "calls_charged": 15,
+        "prompt_tokens_charged": 2430,
+        "elapsed_s": 10.9,
+        "result": {
+          "action_fidelity": 1.0,
+          "patch_rate": 0.0,
+          "finish_rate": 1.0,
+          "repeat_rate": 0.0,
+          "anchor_violations": 0,
+          "n_runs": 3,
+          "n_turns": 15,
+          "recovery_rate": 0.0,
+          "doom_loop_rate": 1.0,
+          "n_error_runs": 3
+        }
+      }
+    ]
+  },
+  "moe": {
+    "kv_bits": 16,
+    "overhead_mib": 512,
+    "models": [
+      {
+        "model": "deepseek-coder-v2:16b-lite-instruct-q5_K_M",
+        "show": "show-deepseek-coder-v2-16b-lite-instruct-q5_K_M.json",
+        "architecture": "deepseek2",
+        "is_moe": true,
+        "expert_keys_reported": [
+          "deepseek2.expert_count",
+          "deepseek2.expert_feed_forward_length",
+          "deepseek2.expert_shared_count",
+          "deepseek2.expert_used_count",
+          "deepseek2.expert_weights_scale"
+        ],
+        "expert_count": 64,
+        "expert_used_count": 6,
+        "block_count": 27,
+        "kv_head_count": 16,
+        "head_dim": 192,
+        "head_dim_source": "deepseek2.attention.key_length",
+        "head_dim_if_derived": 128,
+        "kv_bytes_per_token": 331776,
+        "kv_kib_per_token": 324,
+        "measured_geometry": {
+          "loaded": true,
+          "vram_free_mib": 1220,
+          "usable_window": 2237,
+          "limited_by": "vram"
+        },
+        "v14_profile": {
+          "file": "../tier-enthusiast/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json",
+          "kv_kib_per_token": 216,
+          "vram_free_mib": 2219,
+          "usable_window": 8092,
+          "limited_by": "vram"
+        },
+        "v16_recomputed_under_v14_conditions": {
+          "kv_kib_per_token": 324,
+          "usable_window": 5394,
+          "limited_by": "vram"
+        }
+      },
+      {
+        "model": "qwen3.8:27b",
+        "show": "show-qwen3.8-27b.json",
+        "architecture": "qwen35",
+        "is_moe": false,
+        "expert_keys_reported": [],
+        "expert_count": null,
+        "expert_used_count": null,
+        "block_count": 65,
+        "kv_head_count": 4,
+        "head_dim": 256,
+        "head_dim_source": "qwen35.attention.key_length",
+        "head_dim_if_derived": 213,
+        "kv_bytes_per_token": 266240,
+        "kv_kib_per_token": 260,
+        "measured_geometry": {
+          "loaded": false,
+          "vram_free_mib": 13962,
+          "usable_window": 0,
+          "limited_by": "vram"
+        },
+        "v14_profile": {
+          "file": "../tier-enthusiast/qwen3-8-27b.json",
+          "kv_kib_per_token": 216,
+          "vram_free_mib": 1552,
+          "usable_window": 4922,
+          "limited_by": "vram"
+        },
+        "v16_recomputed_under_v14_conditions": {
+          "kv_kib_per_token": 260,
+          "usable_window": 4096,
+          "limited_by": "vram"
+        }
+      }
+    ]
+  }
+}

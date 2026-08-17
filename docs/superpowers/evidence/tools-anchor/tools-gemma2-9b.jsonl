@@ -1,0 +1,1 @@
+{"model": "gemma2:9b", "kind": "chat_tools", "key": "164aea385304aec779a834c2110a7dbe7ffd0e441062eaacce2f6f4a0b938839", "seed": 1400, "outcome": "error", "text": null, "tool_calls": null, "tokens_in": null, "tokens_out": null, "stop_reason": null, "error_type": "ToolsUnsupported", "error_raw": {"error": "registry.ollama.ai/library/gemma2:9b does not support tools"}}
