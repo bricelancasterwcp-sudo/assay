@@ -7,16 +7,16 @@
     "autodetected": true
   },
   "model": {
-    "name": "qwen2.5-coder:1.5b-instruct-q8_0",
-    "quant": "Q8_0",
-    "weights_bytes": 1646586631,
+    "name": "qwen2.5-coder:14b-instruct-q4_K_M",
+    "quant": "Q4_K_M",
+    "weights_bytes": 8988124298,
     "training_ctx": 32768
   },
   "geometry": {
-    "kv_kib_per_token": 28,
-    "vram_free_mib": 13181,
-    "usable_window": 32768,
-    "limited_by": "training_ctx",
+    "kv_kib_per_token": 192,
+    "vram_free_mib": 6460,
+    "usable_window": 31722,
+    "limited_by": "vram",
     "source": "api_show",
     "expert_count": null,
     "expert_used_count": null
@@ -130,34 +130,34 @@
   "codecs": {
     "search_replace": {
       "tiny": {
-        "lands": 0.2,
-        "lands_applies": 0.2,
-        "n": 10
+        "lands": 0.8571428571428571,
+        "lands_applies": 0.8571428571428571,
+        "n": 35
       },
       "small": {
-        "lands": 0.37142857142857144,
-        "lands_applies": 0.5714285714285714,
+        "lands": 0.6,
+        "lands_applies": 0.8,
         "n": 35
       },
       "medium": {
-        "lands": 0.0,
-        "lands_applies": 0.2,
-        "n": 10
+        "lands": 0.6571428571428571,
+        "lands_applies": 0.9428571428571428,
+        "n": 35
       }
     },
     "whole_file": {
       "tiny": {
-        "lands": 0.37142857142857144,
+        "lands": 0.8,
         "lands_applies": 1.0,
         "n": 35
       },
       "small": {
-        "lands": 0.6285714285714286,
+        "lands": 0.8,
         "lands_applies": 1.0,
         "n": 35
       },
       "medium": {
-        "lands": 0.4,
+        "lands": 0.8,
         "lands_applies": 1.0,
         "n": 35
       }
@@ -179,8 +179,8 @@
         "n": 35
       },
       "nested": {
-        "lands": 0.9428571428571428,
-        "lands_applies": 0.9428571428571428,
+        "lands": 1.0,
+        "lands_applies": 1.0,
         "n": 35
       },
       "tabular": {
@@ -196,61 +196,61 @@
     }
   },
   "speed": {
-    "decode_tps": 286.25731412585674,
-    "prefill_tps": 25341.497880357987,
+    "decode_tps": 65.44160668592731,
+    "prefill_tps": 3781.8003619120686,
     "evidence": "server_timings",
     "n_decode": 3,
     "n_prefill": 1,
     "decode_samples": [
-      285.4212192837711,
-      284.7608453837597,
-      288.58987771003933
+      65.33405609132885,
+      65.53563090332675,
+      65.45513306312637
     ],
     "prefill_samples": [
-      25341.497880357987
+      3781.8003619120686
     ]
   },
   "loop": {
     "action_fidelity": 1.0,
     "patch_rate": 0.0,
     "finish_rate": 1.0,
-    "repeat_rate": 0.16,
+    "repeat_rate": 0.0,
     "anchor_violations": 0,
     "n_runs": 5,
     "n_turns": 25,
     "recovery_rate": 0.0,
-    "doom_loop_rate": 0.0,
+    "doom_loop_rate": 1.0,
     "n_error_runs": 5
   },
   "long_output": {
     "rungs": [
       {
         "target_tokens": 512,
-        "generated_tokens": 512,
-        "distinct_ratio": 0.47411444141689374,
-        "zlib_ratio": 0.1975560081466395,
-        "degenerate": true
+        "generated_tokens": 386,
+        "distinct_ratio": 0.9877049180327869,
+        "zlib_ratio": 0.5169117647058824,
+        "degenerate": false
       },
       {
         "target_tokens": 1024,
-        "generated_tokens": 1024,
-        "distinct_ratio": 0.399734395750332,
-        "zlib_ratio": 0.1302019956193721,
-        "degenerate": true
+        "generated_tokens": 427,
+        "distinct_ratio": 0.9885057471264368,
+        "zlib_ratio": 0.5341130604288499,
+        "degenerate": false
       },
       {
         "target_tokens": 2048,
-        "generated_tokens": 1614,
-        "distinct_ratio": 0.3768718801996672,
-        "zlib_ratio": 0.09047619047619047,
-        "degenerate": true
+        "generated_tokens": 285,
+        "distinct_ratio": 0.9893617021276596,
+        "zlib_ratio": 0.5393258426966292,
+        "degenerate": false
       },
       {
         "target_tokens": 4096,
-        "generated_tokens": 804,
-        "distinct_ratio": 0.4628099173553719,
-        "zlib_ratio": 0.16519622756312746,
-        "degenerate": true
+        "generated_tokens": 274,
+        "distinct_ratio": 1.0,
+        "zlib_ratio": 0.5690909090909091,
+        "degenerate": false
       }
     ],
     "skipped": []
@@ -260,7 +260,7 @@
     "call_rate": 0.0,
     "right_tool_rate": null,
     "args_valid_rate": null,
-    "result_use_rate": 0.0,
+    "result_use_rate": 1.0,
     "composite": 0.0,
     "n_tasks": 5,
     "n_turns": 10,
@@ -272,9 +272,9 @@
     "rows": [
       {
         "k": 2,
-        "per_lane_decode_tps": 287.6528519339106,
-        "total_throughput_tps": 575.3057038678212,
-        "degradation_ratio": 1.0048751166841463,
+        "per_lane_decode_tps": 65.47361822265651,
+        "total_throughput_tps": 130.94723644531302,
+        "degradation_ratio": 1.0004891618398495,
         "mode": "parallel",
         "n_lanes_ok": 2,
         "lane_errors": [],
@@ -282,16 +282,16 @@
       },
       {
         "k": 4,
-        "per_lane_decode_tps": 288.16190539611154,
-        "total_throughput_tps": 1152.6476215844461,
-        "degradation_ratio": 1.006653423952051,
+        "per_lane_decode_tps": 65.5896819695348,
+        "total_throughput_tps": 262.3587278781392,
+        "degradation_ratio": 1.0022627085596802,
         "mode": "parallel",
         "n_lanes_ok": 4,
         "lane_errors": [],
         "evidence": "server_timings"
       }
     ],
-    "baseline_decode_tps": 286.25731412585674,
+    "baseline_decode_tps": 65.44160668592731,
     "tolerance_s": 0.25,
     "tolerance_provenance": "chosen-2026-08-17",
     "skipped": []
@@ -368,7 +368,7 @@
       }
     },
     "long_output": {
-      "verdict": "unusable",
+      "verdict": "ready",
       "provisional": false,
       "lens": {
         "metrics": "distinct4gram+zlib",
@@ -397,15 +397,15 @@
         "call_rate": 0.0,
         "right_tool_rate": null,
         "args_valid_rate": null,
-        "result_use_rate": 0.0,
+        "result_use_rate": 1.0,
         "n_truncated": 0,
         "n_stop_unreported": 0
       }
     }
   },
   "provenance": {
-    "started": "2026-08-17T13:35:46Z",
-    "finished": "2026-08-17T13:39:25Z",
+    "started": "2026-08-17T14:53:49Z",
+    "finished": "2026-08-17T15:06:16Z",
     "mode": "full",
     "tier": "enthusiast-16gb",
     "emulated": false,
@@ -422,8 +422,8 @@
       "max_prompt_tokens": 1000000
     },
     "spent": {
-      "calls": 472,
-      "prompt_tokens": 211056
+      "calls": 522,
+      "prompt_tokens": 222321
     },
     "calibration": {
       "chars_per_token": 5.861313868613139,

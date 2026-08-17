@@ -1,0 +1,38 @@
+# campaign 2026-08 start 2026-08-17T08:35:45-05:00
+# assay_bin=/home/brice/workspace/assay/.worktrees/v17/.venv/bin/assay
+# assay_version=0.9.0
+# assay_commit=d9b979211f30f5ffb3f7dfb6df02c42ff5555c65
+# tier=enthusiast-16gb mode=full vram_floor_mib=13312 models=15
+start qwen2.5-coder:1.5b-instruct-q8_0 - 0  # 2026-08-17T08:35:45-05:00
+done qwen2.5-coder:1.5b-instruct-q8_0 0 220  # 2026-08-17T08:39:25-05:00
+start hermes3:latest - 0  # 2026-08-17T08:39:25-05:00
+done hermes3:latest 0 387  # 2026-08-17T08:45:52-05:00
+start llama3.1:8b - 0  # 2026-08-17T08:45:52-05:00
+done llama3.1:8b 0 405  # 2026-08-17T08:52:37-05:00
+start qwen3:8b - 0  # 2026-08-17T08:52:37-05:00
+done qwen3:8b 0 389  # 2026-08-17T08:59:06-05:00
+start gemma2:9b - 0  # 2026-08-17T08:59:06-05:00
+done gemma2:9b 0 636  # 2026-08-17T09:09:42-05:00
+start gemma-4-12b-it-qat-q4_0:latest - 0  # 2026-08-17T09:09:42-05:00
+done gemma-4-12b-it-qat-q4_0:latest 0 896  # 2026-08-17T09:24:38-05:00
+start mistral-nemo:latest - 0  # 2026-08-17T09:24:38-05:00
+done mistral-nemo:latest 0 386  # 2026-08-17T09:31:04-05:00
+start qwen2.5-coder:7b-instruct-q8_0 - 0  # 2026-08-17T09:31:04-05:00
+done qwen2.5-coder:7b-instruct-q8_0 0 616  # 2026-08-17T09:41:20-05:00
+start deepseek-r1:14b - 0  # 2026-08-17T09:41:20-05:00
+done deepseek-r1:14b 0 749  # 2026-08-17T09:53:49-05:00
+start qwen2.5-coder:14b-instruct-q4_K_M - 0  # 2026-08-17T09:53:49-05:00
+done qwen2.5-coder:14b-instruct-q4_K_M 0 747  # 2026-08-17T10:06:16-05:00
+start hf.co/bartowski/NousResearch_Hermes-4-14B-GGUF:Q4_K_M - 0  # 2026-08-17T10:06:16-05:00
+done hf.co/bartowski/NousResearch_Hermes-4-14B-GGUF:Q4_K_M 0 895  # 2026-08-17T10:21:11-05:00
+start phi4:14b - 0  # 2026-08-17T10:21:11-05:00
+done phi4:14b 0 744  # 2026-08-17T10:33:35-05:00
+start qwen3:14b - 0  # 2026-08-17T10:33:36-05:00
+done qwen3:14b 4 521  # 2026-08-17T10:42:16-05:00
+start deepseek-coder-v2:16b-lite-instruct-q5_K_M - 0  # 2026-08-17T10:42:16-05:00
+done deepseek-coder-v2:16b-lite-instruct-q5_K_M 0 500  # 2026-08-17T10:50:37-05:00
+start qwen3.8:27b - 0  # 2026-08-17T10:50:37-05:00
+done qwen3.8:27b 0 2150  # 2026-08-17T11:26:27-05:00
+# rerun qwen3:14b 2026-08-17T11:29:04-05:00 — first attempt died on HTTP 500 from /api/generate at ~call 308 (infrastructure, exit 4, no profile written; clean rerun from zero per house rule)
+start qwen3:14b - 0  # 2026-08-17T11:29:04-05:00
+done qwen3:14b 0 793  # 2026-08-17T11:42:17-05:00

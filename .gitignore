@@ -3,3 +3,9 @@ __pycache__/
 .pytest_cache/
 .worktrees/
 uv.lock
+
+# Campaign run-control markers, not evidence: the wrapper rewrites both on
+# every launch (`rm -f .DONE`, `echo $$ > campaign.pid`), and what they say
+# is already in campaign-run.log, which IS committed.
+docs/superpowers/evidence/*/.DONE
+docs/superpowers/evidence/*/campaign.pid
