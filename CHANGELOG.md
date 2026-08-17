@@ -5,6 +5,108 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
+## v0.9 (v1.7): consumers and the matrix
+
+The first three waves built an instrument an operator runs. This one
+makes it cheap enough for an **application** to run at settings time,
+and widens two families whose readings were resolution-limited rather
+than wrong (package 0.9.0, schema v8). No verdict changed its
+definition. Two of them got more evidence behind them, one new family
+reports a fact no verdict ladders on yet, and one new mode answers a
+question the other modes cannot.
+
+- **Tools sampled sequentially** — `scripted-tools-v1` becomes
+  `scripted-tools-v2`: the task pool grows 5 → 20 (`toolset-v1` stays
+  frozen — the pool is what gained identity), and full mode examines the
+  composite at looks {5, 10, 20}, stopping at the first look whose
+  Wilson-95 interval ladders both endpoints to one rung. What that
+  changes in the numbers is **asymmetric**, and the asymmetry is
+  arithmetic rather than a shortfall of the pool. `unusable` and clearly
+  `risky` pools can now DECIDE, where v1.6 could only report them
+  provisional at n=5. A *perfect* pool still cannot: Wilson's lower
+  bound on 20/20 is 0.8389 against the 0.9 `ready` floor, so 20/20 runs
+  to the cap and reads `ready` provisional — at roughly [0.839, 1.0]
+  where fixed n=5 spanned [0.566, 1.0]. That is resolution bought, not a
+  decision; n=35 remains the only n at which a perfect cell clears
+  `ready` undisputed, and this pool has no 35th task. `--quick` keeps
+  the v1 five verbatim at the v1 seeds, so quick numbers stay comparable
+  across the boundary and the committed tools-anchor replays
+  byte-identically. Which sample happened is read off `stopping_rule` in
+  the `tool_calling` lens (`fixed-n` / `wilson95-looks-5-10-20`), never
+  guessed from `n_used`.
+- **Deeper JSON — `codec-fixtures-v3`** — `json_object` gains `nested`,
+  `tabular` and `constrained` beside the three size grades, so the codec
+  matrix now reports six json cells rather than three. They are new
+  **columns**. `structured_extraction` ladders on exactly the cell it
+  always did and **did not move**: a json verdict that changed across
+  this boundary changed because the model did, not because the grade
+  under it was silently redefined. The v2 fixtures are byte-untouched
+  (pinned by a test), so every pre-existing cell still compares like
+  with like in a `diff`.
+- **`parallel` — a measurement-only family** — what k ∈ {2, 4}
+  concurrent requests do to one endpoint. **No verdict this wave**:
+  there is no measured floor to ladder a degradation ratio against, and
+  a rung invented for one would be the overclaim the rest of this schema
+  exists to refuse. The headline is not a rate but a scheduling fact —
+  `mode` reads `parallel` or `serialized`, and a serialized endpoint
+  multiplies latency by k instead of sharing throughput, which is the
+  difference between an agent fleet that works and one that does not.
+  Three honesty rules travel with it. Rates come from server timings,
+  never the client's clock (the clock decides the scheduling fact and
+  nothing else). The overlap tolerance is a **chosen** constant and says
+  so in `tolerance_provenance` — thresholds are derived, not chosen, and
+  one that is not must be flagged until the campaign's live rows can
+  sanity-check it. And nothing partial is reported as whole:
+  `total_throughput_tps` is `None` unless **every** returned lane
+  reported timings, an errored lane is named in `lane_errors` rather
+  than averaged in as a zero, and a k the budget refused is named in
+  `skipped` rather than left an absent row a reader has to explain.
+- **Budget mode — `--budget-calls N [--budget-seconds S]`** — the
+  settings-time question: not "measure everything" but *"measure the
+  most load-bearing profile you can for N calls"*. Families run in a
+  pre-registered priority (`run.PRIORITY`, pinned as data), and each is
+  preflighted against its own **declared** worst case before it starts.
+  A family that does not fit is dropped **by name** — `"<family>:
+  budget — would exceed remaining"`, or `"— seconds"` when the clock is
+  what ran out — and never started, because a family cut off halfway
+  spends calls on a number no verdict can be read off. What starts,
+  finishes. A refusal does not end the run: the priority is an order,
+  not a cliff, so a cheaper family below it still measures. The wall
+  clock is checked between calls, never mid-call — a cut call is an
+  uncontrolled instrument variable. The flags live on `probe` alone, the
+  only command that implements the priority. One consequence shows up in
+  a **diff** rather than an error, and is stated rather than left to be
+  discovered: budget mode narrows the ceiling ladder by the model's
+  `training_ctx` (as `--full` does and `--quick` does not), so on a
+  small-context model a budget profile can report a lower
+  `ceiling.max_verified` than a quick profile of the same endpoint — a
+  mode artifact, not a regression.
+- **The default budgets follow the measurement** — full and thorough go
+  500 → **610 calls**; the token ceilings do not move (230k of 1M is not
+  close). The deep json grades take full's codec term 315 → 420 and
+  sequential tools takes that family 10 → 40, and at 500 a clean full
+  run died after the codec matrix with the long-output ladder and the
+  whole tools family in `dropped`. The new ceiling is derived from a
+  re-measurement rather than guessed: a clean full run on the scripted
+  suite spends **552** calls (546 before the parallel family's six
+  lanes), ~10% over that is 607, rounded to 610 — and the first claim on
+  that headroom is the one term the per-family numbers do not carry, a
+  failing ceiling ladder's bisection at most 8 calls over full's two
+  seeds, which puts full's worst case at **560 of 610**. Quick's
+  ceilings are unchanged at 130 / 220k: its clean run is 117 and its
+  worst case 121, up from v1.6 because the deep grades cost it 15 codec
+  calls, and it measures no concurrency. Those per-family numbers are
+  now **declared, not hand-counted**: `run.WORST_CASE` prices every
+  family from the constants its own probe consumes, the tests sum the
+  table against the metered runs, and budget mode preflights on the same
+  table — so a family that grows re-prices itself everywhere at once
+  instead of waiting for a mid-family death to correct a hand count.
+- **The matrix** — this release is the instrument the 2026-08
+  tier-enthusiast re-profile campaign runs, and the capability matrix
+  published on GitHub Pages is what those v8 profiles feed. The campaign
+  writes to a new dated evidence directory; the existing one and its
+  errata stand untouched, because evidence is not rewritten.
+
 ## v0.8 (v1.6 fast-follow): the tools probe records its own ceiling
 
 The tools probe caps every reply at 256 generated tokens, and through

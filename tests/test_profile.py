@@ -943,12 +943,12 @@ def test_the_recovery_demotion_never_promotes():
 
 def test_schema_version_and_package_version_move_together():
     # The schema and the distribution version are one release, not two:
-    # a profile that says v7 must have been written by a 0.8.0 probe.
+    # a profile that says v8 must have been written by a 0.9.0 probe.
     import assay
 
-    assert PROFILE_VERSION == 7
-    assert assay.__version__ == "0.8.0"
-    assert 'version = "0.8.0"' in (
+    assert PROFILE_VERSION == 8
+    assert assay.__version__ == "0.9.0"
+    assert 'version = "0.9.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite

@@ -28,7 +28,7 @@ unused by every other subcommand — carries its answer:
      this command claims a measured change, and an unreadable file
      measured nothing.
 
-The CLI supplies documented budget defaults (the default full mode: 500
+The CLI supplies documented budget defaults (the default full mode: 610
 calls / 1M prompt tokens; quick: 130 / 220k); the library requires an
 explicit Budget — consent to burn GPU time is never implicit.
 """

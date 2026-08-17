@@ -39,7 +39,7 @@ from assay.stats import ladder as _ladder
 from assay.stats import wilson95
 from assay.tools import TOOLS_INSTRUMENT, TOOLSET_NAME, Tools
 
-PROFILE_VERSION = 7
+PROFILE_VERSION = 8
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
              "speed", "loop", "long_output", "tools", "parallel")

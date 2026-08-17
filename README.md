@@ -117,7 +117,7 @@ probe, taking its ceilings from the `Budget` itself (`max_calls`, and
 
 ## The profile
 
-One versioned JSON document (`assay_profile_version: 7`). Every field is
+One versioned JSON document (`assay_profile_version: 8`). Every field is
 a measurement, a `None` with a named reason, or provenance.
 
 | Field | What it says |
@@ -132,9 +132,10 @@ a measurement, a `None` with a named reason, or provenance.
 | `speed` | `decode_tps` (chat usability) and `prefill_tps` (agent usability), their `evidence` class, and — new in v5 — the per-call `decode_samples` / `prefill_samples` a diff needs to tell noise from drift |
 | `loop` | scripted repair over **two** scripts. `action_fidelity` and `repeat_rate` are rates over the shared `n_turns`, and `anchor_violations` a count over the same turns — all three span golden and error turns alike; `patch_rate` and `finish_rate` are golden-only, over `n_runs`; and — new in v6 — `recovery_rate` / `doom_loop_rate` are error-only, over `n_error_runs`. Single-call probes cannot see loop failure |
 | `long_output` | per-rung `target_tokens`, `generated_tokens`, `distinct_ratio`, `zlib_ratio`, `degenerate`, plus a `skipped` list naming why each unattempted rung did not run |
-| `tools` | native tool calling: `supported` (three-state), `call_rate`, `right_tool_rate`, `args_valid_rate`, `result_use_rate`, the `composite` the verdict ladders on, and `n_tasks` / `n_turns` — rates of **instructed** behavior, see [Native tool calling](#native-tool-calling); plus — new in v7 — `n_truncated` / `n_stop_unreported`, the scored turns the token ceiling cut off and the ones whose backend never said how they stopped (recorded beside the rates, never fed into them) |
+| `tools` | native tool calling over a **20-task** pool (`scripted-tools-v2`): `supported` (three-state), `call_rate`, `right_tool_rate`, `args_valid_rate`, `result_use_rate`, the `composite` the verdict ladders on, and `n_tasks` / `n_turns` — rates of **instructed** behavior, see [Native tool calling](#native-tool-calling); `n_truncated` / `n_stop_unreported` (new in v7), the scored turns the token ceiling cut off and the ones whose backend never said how they stopped (recorded beside the rates, never fed into them); and — new in v8 — `stopping_rule`, because full mode now samples the pool **sequentially** at looks {5, 10, 20} while `--quick` keeps the frozen five |
+| `parallel` | **measurement-only** (no verdict, full mode only): one `rows` entry per k ∈ {2, 4} — `per_lane_decode_tps`, `total_throughput_tps`, `degradation_ratio` against the same run's single-lane `speed.decode_tps`, the `mode` (`parallel` / `serialized`) the whole family exists to report, `n_lanes_ok`, `lane_errors`, `evidence` — beside the `baseline_decode_tps` it divided by, the `tolerance_s` the overlap test used with its `tolerance_provenance` (**chosen**, not derived), and a `skipped` list naming every k the budget refused |
 | `verdicts` | `structured_extraction`, `patch_editing`, `long_context`, `loop_discipline`, `chat_speed`, `agent_speed`, `long_output`, `tool_calling` — each `ready` / `risky` / `unusable` / `unmeasured` (`long_output` may also read `degrades-at-N`; `tool_calling` may also read `unsupported`), each carrying its own lens |
-| `provenance` | started/finished, mode, seeds, budget granted vs spent, calibration, and `dropped` |
+| `provenance` | started/finished, mode, seeds, budget granted vs spent, calibration, and `dropped`. The seconds pair appears only when a wall clock was actually granted — `spent.seconds: 0.0` on an unmetered run would read as a run that took no time |
 
 No probe uses grammar/JSON forcing: constrained generation deforms
 rather than rejects, so a forced probe measures the constraint, not the
@@ -234,12 +235,15 @@ calls instead — but only the calls the question needs.
   `json_object` (where validation is the landing) and
   applies-and-parses for the patch codecs, so no cell is ever ended by
   a lens no verdict uses.
-- **`--quick` keeps fixed n=5** for time-boxed probes, and says so: the
-  **two codec lenses** — `structured_extraction` and `patch_editing`,
-  the only verdicts sequential sampling governs — carry `stopping_rule`
-  (`"fixed-n"` or `"wilson95-looks-5-10-20-35"`) plus the `n_used` they
-  were computed from. The other five verdicts have their own lens
-  shapes and neither key. A codec verdict that stopped at n=5 is
+- **`--quick` keeps fixed n=5** for time-boxed probes, and says so:
+  **three lenses** — `structured_extraction` and `patch_editing`, the
+  codec verdicts, and, since v1.7, `tool_calling` — carry
+  `stopping_rule` (`"fixed-n"`, or the schedule the sample actually
+  walked: `"wilson95-looks-5-10-20-35"` for a codec cell,
+  `"wilson95-looks-5-10-20"` for the tools pool, whose task count bounds
+  its last look) plus the `n_used` they were computed from. The other
+  five verdicts have their own lens shapes and neither key. A codec
+  verdict that stopped at n=5 is
   distinguishable from a v1.3 fixed-n=5 verdict by its lens, not by
   guessing from context; an unmeasured cell gets no `n_used` entry at
   all, because `n_used: 0` would read as a verdict graded on zero
@@ -256,11 +260,15 @@ nothing lets us assume the two are correlated: a model that writes a
 clean patch is still useless in a harness if it cannot emit one
 well-formed function call. So the two are measured separately.
 
-`scripted-tools-v1` is a script, not a benchmark. Five heterogeneous
-tasks — two tools appear twice with different arguments and one takes
-none at all — against `toolset-v1`, three schemas frozen verbatim and
-offered on every call. Two turns per task, and nothing branches on what
-the model said:
+`scripted-tools-v2` is a script, not a benchmark. **Twenty**
+heterogeneous tasks — every tool appears at least four times, the two
+argument-taking tools carry fifteen distinct pinned values between them,
+and `run_tests` takes no arguments at all, so a model that has learned
+one memorised call shape scores differently from one that reads the
+request — against `toolset-v1`, three schemas frozen verbatim and
+offered on every call. The first five tasks are the v1 pool **verbatim
+and in order**, at the v1 seeds. Two turns per task, and nothing
+branches on what the model said:
 
 - **T1** asks the task with the toolset offered, and scores three
   things: exactly one call was emitted, its name is the right tool, and
@@ -286,6 +294,30 @@ badly". Nothing called at all → both are `None`, never `0.0`. `n_tasks`
 is the composite's denominator and is what rides in the verdict lens as
 `n_used` — the T2 turns score result-use, not the composite, so quoting
 `n_turns` there would claim evidence the verdict never saw.
+
+**The pool is sampled sequentially** (v1.7), and the twenty tasks are
+what make that honest: five scripted tasks cannot yield n=20, because
+re-running the same five with fresh seeds at temperature 0.2 measures
+the sampler rather than the model. Full mode examines the composite at
+looks {5, 10, 20} — a truncation of the codec schedule, bounded by the
+pool itself; there is no 35th task, and growing the pool would restore
+the look — and stops at the first look whose Wilson-95 interval ladders
+both endpoints to the same rung. `--quick` keeps the frozen five-task
+prefix, so a quick number still compares across the version boundary
+and the committed anchor replays byte-identically. Which of the two
+happened is read off `stopping_rule` in the lens, never guessed from
+`n_used`: a composite over five tasks that the rule *decided* and one
+over five because five was all quick asked for are different findings.
+
+What sequential sampling buys here is **asymmetric**, and the asymmetry
+is arithmetic rather than a shortfall of the pool. An unusable pool
+decides at the first look — 0/5 ladders `unusable` at both endpoints —
+and a clearly risky one can decide too. A *perfect* pool does not:
+Wilson's lower bound on 20/20 is 0.8389 against the 0.9 `ready` floor,
+so 20/20 runs to the cap and still reads `ready` provisional. What it
+gains is resolution, not a decision — roughly [0.839, 1.0] where fixed
+n=5 spanned [0.566, 1.0]. n=35 remains the only n at which a perfect
+cell clears `ready` undisputed, and this pool has no 35th task.
 
 **These are rates of INSTRUCTED behavior.** The instrument's system line
 announces, criterion for criterion, the rubric it scores: call exactly
