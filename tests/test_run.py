@@ -622,6 +622,34 @@ def test_an_endpoint_that_refuses_tools_records_the_capability():
     assert Profile.from_json(json.loads(profile.to_json())) == profile
 
 
+def test_the_tools_stopping_rule_travels_with_the_mode():
+    # v1.7: the mode table owns the tools schedule exactly as it owns the
+    # codec one. quick stays fixed at the v1 prefix (its numbers have to
+    # compare across the version boundary); full and thorough spend the
+    # pool sequentially — and thorough is full's alias, so it must not
+    # drift into a third sampling rule.
+    from assay.run import MODE_PARAMS
+    from assay.tools import TOOLS_LOOK_SCHEDULE
+
+    assert MODE_PARAMS["quick"].tools_look_schedule is None
+    assert MODE_PARAMS["full"].tools_look_schedule == TOOLS_LOOK_SCHEDULE
+    assert MODE_PARAMS["thorough"].tools_look_schedule == TOOLS_LOOK_SCHEDULE
+
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=500, max_prompt_tokens=2_000_000),
+        mode="full", _backend_override=ScriptedBackend(),
+    )
+    # A perfect run cannot decide below 35 tasks, so it runs to the cap:
+    # 20 tasks, both turns each, and the verdict is ready-but-provisional
+    # at an interval n=5 could never have bought.
+    assert (profile.tools.n_tasks, profile.tools.n_turns) == (20, 40)
+    entry = profile.verdicts["tool_calling"]
+    assert entry["lens"]["stopping_rule"] == "wilson95-looks-5-10-20"
+    assert entry["lens"]["n_used"] == 20
+    assert entry["verdict"] == "ready" and entry["provisional"] is True
+
+
 def test_a_ladder_that_scored_nothing_is_named_in_dropped_and_kept():
     # Four calls spent, four rungs attempted, nothing scorable came
     # back. The rungs are real evidence (they say what was asked and

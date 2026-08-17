@@ -62,6 +62,21 @@ def ladder(lands: float | None, *, ready_blocked: bool = False) -> str:
     return "unusable"
 
 
+def stopping_rule_name(look_schedule: tuple[int, ...] | None) -> str:
+    """The name of the rule a sample ended under, for the verdict lens.
+
+    Lives here rather than beside either caller because v1.7 gave the
+    rule a SECOND family: codec cells have named their schedule since
+    v1.5, and the tools pool now names its own. Two renderers would be
+    two chances to disagree, and these bytes are read back — every
+    committed profile carries the string, and ``assay diff`` compares
+    lenses — so the format is schema, not formatting.
+    """
+    if look_schedule is None:
+        return "fixed-n"
+    return "wilson95-looks-" + "-".join(str(look) for look in look_schedule)
+
+
 def decided(passes: int, n: int) -> bool:
     """Sequential stop test (spec §1, amended form): the Wilson-95
     interval endpoints ladder to the SAME rung. Exactly the negation

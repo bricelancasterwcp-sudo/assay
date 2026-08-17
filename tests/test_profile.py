@@ -105,7 +105,8 @@ def make_tools(**overrides):
     from assay.tools import Tools
     fields = dict(supported=True, call_rate=1.0, right_tool_rate=1.0,
                   args_valid_rate=1.0, result_use_rate=1.0, composite=1.0,
-                  n_tasks=5, n_turns=10, n_truncated=0, n_stop_unreported=0)
+                  n_tasks=5, n_turns=10, n_truncated=0, n_stop_unreported=0,
+                  stopping_rule="fixed-n")
     fields.update(overrides)
     return Tools(**fields)
 
@@ -426,7 +427,10 @@ def test_unmeasured_tools_is_unmeasured_with_a_lens_and_no_interval():
     lens = entry["lens"]
     assert lens["instrument"] == TOOLS_INSTRUMENT == "scripted-tools-v2"
     assert lens["toolset"] == TOOLSET_NAME == "toolset-v1"
-    assert lens["stopping_rule"] == "fixed-n"
+    # No measurement, no rule (v1.7): the stopping rule now comes off the
+    # measurement instead of a constant, and naming "fixed-n" for a
+    # family that never ran would describe sampling that never happened.
+    assert lens["stopping_rule"] is None
     assert lens["temperature"] == 0.2
     # None-vs-zero at the lens layer: nothing was measured, so there is
     # no n_used at all and every rate is None, never 0.0.
@@ -496,6 +500,34 @@ def test_the_tool_calling_lens_records_the_stop_counters():
         None, None, None, None, tools=tools)["tool_calling"]["lens"]
     assert lens["n_truncated"] == 2
     assert lens["n_stop_unreported"] == 1
+
+
+def test_the_tool_calling_lens_names_the_stopping_rule():
+    # Sequential sampling lets two runs of the same instrument end at
+    # different n, so the lens has to say HOW the sample ended — a
+    # composite over 5 tasks stopped by the rule and one over 5 tasks
+    # because quick mode asks for exactly five are different readings.
+    sequential = make_tools(stopping_rule="wilson95-looks-5-10-20",
+                            n_tasks=20, n_turns=40)
+    lens = compute_verdicts(
+        None, None, None, None, tools=sequential)["tool_calling"]["lens"]
+    assert lens["stopping_rule"] == "wilson95-looks-5-10-20"
+    assert lens["n_used"] == 20
+
+    fixed = compute_verdicts(
+        None, None, None, None, tools=make_tools())["tool_calling"]["lens"]
+    assert fixed["stopping_rule"] == "fixed-n"
+
+
+def test_a_tools_payload_without_a_stopping_rule_parses_as_fixed_n():
+    # Every profile written before the field existed was sampled at fixed
+    # n=5. Unlike the stop counters beside it, the default here is not
+    # "unmeasured" — it is the rule those runs demonstrably ran under,
+    # and it is the only honest reading of their bytes.
+    payload = json.loads(make_profile().to_json())
+    del payload["tools"]["stopping_rule"]
+    restored = Profile.from_json(payload)
+    assert restored.tools.stopping_rule == "fixed-n"
 
 
 def test_a_pre_v7_tools_payload_parses_with_unmeasured_stop_counters():

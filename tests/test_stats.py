@@ -16,6 +16,7 @@ from assay.stats import (
     VERDICT_LENS,
     decided,
     ladder,
+    stopping_rule_name,
     wilson95,
 )
 
@@ -87,6 +88,27 @@ def test_decided_is_the_negation_of_provisional():
         lo, hi = wilson95(passes, n)
         provisional = ladder(lo) != ladder(hi)
         assert decided(passes, n) is (not provisional), (passes, n)
+
+
+def test_the_stopping_rule_renderer_names_both_sampling_rules():
+    # These bytes are schema: they are written into the lens of every
+    # committed profile, and `assay diff` reads them back. The renderer
+    # moved here in v1.7 because a second family (tools) now names its
+    # rule, and two renderers are two chances to disagree.
+    assert stopping_rule_name(None) == "fixed-n"
+    assert stopping_rule_name(LOOK_SCHEDULE) == "wilson95-looks-5-10-20-35"
+    assert stopping_rule_name((5, 10, 20)) == "wilson95-looks-5-10-20"
+
+
+def test_run_and_tools_render_the_stopping_rule_through_one_function():
+    # One renderer, two families: run.py's alias (codec lenses) and the
+    # tools probe's import are the SAME object, so a format change
+    # cannot reach one lens and quietly miss the other.
+    import assay.run
+    import assay.tools
+
+    assert assay.run._stopping_rule is stopping_rule_name
+    assert assay.tools.stopping_rule_name is stopping_rule_name
 
 
 def test_profile_reexports_wilson95():

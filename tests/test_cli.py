@@ -156,8 +156,9 @@ def test_default_budget_for_the_default_mode_covers_the_worst_case():
     # The default mode's worst case is now thorough's old worst case
     # (a codec matrix that never decides early runs to the 315-call
     # cap); the default budget must cover it, not the old full suite.
-    # Full's worst case is 411 of 500 in v1.6 (+10 tools, +10 error-script
-    # turns), so it still has headroom and does not move.
+    # Full's worst case is 441 of 500 in v1.7 (the tools family samples
+    # sequentially too now: 40 calls where v1.6 spent 10), so it still
+    # has headroom and does not move.
     assert cli.DEFAULT_BUDGETS["full"].max_calls == 500
     assert cli.DEFAULT_BUDGETS["full"].max_prompt_tokens == 1_000_000
     assert cli.DEFAULT_BUDGETS["full"] == cli.DEFAULT_BUDGETS["thorough"]

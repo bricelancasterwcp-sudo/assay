@@ -311,6 +311,12 @@ def _tools_lens(tools: Tools | None) -> dict:
     ABSENT when nothing was scored, the same rule the codec lenses
     follow — ``n_used: 0`` reads as "graded on zero samples".
 
+    ``stopping_rule`` comes from the MEASUREMENT (v1.7), not from a
+    constant: the family samples sequentially in full mode and at the v1
+    fixed five in quick, so ``n_used: 5`` alone cannot say whether the
+    sample stopped because the rule decided it or because five was all
+    that was asked for. A family that never ran names no rule at all.
+
     These are rates of INSTRUCTED behavior: the instrument's system line
     announces the rubric it scores (call exactly one tool, use the
     arguments the request names, quote the result token). See
@@ -318,7 +324,7 @@ def _tools_lens(tools: Tools | None) -> dict:
     harness that does not spell the rules out should expect them high.
     """
     lens = {"instrument": TOOLS_INSTRUMENT, "toolset": TOOLSET_NAME,
-            "stopping_rule": "fixed-n"}
+            "stopping_rule": (None if tools is None else tools.stopping_rule)}
     if tools is not None and tools.n_tasks:
         lens["n_used"] = tools.n_tasks
     lens["temperature"] = 0.2

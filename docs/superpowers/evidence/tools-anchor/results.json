@@ -59,7 +59,8 @@
           "n_tasks": 0,
           "n_turns": 0,
           "n_truncated": null,
-          "n_stop_unreported": null
+          "n_stop_unreported": null,
+          "stopping_rule": "fixed-n"
         }
       },
       {
@@ -79,7 +80,8 @@
           "n_tasks": 5,
           "n_turns": 10,
           "n_truncated": 0,
-          "n_stop_unreported": 0
+          "n_stop_unreported": 0,
+          "stopping_rule": "fixed-n"
         }
       },
       {
@@ -99,7 +101,8 @@
           "n_tasks": 5,
           "n_turns": 10,
           "n_truncated": 0,
-          "n_stop_unreported": 0
+          "n_stop_unreported": 0,
+          "stopping_rule": "fixed-n"
         }
       },
       {
@@ -119,7 +122,8 @@
           "n_tasks": 5,
           "n_turns": 10,
           "n_truncated": 0,
-          "n_stop_unreported": 0
+          "n_stop_unreported": 0,
+          "stopping_rule": "fixed-n"
         }
       }
     ]

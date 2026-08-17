@@ -67,17 +67,20 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 # for. Full is sequential, so its worst case IS thorough's old worst
 # case (no cell decides early and every one runs to the 35-sample cap):
 # 2 calibration + ~12 ladder + 9 shapes + 30 envelope + up to 315 codec
-# + 25 loop + 4 speed + 4 long-output rungs + 10 tools ≈ 411 of 500 —
-# still comfortable, so it does not move. A typical run stops well short
-# of either: the budget covers the case where nothing decides.
+# + 25 loop + 4 speed + 4 long-output rungs + 40 tools ≈ 441 of 500 —
+# still comfortable, so it does not move. The tools term is 40 rather
+# than v1.6's 10 because full now samples that family sequentially too
+# (v1.7): 20 tasks x 2 turns is the cap a pool that never decides runs
+# to. A typical run stops well short of either: the budget covers the
+# case where nothing decides.
 #
 # Token side: the long-output ladder is the one family whose charge is
 # dominated by GENERATION, not prompt — 4 rungs at 512/1024/2048/4096
 # charge 7,832 tokens, because a 4096-token generation shares the window
 # with its prompt and must not be priced like a 512-token one. Measured
-# on the scripted suite (v1.6), a clean quick run spends 102 calls and
-# 78,832 of 220,000 prompt tokens, and a clean full run 411 calls and
-# 218,037 of 1,000,000; the worst case (a failing ceiling ladder adds
+# on the scripted suite (re-measured v1.7), a clean quick run spends 102
+# calls and 78,832 of 220,000 prompt tokens, and a clean full run 441
+# calls and 226,009 of 1,000,000; the worst case (a failing ceiling adds
 # its bisection calls) stays inside both. Quick's token ceiling rises
 # 200k -> 220k with its call ceiling so the two stay proportionate — a
 # call budget that outruns its token budget just moves the mid-family

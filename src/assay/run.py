@@ -36,8 +36,8 @@ from assay.profile import (PROFILE_VERSION, Profile, best_patch_cell,
                            compute_verdicts, verdict_cell)
 from assay.replay import CallRecorder
 from assay.speed import Speed, probe_speed
-from assay.stats import LOOK_SCHEDULE
-from assay.tools import Tools, probe_tools
+from assay.stats import LOOK_SCHEDULE, stopping_rule_name
+from assay.tools import TOOLS_LOOK_SCHEDULE, Tools, probe_tools
 
 
 @dataclass(frozen=True)
@@ -50,13 +50,18 @@ class ModeParams:
     # None = fixed-n codec sampling; a schedule = sequential looks, and
     # then codecs_n_per_cell is the cap the schedule already carries.
     codec_look_schedule: tuple[int, ...] | None
+    # None = the v1 five-task prefix at fixed n; a schedule = looks over
+    # the twenty-task pool (v1.7). Quick stays fixed so its numbers keep
+    # comparing across the version boundary.
+    tools_look_schedule: tuple[int, ...] | None
     speed_decode_calls: int
 
 
 MODE_PARAMS = {
     "quick": ModeParams(seeds=(0,), envelope_n=10, codecs_n_per_cell=5,
                         loop_runs=3, shape_probes=(2048, 4096, 8192),
-                        codec_look_schedule=None, speed_decode_calls=1),
+                        codec_look_schedule=None, tools_look_schedule=None,
+                        speed_decode_calls=1),
     # v1.5: the default mode samples codec cells SEQUENTIALLY — every
     # cell is examined at 5/10/20/35 and stops at the first look whose
     # Wilson-95 interval decides a rung. A decided cell costs what it
@@ -70,6 +75,7 @@ MODE_PARAMS = {
     "full": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=35,
                        loop_runs=5, shape_probes=(2048, 4096, 8192),
                        codec_look_schedule=LOOK_SCHEDULE,
+                       tools_look_schedule=TOOLS_LOOK_SCHEDULE,
                        speed_decode_calls=3),
     # thorough is an ALIAS of full (v1.5): its whole point was buying a
     # decidable `ready` at n=35, which is exactly the sequential cap.
@@ -78,6 +84,7 @@ MODE_PARAMS = {
     "thorough": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=35,
                            loop_runs=5, shape_probes=(2048, 4096, 8192),
                            codec_look_schedule=LOOK_SCHEDULE,
+                           tools_look_schedule=TOOLS_LOOK_SCHEDULE,
                            speed_decode_calls=3),
 }
 
@@ -124,11 +131,13 @@ def _calibration_payload(calibration: Calibration | None) -> dict | None:
     }
 
 
-def _stopping_rule(look_schedule: tuple[int, ...] | None) -> str:
-    """The name of the rule that ended each codec cell's sampling."""
-    if look_schedule is None:
-        return "fixed-n"
-    return "wilson95-looks-" + "-".join(str(look) for look in look_schedule)
+#: The name of the rule that ended each codec cell's sampling. The
+#: renderer itself moved to ``assay.stats`` in v1.7, when the tools
+#: family began naming its own schedule: one function, two families, so
+#: the string in a codec lens and the string in a tools lens cannot
+#: drift apart. Kept under the old name because that is what the codec
+#: call site reads.
+_stopping_rule = stopping_rule_name
 
 
 def _codec_n_used(
@@ -384,7 +393,8 @@ def probe(
         # probe_tools, which returns supported=False — a MEASURED
         # capability. Nothing here catches it, and nothing here treats
         # that value as a gap.
-        tools = probe_tools(active, meter)
+        tools = probe_tools(active, meter,
+                            look_schedule=params.tools_look_schedule)
         if tools.supported is None:
             # Never attempted: the meter refused the first charge. Not a
             # refusal (that reads False) and not a partial (that keeps

@@ -32,10 +32,20 @@ tasks with fresh seeds measures sampler variance, not capability. Tasks
 five-task reading comparable across the version boundary and lets the
 committed tools-anchor replay byte-identically. The TOOLSET did NOT grow
 with the pool — its three schemas are frozen (``toolset-v1``), and it is
-the pool that the instrument name carries. The sequential look schedule
-that spends the extra fifteen tasks is not wired yet: ``probe_tools``
-scores the first five, exactly as v1 did, so today those tasks are
-authored and pinned rather than sampled.
+the pool that the instrument name carries.
+
+What SPENDS the extra fifteen tasks is a sequential look schedule
+(``TOOLS_LOOK_SCHEDULE``, 5/10/20): the composite is examined after each
+look and the run stops at the first look whose Wilson-95 interval
+decides a rung — the same rule the codec cells have sampled under since
+v1.5. A hopeless endpoint therefore settles at five tasks, and a good
+one buys an interval n=5 could never give: 20/20 reads ready at
+[0.839, 1.0], STILL provisional, because nothing below 35 clears the 0.9
+floor non-provisionally and this instrument says so rather than rounding
+up to a certainty the pool cannot buy. Passing no schedule is the v1
+instrument exactly — tasks 0–4, the v1 seeds, ``stopping_rule`` reading
+``fixed-n`` — which is what quick mode asks for and what the committed
+anchor replays under.
 
 Honesty rules, the same ones every probe here follows:
 
@@ -126,6 +136,7 @@ from assay.backends.base import Backend, ToolReply, ToolsUnsupported
 from assay.budget import BudgetMeter
 from assay.errors import BudgetExhausted
 from assay.replay import tools_key_material
+from assay.stats import LOOK_SCHEDULE, decided, stopping_rule_name
 
 TOOLS_INSTRUMENT = "scripted-tools-v2"
 TOOLSET_NAME = "toolset-v1"
@@ -224,6 +235,25 @@ ASCII today, and a stray dash would put an encoding and tokenization
 difference between two tasks that are otherwise asking the same thing.
 """
 
+TOOLS_LOOK_SCHEDULE = tuple(n for n in LOOK_SCHEDULE if n <= len(TASKS))
+"""The interim looks this family can stop at: 5, 10, 20.
+
+DERIVED from the shared ``LOOK_SCHEDULE`` rather than re-typed, because
+the POOL is what bounds the last look. 35 is a real look for a codec
+cell — 35 seeded reps of the same task — and cannot be one here: there
+is no 35th task, and re-running a task with a fresh seed at temperature
+0.2 measures the sampler, not the model. Growing ``TASKS`` past 35 would
+restore that look automatically, which is the point of deriving it.
+"""
+
+_FIXED_N_POOL = 5
+"""How many tasks a fixed-n run scores: the v1 pool, tasks 0–4.
+
+Quick mode's reading has to compare across the version boundary, and the
+committed tools-anchor captures replay against exactly these five with
+the v1 seeds.
+"""
+
 _SYSTEM = (
     "You are a tool-using assistant. When one of the supplied tools fits "
     "the user's request, call exactly one tool with the arguments the "
@@ -276,6 +306,14 @@ class Tools:
     # existed parses as None — unmeasured, never a measured 0.
     n_truncated: int | None = None      # scored turns with stop_reason "length"
     n_stop_unreported: int | None = None  # scored turns with stop_reason None
+    # How the sample ended: "fixed-n" (the v1 five-task prefix) or the
+    # rendering of the look schedule it walked. A composite over 5 tasks
+    # STOPPED by the rule and one over 5 because quick mode asks for five
+    # are different readings, and only this says which. Defaulted to
+    # "fixed-n" because that is what every profile written before the
+    # field existed demonstrably ran under — a measured fact about those
+    # bytes, not an "unmeasured" stand-in like the counters above.
+    stopping_rule: str = "fixed-n"
 
 
 def canary(seed: int) -> str:
@@ -363,8 +401,13 @@ def _score_t1(
     return True, len(calls) == 1, call.name == expected_tool, valid
 
 
-def _nothing_scored(supported: bool | None) -> Tools:
-    """No turn was scored: every rate is None, and n is 0 — never 0.0."""
+def _nothing_scored(supported: bool | None, stopping_rule: str) -> Tools:
+    """No turn was scored: every rate is None, and n is 0 — never 0.0.
+
+    The rule still rides along: it names what the family was POINTED at,
+    not why this run ended, exactly as a codec lens names its schedule
+    for a matrix the budget never reached.
+    """
     return Tools(
         supported=supported,
         call_rate=None,
@@ -374,6 +417,7 @@ def _nothing_scored(supported: bool | None) -> Tools:
         composite=None,
         n_tasks=0,
         n_turns=0,
+        stopping_rule=stopping_rule,
     )
 
 
@@ -389,21 +433,39 @@ def _ask(
 
 
 def probe_tools(
-    backend: Backend, meter: BudgetMeter, *, seed_base: int = _SEED_BASE
+    backend: Backend,
+    meter: BudgetMeter,
+    *,
+    seed_base: int = _SEED_BASE,
+    look_schedule: tuple[int, ...] | None = None,
 ) -> Tools:
-    """Run the first five scripted tasks, two turns each, and score them.
+    """Run scripted tasks, two turns each, and score them.
 
-    Ten calls at full health. Fewer when the endpoint refuses tools (one)
-    or the budget runs out mid-run (whatever it paid for), and the
-    returned ``n_tasks``/``n_turns`` say which — a short run is reported
-    as a short run, not padded with zeros.
+    Without a ``look_schedule`` this is the v1 instrument: tasks 0–4 at
+    fixed n, ten calls at full health. With one, the pool is walked in
+    order and examined at each look — the run stops at the first look
+    whose Wilson-95 interval decides a rung on the COMPOSITE (the metric
+    the verdict ladders on; ``result_use_rate`` and the stop counters are
+    not decision inputs, they simply ride at whatever n the turns
+    reached). The schedule's last entry is the cap, so the worst case is
+    two turns per task over the whole pool.
+
+    Fewer calls when the endpoint refuses tools (one) or the budget runs
+    out mid-run (whatever it paid for), and the returned
+    ``n_tasks``/``n_turns`` say which — a short run is reported as a
+    short run, not padded with zeros. A run stopped by the rule and a run
+    cut off by the meter reach the same field by different roads, which
+    is why ``stopping_rule`` names the road.
     """
+    rule = stopping_rule_name(look_schedule)
+    looks = frozenset(look_schedule or ())
+    cap = _FIXED_N_POOL if look_schedule is None else look_schedule[-1]
+
     supported: bool | None = None
     scored_t1 = one_call = right_tool = valid_args = composite = called = 0
     scored_t2 = result_used = truncated = unreported = 0
 
-    # Task 2 replaces this constant with the look schedule.
-    for index, (_, expected_tool, expected_args) in enumerate(TASKS[:5]):
+    for index, (_, expected_tool, expected_args) in enumerate(TASKS[:cap]):
         t1_seed = seed_base + index
         try:
             reply = _ask(backend, meter, t1_messages(index), t1_seed)
@@ -411,7 +473,7 @@ def probe_tools(
             break
         except ToolsUnsupported:
             if supported is None:
-                return _nothing_scored(supported=False)
+                return _nothing_scored(supported=False, stopping_rule=rule)
             break
         supported = True
         scored_t1 += 1
@@ -438,8 +500,16 @@ def probe_tools(
         unreported += reply.stop_reason is None
         result_used += canary(t2_seed) in reply.text and not reply.tool_calls
 
+        # The look is taken with the task COMPLETE — both turns paid for,
+        # so a stop never leaves a T1 without its T2 — and it is taken on
+        # the composite count, the verdict's own numerator. At the cap
+        # the loop ends anyway, so the test there is a formality that
+        # costs nothing to leave in.
+        if scored_t1 in looks and decided(composite, scored_t1):
+            break
+
     if scored_t1 == 0:
-        return _nothing_scored(supported)
+        return _nothing_scored(supported, stopping_rule=rule)
     return Tools(
         supported=supported,
         call_rate=one_call / scored_t1,
@@ -451,4 +521,5 @@ def probe_tools(
         n_turns=scored_t1 + scored_t2,
         n_truncated=truncated,
         n_stop_unreported=unreported,
+        stopping_rule=rule,
     )

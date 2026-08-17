@@ -646,10 +646,11 @@ clean quick run spends 102 calls and 78,832 of the 220,000 tokens.
 Full and thorough stay at **500 calls / 1M tokens**. Full is sequential,
 so its worst case is the old thorough worst case — no codec cell decides
 early and every one runs to the 35-sample cap. A clean full run on the
-scripted suite measures 411 calls and 218,037 tokens even with the v1.6
-families added, and the worst case (a failing ceiling ladder adds its
-bisection calls on top) stays inside 500 / 1M. Still comfortable, so it
-does not move.
+scripted suite measures 441 calls and 226,009 tokens — the tools family
+samples sequentially too since v1.7, so its share is 20 tasks × 2 turns
+(the cap a pool that never decides runs to) rather than a fixed ten —
+and the worst case (a failing ceiling ladder adds its bisection calls on
+top) stays inside 500 / 1M. Still comfortable, so it does not move.
 
 The long-output ladder is the one family whose charge is dominated by
 **generation** rather than prompt: a 4096-token rung shares the context

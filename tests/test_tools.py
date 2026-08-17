@@ -16,6 +16,7 @@ from assay.replay import CallReplayer, tools_key_material
 from assay.tools import (
     TASKS,
     TOOLS_INSTRUMENT,
+    TOOLS_LOOK_SCHEDULE,
     TOOLSET,
     TOOLSET_NAME,
     Tools,
@@ -237,10 +238,12 @@ def test_the_pool_mixes_tools_and_argument_values():
     assert len(set(no_arg)) == len(no_arg) >= 4
     assert len(pinned) + len(no_arg) == 20  # every other task pins a value
     assert len({m for m, _, _ in TASKS}) == 20  # no repeated message
-    # Every look the sequential schedule can stop at (v1.7 §1: 5, 10, 20)
-    # sees all three tools — a prefix that had gone lopsided would make
-    # the composite at that look mean something else.
-    for look in (5, 10, 20):
+    # Every look the sequential schedule can stop at (v1.7 §1) sees all
+    # three tools — a prefix that had gone lopsided would make the
+    # composite at that look mean something else. Read off the schedule
+    # itself: a look added to TOOLS_LOOK_SCHEDULE must bring its prefix
+    # under this law with it, not quietly escape a list typed here.
+    for look in TOOLS_LOOK_SCHEDULE:
         assert {t for _, t, _ in TASKS[:look]} == {
             "read_file", "run_tests", "search_docs"}
 
@@ -258,6 +261,105 @@ def test_the_seed_scheme_never_collides_across_twenty_tasks():
     assert len(t1 | t2) == 2 * len(TASKS)
     assert (min(t1), max(t1)) == (1400, 1419)
     assert (min(t2), max(t2)) == (1500, 1519)
+
+
+# --- the sequential look schedule (v1.7 §1) ---------------------------------
+#
+# The pool grew so a bigger n could come from more TASKS; what SPENDS it
+# is a look schedule. The composite — the metric the verdict ladders on —
+# is examined at 5, 10 and 20 tasks, and the run stops at the first look
+# whose Wilson-95 interval decides a rung. Nothing else is a decision
+# input: `result_use_rate` and the stop counters ride at whatever n the
+# turns reached. Without a schedule the probe is v1: tasks 0–4, v1 seeds,
+# `fixed-n`.
+
+
+def test_the_look_schedule_is_the_registered_one_truncated_by_the_pool():
+    from assay.stats import LOOK_SCHEDULE
+
+    assert TOOLS_LOOK_SCHEDULE == (5, 10, 20)
+    # DERIVED from the shared schedule, never re-typed: the POOL bounds
+    # the last look. 35 is a real look for a codec cell (35 seeded reps
+    # of the same task) and cannot be one here — there is no 35th task,
+    # and re-running task 4 with a fresh seed at temperature 0.2 would
+    # measure the sampler, not the model.
+    assert TOOLS_LOOK_SCHEDULE == tuple(
+        n for n in LOOK_SCHEDULE if n <= len(TASKS))
+    assert TOOLS_LOOK_SCHEDULE[-1] <= len(TASKS)
+
+
+def test_a_perfect_pool_runs_to_the_cap_and_reports_provisional_ready():
+    # decided(n, n) is False at every look below 35 (Wilson lower at
+    # 20/20 is ~0.839 < 0.9): a perfect pool cannot stop early — it
+    # runs to the cap and its verdict stays provisional, at a far
+    # tighter interval than n=5 could give.
+    backend = ToolScriptFake(golden_t1)
+    tools = probe_tools(backend, meter(), look_schedule=(5, 10, 20))
+    assert tools.n_tasks == 20
+    assert tools.n_turns == 40
+    assert tools.stopping_rule == "wilson95-looks-5-10-20"
+    assert backend.attempts == 40
+    # The T2 turns rode with their tasks all the way out, on the seed
+    # scheme's far end: the last pair is task 19's 1419 and 1519.
+    assert (backend.seen[-2].seed, backend.seen[-1].seed) == (1419, 1519)
+
+
+def test_a_boundary_hoverer_runs_to_the_cap_and_stays_provisional():
+    # Composite alternating right/wrong lands near 0.5 and never
+    # decides — [0.30, 0.70] at 10/20 still spans unusable and risky —
+    # so the schedule runs to 20 tasks and says so.
+    def flaky(index, messages, seed):
+        return (golden_t1 if index % 2 == 0 else prose_t1)(index, messages, seed)
+
+    tools = probe_tools(ToolScriptFake(flaky), meter(), look_schedule=(5, 10, 20))
+    assert tools.n_tasks == 20
+    assert tools.composite == 0.5
+
+
+def test_an_unusable_pool_settles_at_the_first_look():
+    # The cheap half of the rule: nothing called at all is decided at
+    # n=5 (Wilson upper on 0/5 is 0.434, wholly inside unusable), so the
+    # remaining fifteen tasks buy a verdict that is already in hand.
+    backend = ToolScriptFake(prose_t1)
+    tools = probe_tools(backend, meter(), look_schedule=(5, 10, 20))
+    assert tools.n_tasks == 5  # decided(0, 5) is True on the unusable rung
+    assert tools.n_turns == 10  # the T2s of those five, and no more
+    assert tools.stopping_rule == "wilson95-looks-5-10-20"
+    assert backend.attempts == 10
+
+
+def test_the_look_decides_on_the_composite_not_on_the_call_rate():
+    # An endpoint that emits exactly one call every time, always the
+    # WRONG tool: call_rate 1.0, composite 0.0. The composite is what the
+    # verdict ladders on, so the run is decided unusable at the first
+    # look. A rule reading call_rate would see five-for-five, find it
+    # undecided, and spend fifteen more tasks re-measuring a model whose
+    # verdict is already in hand.
+    backend = ToolScriptFake(wrong_tool_t1)
+    tools = probe_tools(backend, meter(), look_schedule=(5, 10, 20))
+    assert tools.call_rate == 1.0 and tools.composite == 0.0
+    assert tools.n_tasks == 5
+    assert backend.attempts == 10
+
+
+def test_fixed_n_scores_exactly_the_v1_prefix_with_v1_seeds():
+    backend = ToolScriptFake(golden_t1)
+    tools = probe_tools(backend, meter())
+    assert tools.n_tasks == 5 and tools.stopping_rule == "fixed-n"
+    assert [sent.seed for sent in backend.seen[::2]] == [1400 + i for i in range(5)]
+
+
+def test_a_refusal_still_names_the_rule_the_run_was_sampled_under():
+    # `stopping_rule` names the rule the family RAN under, not the reason
+    # this particular run ended — the same reading the codec lenses have
+    # carried since v1.5, where a matrix the budget never reached still
+    # names its schedule. A refusal that reported "fixed-n" would claim a
+    # five-task instrument had been pointed at the endpoint.
+    tools = probe_tools(ToolScriptFake(golden_t1, refuse_from=1), meter(),
+                        look_schedule=TOOLS_LOOK_SCHEDULE)
+    assert tools.supported is False
+    assert tools.n_tasks == 0
+    assert tools.stopping_rule == "wilson95-looks-5-10-20"
 
 
 # --- the golden path --------------------------------------------------------
