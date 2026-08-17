@@ -21,19 +21,25 @@ question the other modes cannot.
   composite at looks {5, 10, 20}, stopping at the first look whose
   Wilson-95 interval ladders both endpoints to one rung. What that
   changes in the numbers is **asymmetric**, and the asymmetry is
-  arithmetic rather than a shortfall of the pool. `unusable` and clearly
-  `risky` pools can now DECIDE, where v1.6 could only report them
-  provisional at n=5. A *perfect* pool still cannot: Wilson's lower
-  bound on 20/20 is 0.8389 against the 0.9 `ready` floor, so 20/20 runs
-  to the cap and reads `ready` provisional — at roughly [0.839, 1.0]
-  where fixed n=5 spanned [0.566, 1.0]. That is resolution bought, not a
-  decision; n=35 remains the only n at which a perfect cell clears
-  `ready` undisputed, and this pool has no 35th task. `--quick` keeps
-  the v1 five verbatim at the v1 seeds, so quick numbers stay comparable
-  across the boundary and the committed tools-anchor replays
-  byte-identically. Which sample happened is read off `stopping_rule` in
-  the `tool_calling` lens (`fixed-n` / `wilson95-looks-5-10-20`), never
-  guessed from `n_used`.
+  arithmetic rather than a shortfall of the pool. Enumerated over this
+  schedule, the composites that decide at all are exactly the `unusable`
+  ones — 0/5 at the first look, 0–2/10 at the second, 0–7/20 at the
+  third, and nothing else at any of them. Nothing decides `risky`: no
+  pass count at n ≤ 20 has an interval that fits inside [0.6, 0.9). What
+  the schedule does buy is real — a pool at composite 0.2 read
+  provisional at 1/5 under v1.6 (interval [0.036, 0.625], straddling
+  unusable and risky) now DECIDES `unusable` at 2/10 ([0.057, 0.510]):
+  same rate, five tasks later. A *perfect* pool does not decide either:
+  Wilson's lower bound on 20/20 is 0.8389 against the 0.9 `ready` floor,
+  so 20/20 runs to the cap and reads `ready` provisional — at roughly
+  [0.839, 1.0] where fixed n=5 spanned [0.566, 1.0]. That is resolution
+  bought, not a decision; n=35 remains the only n at which a perfect
+  cell clears `ready` undisputed, and this pool has no 35th task.
+  `--quick` keeps the v1 five verbatim at the v1 seeds, so quick numbers
+  stay comparable across the boundary and the committed tools-anchor
+  replays byte-identically. Which sample happened is read off
+  `stopping_rule` in the `tool_calling` lens (`fixed-n` /
+  `wilson95-looks-5-10-20`), never guessed from `n_used`.
 - **Deeper JSON — `codec-fixtures-v3`** — `json_object` gains `nested`,
   `tabular` and `constrained` beside the three size grades, so the codec
   matrix now reports six json cells rather than three. They are new
@@ -69,11 +75,17 @@ question the other modes cannot.
   A family that does not fit is dropped **by name** — `"<family>:
   budget — would exceed remaining"`, or `"— seconds"` when the clock is
   what ran out — and never started, because a family cut off halfway
-  spends calls on a number no verdict can be read off. What starts,
-  finishes. A refusal does not end the run: the priority is an order,
-  not a cliff, so a cheaper family below it still measures. The wall
-  clock is checked between calls, never mid-call — a cut call is an
-  uncontrolled instrument variable. The flags live on `probe` alone, the
+  spends calls on a number no verdict can be read off. **What starts,
+  finishes — on the call meter**, which is the only ceiling a preflight
+  can reserve against: the cost table declares calls, and there is no
+  per-family token declaration to hold back. A family can still die on
+  the TOKEN meter mid-run; when it does it keeps what it measured and
+  the families after it drop, which is the same honest-partial path
+  every other mode uses. A refusal does not end the run: the priority
+  is an order, not a cliff, so a cheaper family below it still
+  measures. The wall clock cuts nothing at all — it is checked between
+  calls, never mid-call, because a cut call is an uncontrolled
+  instrument variable. The flags live on `probe` alone, the
   only command that implements the priority. One consequence shows up in
   a **diff** rather than an error, and is stated rather than left to be
   discovered: budget mode narrows the ceiling ladder by the model's

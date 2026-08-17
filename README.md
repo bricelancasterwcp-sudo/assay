@@ -310,14 +310,21 @@ happened is read off `stopping_rule` in the lens, never guessed from
 over five because five was all quick asked for are different findings.
 
 What sequential sampling buys here is **asymmetric**, and the asymmetry
-is arithmetic rather than a shortfall of the pool. An unusable pool
-decides at the first look — 0/5 ladders `unusable` at both endpoints —
-and a clearly risky one can decide too. A *perfect* pool does not:
-Wilson's lower bound on 20/20 is 0.8389 against the 0.9 `ready` floor,
-so 20/20 runs to the cap and still reads `ready` provisional. What it
-gains is resolution, not a decision — roughly [0.839, 1.0] where fixed
-n=5 spanned [0.566, 1.0]. n=35 remains the only n at which a perfect
-cell clears `ready` undisputed, and this pool has no 35th task.
+is arithmetic rather than a shortfall of the pool. Enumerated over this
+schedule, the composites that decide at all are exactly the `unusable`
+ones: 0/5 at the first look, 0–2/10 at the second, 0–7/20 at the third.
+That is the entire decided set. Nothing decides `risky` — no pass count
+at n ≤ 20 has an interval that fits inside [0.6, 0.9) — and nothing
+decides `ready`. What the schedule buys is still real: a pool at
+composite 0.2 reads provisional at 1/5, where the interval [0.036,
+0.625] straddles `unusable` and `risky`, and **decides** `unusable` at
+2/10 on [0.057, 0.510] — the same rate, five tasks later. A *perfect*
+pool does not decide: Wilson's lower bound on 20/20 is 0.8389 against
+the 0.9 `ready` floor, so 20/20 runs to the cap and still reads `ready`
+provisional. What it gains is resolution, not a decision — roughly
+[0.839, 1.0] where fixed n=5 spanned [0.566, 1.0]. n=35 remains the
+only n at which a perfect cell clears `ready` undisputed, and this pool
+has no 35th task.
 
 **These are rates of INSTRUCTED behavior.** The instrument's system line
 announces, criterion for criterion, the rubric it scores: call exactly
@@ -723,11 +730,17 @@ case** (`worst_case_calls`, plus the bisection a failing ceiling ladder
 would need) is checked against what is left. A family that does not fit
 is dropped by name — `"<family>: budget — would exceed remaining"` —
 and never started, because a family cut off halfway spends calls on a
-number no verdict can be read off. What starts, finishes.
+number no verdict can be read off. **What starts, finishes — on the
+call meter**, which is the only ceiling a preflight can reserve
+against: the cost table declares calls, and there is no per-family
+token declaration to hold back. A family can still die on the **token**
+meter mid-run; when it does it keeps what it measured and the families
+after it drop, which is the same honest-partial path every other mode
+uses.
 
 A refusal is not the end of the run: the order is a priority, not a
-cliff, so a cheaper family further down still runs. The wall clock works
-the same way — checked at family boundaries and between calls, never
+cliff, so a cheaper family further down still runs. The wall clock cuts
+nothing at all — checked at family boundaries and between calls, never
 mid-call, so a run that runs out of time stops before the next call
 rather than leaving a half-measurement behind, and the families after it
 read `"<family>: budget — seconds"`. Two families are not in the
