@@ -12,6 +12,51 @@ that codec*, and an application that knows this before shipping work to
 it can choose another format or another model.
 
 
+## v0.7 (v1.6): tool calling, and what a model does with a rejected patch
+
+Through v1.5, every family that put a question to the model scored what
+it **wrote**. Two of the failures that actually end agent runs are not
+writing failures at all: a model that cannot emit a well-formed function
+call, and a model that answers "SEARCH text not found" by re-sending the
+same block. v1.6 measures both (package 0.7.0, schema v6).
+
+- **Native tool calling** — `scripted-tools-v1`: five heterogeneous
+  tasks, two turns each, against a frozen three-tool `toolset-v1`. Four
+  rates (`call_rate`, `right_tool_rate`, `args_valid_rate`,
+  `result_use_rate`) plus the `composite` a new `tool_calling` verdict
+  ladders on. An endpoint that refuses the tools parameter is
+  `unsupported` — a measured capability, not a gap in the run. See
+  [Native tool calling](#native-tool-calling).
+- **The loop's error script** — `scripted-loop-v1` becomes
+  `scripted-loop-v2`. Every run now also plays a two-turn script in
+  which the model's patch has **failed to apply**, and scores
+  `recovery_rate` and `doom_loop_rate` over an explicit `n_error_runs`.
+  A measured recovery below 0.5 demotes `loop_discipline` off `ready`.
+  See [The scripted repair loop](#the-scripted-repair-loop).
+- **MoE-aware geometry** — `expert_count` / `expert_used_count` where
+  the metadata states them, and `head_dim` now prefers the model file's
+  stated `attention.key_length` over the embedding÷heads derivation,
+  which is wrong by 2x on architectures that size attention
+  independently. The kv formula is unchanged and now says why: it is
+  expert-invariant by design, not by omission. See [MoE
+  geometry](#moe-geometry).
+- **`unsupported` ranks in the gate** — the verdict ladder gains a
+  bottom rung below `unusable`, so `ready → unsupported` is a regression
+  `assay diff --gate` fails on and `unsupported → ready` is an
+  improvement it does not. The refusal is a measurement, so it ranks
+  rather than dropping.
+
+One schema irregularity is recorded rather than tidied away, on the same
+principle as v1.5's verdict amendment:
+
+> Geometry's two expert keys landed one commit **before** the version
+> bump, so for that window `assay_profile_version: 5` covered two
+> geometry shapes — with and without `expert_count` /
+> `expert_used_count`. No published profile is inside it, and
+> `Profile.from_json` defaults both keys to `None` so either shape
+> parses; the note exists so a reader who finds a v5 geometry carrying
+> expert keys does not have to rediscover why.
+
 ## v0.6 (v1.5): sequential verdicts, profile diff, long-output integrity
 
 Three changes that sharpen the instrument rather than widen it (package
@@ -238,21 +283,53 @@ a measurement, a `None` with a named reason, or provenance.
 |---|---|
 | `endpoint` | `kind` (`ollama`/`openai`), `base_url`, whether the kind was autodetected |
 | `model` | `name`, `quant`, `weights_bytes`, `training_ctx` — as reported, never guessed |
-| `geometry` | `kv_kib_per_token`, `vram_free_mib`, `usable_window`, and `limited_by` — **which** term (`training_ctx` / `vram` / `user_cap`) actually bound the window |
+| `geometry` | `kv_kib_per_token`, `vram_free_mib`, `usable_window`, and `limited_by` — **which** term (`training_ctx` / `vram` / `user_cap`) actually bound the window; plus `expert_count` / `expert_used_count` where the metadata reports MoE routing (`None` on a dense model — see [MoE geometry](#moe-geometry)) |
 | `ceiling` | `max_verified`, `first_failure`, `failure_mode` (`hard_error` / `missing_stats` / `silent_truncation` / `canary_loss` / `none_up_to_cap` / `budget`), plus per-call evidence |
 | `ceiling_shapes` | the same question asked at each **pinned** `num_ctx` an application might set (2k/4k/8k), because a daemon can serve 16k right-sized and error above ~1.8k at a fixed 8k |
 | `envelope` | exact-format fidelity over N one-line probes, with failures classified (`prose` / `shape` / `refusal`) |
 | `codecs` | landing rate per codec (`search_replace`, `whole_file`, `json_object`) × size grade (`tiny`, `small`, `medium`), under both landing lenses, with the `n` each cell actually spent |
 | `speed` | `decode_tps` (chat usability) and `prefill_tps` (agent usability), their `evidence` class, and — new in v5 — the per-call `decode_samples` / `prefill_samples` a diff needs to tell noise from drift |
-| `loop` | scripted three-turn repair: `action_fidelity`, `patch_rate`, `finish_rate`, `repeat_rate`, `anchor_violations` — single-call probes cannot see loop failure |
+| `loop` | scripted repair, two scripts: `action_fidelity`, `patch_rate`, `finish_rate`, `repeat_rate`, `anchor_violations` from the golden three turns, and — new in v6 — `recovery_rate` / `doom_loop_rate` over `n_error_runs` from the error script. Single-call probes cannot see loop failure |
 | `long_output` | per-rung `target_tokens`, `generated_tokens`, `distinct_ratio`, `zlib_ratio`, `degenerate`, plus a `skipped` list naming why each unattempted rung did not run |
-| `verdicts` | `structured_extraction`, `patch_editing`, `long_context`, `loop_discipline`, `chat_speed`, `agent_speed`, `long_output` — each `ready` / `risky` / `unusable` / `unmeasured` (`long_output` may also read `degrades-at-N`), each carrying its own lens |
+| `tools` | native tool calling: `supported` (three-state), `call_rate`, `right_tool_rate`, `args_valid_rate`, `result_use_rate`, the `composite` the verdict ladders on, and `n_tasks` / `n_turns` — rates of **instructed** behavior, see [Native tool calling](#native-tool-calling) |
+| `verdicts` | `structured_extraction`, `patch_editing`, `long_context`, `loop_discipline`, `chat_speed`, `agent_speed`, `long_output`, `tool_calling` — each `ready` / `risky` / `unusable` / `unmeasured` (`long_output` may also read `degrades-at-N`; `tool_calling` may also read `unsupported`), each carrying its own lens |
 | `provenance` | started/finished, mode, seeds, budget granted vs spent, calibration, and `dropped` |
 
 No probe uses grammar/JSON forcing: constrained generation deforms
 rather than rejects, so a forced probe measures the constraint, not the
 model. assay measures unforced behavior — the number an application can
 act on.
+
+## MoE geometry
+
+A mixture-of-experts model has two numbers a capacity planner needs and
+a dense one does not, so `geometry` carries them when the metadata
+states them: `expert_count` (experts in total) and `expert_used_count`
+(experts routed per token). Both are `None` on a dense model and on any
+backend that cannot read architecture metadata — a dense model is **not
+a 0-expert MoE**, and writing `0` would read downstream as a measured
+routing fact. `render_table` and the report print `MoE <used>-of-<count>`
+only when **both** counts are measured; one measured half prints
+nothing, because "MoE 8-of-None" shows an unmeasured half as though it
+had been measured.
+
+The kv-cache formula does **not** take an expert term, and that is a
+design statement rather than an omission: K/V heads are dense in MoE
+architectures — the experts live in the FFN weights, which the cache
+never holds — so a routed model pays exactly
+`2 × block_count × kv_head_count × head_dim × bytes/element` per token,
+same as a dense one. The expert counts ride in `geometry` because they
+explain the **weights** footprint, not the cache one.
+
+What did change is `head_dim`. The model file's **stated**
+`attention.key_length` is now preferred, and the derivation
+(`embedding_length` ÷ `attention.head_count`) is kept only as the
+fallback for metadata that omits it. That derivation assumes attention
+width equals embedding width over heads, which is false wherever
+attention is sized independently — qwen3-moe q4 states `key_length` 128
+where 2048 ÷ 32 derives 64 — and a `head_dim` off by 2x silently halves
+every kv number the window law rests on. Neither reported → `None`, and
+the geometry is unmeasurable rather than guessed.
 
 ## Sequential testing
 
@@ -295,6 +372,136 @@ calls instead — but only the calls the question needs.
 - **The budget is still the outer bound.** A cell stopped by the meter
   mid-schedule reports its honest partial n, and the profile can tell
   that apart from a cell the rule decided.
+
+## Native tool calling
+
+Every other family that puts a question to the model measures what it
+**writes**. An agent harness runs on what the model **calls**, and
+nothing lets us assume the two are correlated: a model that writes a
+clean patch is still useless in a harness if it cannot emit one
+well-formed function call. So the two are measured separately.
+
+`scripted-tools-v1` is a script, not a benchmark. Five heterogeneous
+tasks — two tools appear twice with different arguments and one takes
+none at all — against `toolset-v1`, three schemas frozen verbatim and
+offered on every call. Two turns per task, and nothing branches on what
+the model said:
+
+- **T1** asks the task with the toolset offered, and scores three
+  things: exactly one call was emitted, its name is the right tool, and
+  its arguments are schema-valid **and** equal to the value the request
+  named verbatim (every task quotes its file or query from the user's
+  own words, which is what makes argument checking mechanical rather
+  than a judgement call). `composite` is the per-task AND of those
+  three, and it is what the verdict ladders on — the right tool called
+  with junk arguments has not done the job.
+- **T2** replays the same messages plus a **canned** golden call (never
+  the model's, so every model is asked the same second question) and a
+  `role: "tool"` result carrying a seeded canary. It scores
+  `result_use_rate`: the canary comes back in the text **and** no
+  further call is emitted. This is the half that catches a model which
+  can call a tool but cannot read the answer.
+
+`right_tool_rate` and `args_valid_rate` are over the T1s that called
+**anything**. A task where nothing was called has no tool name and no
+arguments to judge; scoring it zero would double-count the miss
+`call_rate` already carries and disguise "never called" as "called
+badly". Nothing called at all → both are `None`, never `0.0`. `n_tasks`
+is the composite's denominator and is what rides in the verdict lens as
+`n_used` — the T2 turns score result-use, not the composite, so quoting
+`n_turns` there would claim evidence the verdict never saw.
+
+**These are rates of INSTRUCTED behavior.** The instrument's system line
+announces, criterion for criterion, the rubric it scores: call exactly
+one tool, use the arguments the request names, quote the result token
+verbatim. That is deliberate — every model is asked in the same words,
+so nothing is measured except the model — but the consequence is stated
+rather than hidden. `call_rate` says *"told to call one tool, it called
+one tool"*, never *"it reached for a tool unprompted"*, and a reader
+comparing these numbers against an agent harness that does **not** spell
+the rules out should expect this instrument to read high.
+
+**`unsupported` is a verdict value, not a gap.** `supported` is
+three-state: `None` = never attempted (the budget died first), `False` =
+the endpoint **refused** the tools parameter, `True` = it spoke the
+protocol at least once. The refusal is classified by behavior class, not
+by wording: a 4xx whose *error fields* mention "tool" is a refusal, and
+every other non-2xx is infrastructure. Only the error fields are
+scanned, never the whole body — a server that echoes the failing request
+echoes the `tools` array we sent, and reading our own payload back would
+fabricate a capability fact. A refusal on the **first** call ends the
+probe with every rate `None` (nine more refusals measure nothing new); a
+refusal **after** a turn has scored keeps `supported=True` and the
+honest partial, because the endpoint demonstrably does speak the
+protocol.
+
+`--record` transcripts carry tool turns as their own `kind`
+(`chat_tools`, beside `generate`), keyed on a canonical serialization of
+the whole payload — the messages *and* the schemas offered, since the
+same conversation with a different toolset is a different question — and
+a row of the other kind is a replay miss rather than a match. Both kinds
+also record the endpoint's own `error_raw`, so a replayed refusal is the
+refusal that happened, not a re-derived guess.
+
+So `tool_calling` is the one verdict with a fourth outcome:
+`ready` / `risky` / `unusable` on the composite, `unmeasured` when the
+family never ran, and `unsupported` for the refusal — which is neither
+of its neighbours. `unmeasured` would hide a fact we established, and
+`unusable` would blame a model that was never asked to do the task.
+
+## The scripted repair loop
+
+The 2026-08-14 pair of measurements that forced this probe: one model
+landed 97% of single-call codec probes and scored 0/940 in a real
+multi-turn repair loop. Single-call probes structurally cannot see turn
+discipline, repetition, anchor violations, or knowing when to stop.
+`scripted-loop-v2` is a **scripted** repair conversation — the
+environment's side is canned, the model's replies are scored per turn,
+and no branching happens on what the model actually says.
+
+The **golden** script is three turns (read → patch → done) and scores
+action fidelity, patch landing under the same applies-and-parses lens
+the codecs use, finishing, verbatim repeats, and any attempt to patch
+the declared read-only test file.
+
+The **error** script is the v1.6 half. The golden path only ever asks
+what a model does when everything works; the failure that actually ended
+robigo runs was the other one — a patch comes back "SEARCH text not
+found" and the model re-emits the same block, turn after turn. So every
+run also plays two turns in which the model's patch has failed: the
+canned failure is the measured qwen signature, the right target line
+with its indentation stripped, and it is built from the fixture's own
+lines rather than hand-typed, so a canned "failure" that would in fact
+apply cannot drift in (a test pins that it really does not). Two rates
+come out:
+
+- **`recovery_rate`** — the next reply is a `patch` at the source file
+  that applies and parses;
+- **`doom_loop_rate`** — the next reply re-emits the SEARCH it was just
+  shown failing, compared per line whitespace-normalized so a
+  cosmetically respaced re-emission still counts. It reads a reply
+  carrying exactly one block, the same one-block discipline the codec
+  lens applies: a ragged two-block reply is not one repeated action.
+
+A reply can be **neither**: reading the file again is no recovery, and
+it is no doom loop either. And the doom lens is gated on **application**
+— a block that applied is never a doom loop, whatever else is wrong with
+the reply. That gate is load-bearing rather than decorative: the same
+normalization that catches respacing also erases the leading indentation
+which is the *only* difference between the canned broken block and a
+correct one, so without the gate a correct fix scores as a re-emission.
+Both rates are `None` when the error script never ran — unmeasured is
+not zero — and `n_error_runs` carries the denominator in the family and
+in the verdict lens, because a budget-truncated 1/1 and a complete 5/5
+both read `1.0` and nothing else tells them apart.
+
+`loop_discipline` ladders on action fidelity and then demotes twice:
+`ready` with a patch rate below 0.5 becomes `risky` (follows the loop,
+never advances it — the 14B shape: fidelity 1.0, 0/940), and `ready`
+with a **measured** recovery rate below 0.5 becomes `risky` too. The
+recovery guard tests `is not None`, not truthiness: `0.0` is a model
+that was asked and never recovered and must demote, while `None` is an
+error script that never ran and must demote nothing.
 
 ## Long-output integrity
 
@@ -409,6 +616,27 @@ It exits 2. Re-baseline with a marked run.
 - **a cell present on one side only** goes in `dropped` — never scored
   as regression or improvement. Absence of evidence is absence.
 
+**The verdict ladder:**
+
+```
+ready > risky > degrades-at-N > unusable > unsupported
+```
+
+Between two `degrades-at` rungs the **larger** N is the better one —
+degrading later is an improvement, not a regression, and a gate told the
+opposite would fail a build for progress. `degrades-at-N` (the
+`long_output` family's rung) sits above `unusable` because a model that
+holds together for a while is better than one that never does, and
+below `risky`.
+`unsupported` (the `tools` family's rung) is the **bottom**, not a tie
+with `unusable`: being asked and failing every task is more than never
+being asked. That is what makes `ready → unsupported` a regression
+`--gate` fails on and `unsupported → ready` an improvement it does not.
+`unmeasured` is the ladder's one remaining value and is deliberately
+absent from it — it is dropped, never ranked. `unsupported` is the word
+that looks like absence and is not: the endpoint was asked and said no,
+so it ranks.
+
 ```
 $ cd docs/superpowers/evidence
 $ assay diff live/qwen2.5-coder-7b-instruct-q8_0-quick.json \
@@ -459,6 +687,25 @@ spent-vs-granted. If the budget dies mid-run, every unfinished family is
 `None` and named in `dropped` — partial results report exactly what was
 verified, never more. assay does not probe paid cloud endpoints (v1):
 against a metered API those tokens are money.
+
+**The defaults must cover the worst case, not the clean one** — a
+default below the suite's own call count exhausts mid-family on every
+run. Quick is **130 calls / 220k prompt tokens**, raised in v1.6 from
+110 / 200k, and the reason is exactly the failure that rule exists to
+prevent: the loop's error script (+2 calls per run, so the loop family
+went 9 → 15) and the new tools family (+10) pushed quick's worst case to
+**109 of 110** — one call short of a mid-family death, on the mode an
+operator reaches for when they are in a hurry. 130 restores the headroom
+the 110 was chosen for, and the token ceiling rises with it so the two
+stay proportionate; a call budget that outruns its token budget just
+moves the death to the other meter. Measured on the scripted suite, a
+clean quick run spends 102 calls and 78,832 of the 220,000 tokens.
+
+Full and thorough stay at **500 calls / 1M tokens**. Full is sequential,
+so its worst case is the old thorough worst case — no codec cell decides
+early and every one runs to the 35-sample cap — and that case measures
+411 calls and 218,037 tokens even with the v1.6 families added. Still
+comfortable, so it does not move.
 
 The long-output ladder is the one family whose charge is dominated by
 **generation** rather than prompt: a 4096-token rung shares the context
