@@ -169,9 +169,8 @@ def _parse_action(reply: str) -> tuple[str | None, str]:
     return verb, arg
 
 
-def _lands(original: str, reply: str) -> bool:
-    """The applies-and-parses lens: the payload really repairs the file."""
-    applied = apply_search_replace(original, reply)
+def _landed(applied: str | None) -> bool:
+    """The applies-and-parses lens, spelled once for both scripts."""
     return applied is not None and _parses_as_python(applied)
 
 
@@ -179,18 +178,26 @@ def _normalized(lines: list[str]) -> list[str]:
     return [" ".join(line.split()) for line in lines]
 
 
-def _is_doom_loop(reply: str) -> bool:
+def _is_doom_loop(reply: str, *, applied: str | None) -> bool:
     """The reply re-emits the SEARCH it was just shown failing.
 
     Whitespace-normalized per line, so a re-emission with cosmetically
     different spacing is still the same doom loop. That normalization
     also erases the leading indentation which is the ONLY difference
     between the canned broken block and a correct one — so whether the
-    block APPLIED is the discriminator, and the caller gates on it: the
-    failure being repeated here is "SEARCH text not found", so a SEARCH
-    that matched this time is not that failure, whatever else is wrong
-    with the payload.
+    block APPLIED is the discriminator: the failure being repeated here
+    is "SEARCH text not found", and a SEARCH that matched this time is
+    not that failure, whatever else is wrong with the reply.
+
+    ``applied`` (the result of applying the reply to the file, None when
+    it does not apply) is therefore a REQUIRED argument rather than a
+    caller-side gate. The predicate was gate-free once, and the gate
+    promptly went missing on one path: a correct fix wrapped in prose
+    scored as a doom loop, because "did not apply" and "was not offered
+    as a patch action" had been collapsed into one None.
     """
+    if applied is not None:
+        return False
     blocks = _parse_blocks(reply)
     if len(blocks) != 1:  # same one-block discipline as the codec lens
         return False
@@ -244,7 +251,7 @@ def _golden_run(
             return False, landed, finished
         verb, arg = tally.score(text, seen)
         if turn == 1 and verb == "patch" and arg.startswith(_SOURCE):
-            landed = _lands(original, text)
+            landed = _landed(apply_search_replace(original, text))
         if turn == 2 and verb == "done":
             finished = True
     return True, landed, finished
@@ -266,11 +273,16 @@ def _error_run(
     if text is None:
         return False, False, False
     verb, arg = tally.score(text, seen)
-    applied = None
-    if verb == "patch" and arg.startswith(_SOURCE):
-        applied = apply_search_replace(original, text)
-    recovered = applied is not None and _parses_as_python(applied)
-    return True, recovered, applied is None and _is_doom_loop(text)
+    # `applied` is computed from the reply ALONE, never inside the
+    # action-line branch: "this payload does not apply to the file" and
+    # "this reply was not framed as a patch action" are different facts,
+    # and collapsing them into one None makes a correct fix offered in
+    # prose read as a re-emission of the failed SEARCH. Recovery needs
+    # both facts; the doom lens needs only the first.
+    applied = apply_search_replace(original, text)
+    targeted = verb == "patch" and arg.startswith(_SOURCE)
+    recovered = targeted and _landed(applied)
+    return True, recovered, _is_doom_loop(text, applied=applied)
 
 
 def probe_loop(

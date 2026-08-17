@@ -7,7 +7,7 @@ what it does next (recover, or re-emit the same broken block).
 
 from assay.backends.base import Reply
 from assay.budget import Budget, BudgetMeter
-from assay.codecs import apply_search_replace
+from assay.codecs import _parse_blocks, apply_search_replace
 from assay.loop import (LOOP_INSTRUMENT, Loop, broken_patch,
                         error_turn_prompts, probe_loop, turn_prompts)
 
@@ -254,9 +254,11 @@ def test_a_landed_patch_is_never_scored_a_doom_loop():
     # equal to the canned broken one. Landing is the discriminator — a
     # block that applies is a recovery and cannot also be scored as
     # repeating the failure it just fixed.
-    normalized = [" ".join(line.split())
-                  for line in good_patch().splitlines()]
-    assert "subtotal * 1.08" in normalized  # the collision is real
+    correct = _parse_blocks(good_patch())[0][0]
+    canned = _parse_blocks(broken_patch())[0][0]
+    assert correct != canned                                  # they differ...
+    assert ([" ".join(line.split()) for line in correct]
+            == [" ".join(line.split()) for line in canned])   # ...but not here
     loop = probe_loop(
         TurnFake({0: "read tiny.py", 1: good_patch(), 2: "done"},
                  error=good_patch()),
@@ -276,6 +278,28 @@ def test_a_patch_that_applies_but_breaks_python_is_neither():
     loop = probe_loop(fake, meter(), runs=1)
     assert loop.recovery_rate == 0.0
     assert loop.doom_loop_rate == 0.0
+
+
+def test_a_correct_fix_framed_as_prose_is_not_a_doom_loop():
+    # No action line, so no recovery — action fidelity is the thing that
+    # failed. But the block is the CORRECT one and applies cleanly, so
+    # it is emphatically not a re-emission of the failed SEARCH. The two
+    # Nones must stay apart: "does not apply to the file" and "was not
+    # offered as a patch action" are different facts, and collapsing
+    # them would demote a model for the very fix it just produced.
+    reply = "Here is the corrected block:\n" + good_patch().split("\n", 1)[1]
+    assert _parse_action_is_invalid(reply)
+    assert apply_search_replace(original_source(), reply) is not None
+    fake = TurnFake({0: "read tiny.py", 1: good_patch(), 2: "done"},
+                    error=reply)
+    loop = probe_loop(fake, meter(), runs=1)
+    assert loop.recovery_rate == 0.0
+    assert loop.doom_loop_rate == 0.0
+
+
+def _parse_action_is_invalid(reply):
+    from assay.loop import _parse_action
+    return _parse_action(reply)[0] is None
 
 
 def test_two_blocks_are_not_one_doom_looping_action():
