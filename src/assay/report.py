@@ -42,6 +42,11 @@ _DEGRADES_PREFIX = "degrades-at"
 #: not extended for a word, and the LABEL still says which of the two
 #: greys this one is.
 _UNRATED_VERDICTS = frozenset({"unsupported"})
+#: The codec grades every schema this project has written carries, in
+#: the order they are read in. Grades a profile carries beyond these
+#: (v1.7's json shape grades) follow them, sorted — see
+#: ``_grade_columns``.
+_GRADES = ("tiny", "small", "medium")
 
 _CSS = """
 :root { --bg:#fafaf7; --fg:#1c1c1a; --muted:#6b6b66; --card:#ffffff;
@@ -192,11 +197,29 @@ def _speed_cell(profile: dict) -> str:
             f'<span class="k">({_esc(speed.get("evidence", "?"))})</span>')
 
 
+def _grade_columns(codecs: dict) -> list[str]:
+    """The grade columns this profile has, in ``diff._ordered_grades``'s
+    order: the long-standing grades first, then anything else sorted.
+
+    Derived from the cells, never declared. v1.7 grades ``json_object``
+    at six and the patch codecs at three, so the matrix stopped being
+    rectangular; a hardcoded triple dropped the three shape grades off
+    the page entirely — measured, recorded, and shown to nobody. Local
+    rather than imported from ``assay.codecs`` for the reason the whole
+    module reads raw dicts: this page renders documents from every era,
+    including ones written before today's grade set existed.
+    """
+    seen = {grade for grades in codecs.values() if isinstance(grades, dict)
+            for grade in grades}
+    return ([grade for grade in _GRADES if grade in seen]
+            + sorted(seen - set(_GRADES)))
+
+
 def _codec_grid(codecs: dict | None) -> str:
     if not codecs:
         return '<p class="k">codecs unmeasured</p>'
-    grades = ("tiny", "small", "medium")
-    head = "".join(f"<th>{g}</th>" for g in grades)
+    grades = _grade_columns(codecs)
+    head = "".join(f"<th>{_esc(g)}</th>" for g in grades)
     rows = []
     for codec, cells in codecs.items():
         tds = []

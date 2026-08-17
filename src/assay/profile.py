@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass
 
 from assay.ceiling import CallEvidence, Ceiling, ShapeCeiling
+from assay.codecs import GRADES as _GRADES
 from assay.codecs import Landing
 from assay.fixtures import FIXTURE_SET
 from assay.long_output import (DISTINCT_FLOOR, LONG_OUTPUT_TASK,
@@ -736,13 +737,34 @@ def _render_envelope(envelope: Envelope | None) -> str:
     )
 
 
+def _grade_columns(codecs: dict[str, dict[str, Landing]]) -> list[str]:
+    """The grade columns this profile actually has, in a stable order.
+
+    The column set is DERIVED, not declared: v1.7 grades ``json_object``
+    at six and the patch codecs at three (``codecs.GRADES_FOR``), and a
+    later version may add more to one codec alone. A hardcoded triple
+    silently dropped the three shape grades from the table — measured,
+    written to the profile, and invisible to the only human view of it.
+
+    The order is ``diff._ordered_grades``'s, so the table and the diff
+    name the same cells in the same sequence: the long-standing grades
+    first, in their canonical order, then anything else sorted. A
+    profile carrying only the old three therefore renders exactly the
+    three columns it always did.
+    """
+    seen = {grade for grades in codecs.values() for grade in grades}
+    return ([grade for grade in _GRADES if grade in seen]
+            + sorted(seen - set(_GRADES)))
+
+
 def _render_codecs(codecs: dict[str, dict[str, Landing]] | None) -> list[str]:
     if codecs is None:
         return ["codecs     unmeasured"]
-    lines = ["codecs           " + "".join(g.ljust(12) for g in ("tiny", "small", "medium"))]
+    columns = _grade_columns(codecs)
+    lines = ["codecs           " + "".join(g.ljust(12) for g in columns)]
     for codec, grades in codecs.items():
         cells = []
-        for grade in ("tiny", "small", "medium"):
+        for grade in columns:
             cell = grades.get(grade)
             if cell is None or cell.lands is None:
                 cells.append("-".ljust(12))

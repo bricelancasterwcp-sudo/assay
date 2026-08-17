@@ -7,8 +7,9 @@ from assay.cli import main
 from assay.report import VERDICT_ORDER, render_report
 
 from test_profile import make_profile  # the canonical full-profile builder
-from test_profile import (make_geometry, make_long_output, make_loop,
-                          make_tools, unscorable_rung)
+from test_profile import (_DEEP_GRADES, make_codecs, make_geometry,
+                          make_long_output, make_loop, make_tools,
+                          unscorable_rung)
 
 _EVIDENCE = Path(__file__).resolve().parents[1] / "docs/superpowers/evidence"
 _LIVE = _EVIDENCE / "live"
@@ -430,6 +431,58 @@ def test_v1_codec_cells_dash_the_column_v1_never_wrote():
     p["codecs"]["search_replace"]["tiny"] = {"lands": 0.6, "n": 5}
     html = render_report([p])
     assert "0.60 / —" in html
+
+
+def _codec_grid_html(html: str) -> str:
+    """The codec matrix table, alone."""
+    start = html.index('<table class="grid"><tr><th>codec ')
+    return html[start:html.index("</table>", start) + len("</table>")]
+
+
+def test_codec_grid_carries_every_grade_that_was_measured():
+    """The HTML matrix had the text table's hardcoded triple and the
+    same consequence: v1.7 writes six ``json_object`` cells and the page
+    showed three, so the shape grades were paid for, recorded, and
+    invisible to every reader of the report."""
+    p = profile_dict(codecs=make_codecs(deep=True))
+    grid = _codec_grid_html(render_report([p]))
+
+    for grade in _DEEP_GRADES:
+        assert f"<th>{grade}</th>" in grid, grade
+    # The measured rates reach the page, both lenses (json's two
+    # coincide by construction), and the patch codecs — never asked at
+    # those shapes — dash rather than borrow a number.
+    assert "0.60 / 0.60" in grid and "0.40 / 0.40" in grid
+    sr_row = grid[grid.index("<td>search_replace</td>"):]
+    sr_row = sr_row[:sr_row.index("</tr>")]
+    assert sr_row.count('<td class="k">—</td>') == len(_DEEP_GRADES), sr_row
+
+
+def test_a_grade_name_from_the_document_cannot_write_markup():
+    """The grade columns are now read OFF the profile, so a header cell
+    carries document text for the first time. It goes through the same
+    escaper every other profile string does — a derived column must not
+    become the one unescaped hole in the page."""
+    p = profile_dict()
+    p["codecs"]["json_object"]["<script>alert(1)</script>"] = {
+        "lands": 1.0, "lands_applies": 1.0, "n": 5}
+    html = render_report([p])
+    assert "<script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+
+def test_codec_grid_of_a_three_grade_profile_is_unchanged():
+    """The regression pin: a v4 profile — and every other committed one
+    — keeps exactly the three columns it always had, in order, with no
+    shape column invented for a run that never measured one."""
+    payload = json.loads(_V4_PROFILE.read_text(encoding="utf-8"))
+    grid = _codec_grid_html(render_report([payload]))
+
+    assert ("</span></th><th>tiny</th><th>small</th><th>medium</th></tr>"
+            in grid)
+    assert grid.count("<th>") == 4
+    for grade in _DEEP_GRADES:
+        assert grade not in grid, grade
 
 
 def test_cli_report_rejects_files_that_are_not_profiles(tmp_path, capsys):

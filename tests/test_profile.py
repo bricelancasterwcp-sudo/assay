@@ -33,6 +33,10 @@ _COMMITTED_PROFILES = sorted(
     key=lambda p: (p.parent.name, p.name),
 )
 _GRADES = ("tiny", "small", "medium")
+#: v1.7's json SHAPE grades. Measured for ``json_object`` only, so the
+#: matrix is no longer rectangular and the renderers cannot assume a
+#: fixed column triple.
+_DEEP_GRADES = ("nested", "tabular", "constrained")
 _CODECS = ("search_replace", "whole_file", "json_object")
 
 
@@ -150,10 +154,15 @@ def unscorable_rung(target: int) -> LongRung:
 
 
 def make_codecs(
-    *, sr_small: float = 0.9, wf_small: float = 0.8, jo_small: float = 0.95
+    *, sr_small: float = 0.9, wf_small: float = 0.8, jo_small: float = 0.95,
+    deep: bool = False,
 ) -> dict[str, dict[str, Landing]]:
+    """The codec matrix. ``deep=True`` adds v1.7's three json SHAPE
+    grades to ``json_object`` alone — the current measured shape, where
+    the grade set is no longer the same for every codec (``GRADES_FOR``)
+    and the patch codecs have no cell in those columns at all."""
     smalls = {"search_replace": sr_small, "whole_file": wf_small, "json_object": jo_small}
-    return {
+    codecs = {
         codec: {
             "tiny": Landing(lands=1.0, lands_applies=1.0, n=5),
             "small": Landing(lands=smalls[codec], lands_applies=smalls[codec], n=5),
@@ -161,6 +170,12 @@ def make_codecs(
         }
         for codec in _CODECS
     }
+    if deep:
+        codecs["json_object"].update(
+            (grade, Landing(lands=rate, lands_applies=rate, n=5))
+            for grade, rate in zip(_DEEP_GRADES, (0.6, 0.4, 0.2))
+        )
+    return codecs
 
 
 def make_profile(*, provenance_dropped: tuple[str, ...] = (), **overrides) -> Profile:
@@ -1234,6 +1249,58 @@ def test_render_table_reads_a_v1_profile_without_raising():
     assert "long_context: ready" in rendered
     assert "lenses     unmeasured" in rendered
     assert "None" not in rendered
+
+
+def _codec_block(rendered: str) -> list[str]:
+    """The codecs header line and its per-codec rows."""
+    lines = rendered.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("codecs"))
+    end = next(i for i in range(start + 1, len(lines) + 1)
+               if i == len(lines) or not lines[i].startswith("  "))
+    return lines[start:end]
+
+
+def test_render_table_prints_every_grade_that_was_measured():
+    """v1.7 measures ``json_object`` at six grades (``GRADES_FOR``); a
+    table hardcoded to tiny/small/medium spends the calls, writes the
+    three shape cells into the profile, and then shows the reader a
+    matrix that says the model was measured at three. Half a measurement
+    printed as the whole of it is the failure this instrument exists to
+    refuse.
+    """
+    rendered = render_table(make_profile(codecs=make_codecs(deep=True)))
+    header, *rows = _codec_block(rendered)
+
+    for grade in _DEEP_GRADES:
+        assert grade in header, (grade, header)
+    # ...and the numbers, not just the column names: the json row shows
+    # all three shape rates.
+    json_row = next(row for row in rows if "json_object" in row)
+    for rate in ("0.60", "0.40", "0.20"):
+        assert rate in json_row, (rate, json_row)
+    # The patch codecs were never asked at those shapes. Unmeasured is
+    # said with the same dash every other unmeasured cell uses — never
+    # borrowed from the flat grades and never a zero.
+    sr_row = next(row for row in rows if "search_replace" in row)
+    assert sr_row.count("-") == len(_DEEP_GRADES), sr_row
+
+
+def test_render_table_of_a_three_grade_profile_is_unchanged():
+    """The regression pin under the fix: every profile this project has
+    committed carries exactly tiny/small/medium, and each must render
+    the byte-identical block it rendered before the columns became
+    derived — same header, same widths, no shape column invented for a
+    run that never measured one."""
+    for path in _COMMITTED_PROFILES:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        header, *rows = _codec_block(render_table(Profile.from_json(payload)))
+        assert header == ("codecs           "
+                          "tiny        small       medium      "), path
+        assert rows, path
+        for row in rows:
+            assert len(row) == len(header), (path, row)
+        for grade in _DEEP_GRADES:
+            assert grade not in "\n".join([header, *rows]), (path, grade)
 
 
 def test_render_table_still_prints_lenses_for_a_modern_profile():
