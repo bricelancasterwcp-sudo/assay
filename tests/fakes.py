@@ -5,6 +5,8 @@ that answers the real probe prompts (canary, envelope, codecs, JSON)
 well enough to drive the full pipeline deterministically.
 """
 
+import threading as _threading
+
 from assay import fixtures
 from assay.backends.base import (
     BackendCaps,
@@ -120,6 +122,16 @@ class ScriptedBackend:
     def __init__(self, model: str = "fake-model") -> None:
         self.model = model
         self.calls = 0
+        # The parallel family (v1.7) calls this fake from real threads,
+        # and ``self.calls += 1`` is three bytecodes, not one: a lost
+        # update would show up as a call count one short, in one run out
+        # of many. Tests assert exact counts, so the counter is locked
+        # rather than left to luck.
+        self._counter_lock = _threading.Lock()
+
+    def _count(self) -> None:
+        with self._counter_lock:
+            self.calls += 1
 
     def model_info(self) -> ModelInfo:
         return ModelInfo(
@@ -142,7 +154,7 @@ class ScriptedBackend:
         max_tokens: int,
         num_ctx: int | None = None,
     ) -> Reply:
-        self.calls += 1
+        self._count()
         text = self._reply_text(prompt, seed)
         return Reply(
             text=text,
@@ -174,7 +186,7 @@ class ScriptedBackend:
         never on model output, because in a scripted probe there is none
         to branch on.
         """
-        self.calls += 1
+        self._count()
         index, result = _tools_turn(messages)
         _, name, arguments = _TOOL_TASKS[index]
         if result is None:
@@ -358,7 +370,7 @@ class ToolsUnsupportedBackend(ScriptedToolsBackend):
         seed: int,
         max_tokens: int,
     ) -> ToolReply:
-        self.calls += 1
+        self._count()
         refusal = ToolsUnsupported(
             "HTTP 400 from /api/chat: endpoint refused the tools parameter"
         )

@@ -82,7 +82,12 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
     for codec in ("search_replace", "whole_file", "json_object"):
         for grade in GRADES_FOR[codec]:
             assert payload["codecs"][codec][grade]["n"] == 5, (codec, grade)
-    assert payload["provenance"]["dropped"] == []
+    # Nothing was lost to the meter. The one line quick carries is a MODE
+    # fact (v1.7): concurrency is a full-mode measurement, and the family
+    # it does not run is named rather than silently absent.
+    assert payload["provenance"]["dropped"] == [
+        "parallel: quick mode — full mode measures concurrency"]
+    assert payload["parallel"] is None
 
     # The v1.6 families survive the document round trip end to end, with
     # NON-None recovery/doom values: the error script is measured, not
@@ -165,6 +170,10 @@ def test_the_default_budget_covers_a_measured_clean_full_run(
     # test MEASURES the run rather than restating a hand count: it fails
     # if someone lowers the default under the suite's own cost, and it
     # fails if a family's cost creeps up without the default following.
+    # It did exactly that when the parallel family landed: six lanes took
+    # the clean run 546 -> 552, which left 48 calls under a 50-call
+    # acceptance, and the DEFAULT followed (600 -> 610) rather than the
+    # threshold moving to fit the number.
     _use_backend(monkeypatch, ScriptedBackend())
     out = tmp_path / "profile.json"
 
@@ -174,19 +183,21 @@ def test_the_default_budget_covers_a_measured_clean_full_run(
     assert code == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["provenance"]["budget"] == {
-        "max_calls": 600,
+        "max_calls": 610,
         "max_prompt_tokens": 1_000_000,
     }
-    # Measured on the scripted suite, 2026-08-17 (v1.7, six json grades).
+    # Measured on the scripted suite, 2026-08-17 (v1.7, six json grades,
+    # and the parallel family's six lanes: 546 + 6).
     spent = payload["provenance"]["spent"]
-    assert spent["calls"] == 546
-    assert spent["prompt_tokens"] == 230_125
+    assert spent["calls"] == 552
+    assert spent["prompt_tokens"] == 230_293
     assert spent["calls"] < cli.DEFAULT_BUDGETS["full"].max_calls
     # THE acceptance for the raise: a clean run loses NOTHING to the
     # meter. At 500 this list named the long-output ladder and the whole
     # tools family.
     assert payload["provenance"]["dropped"] == []
     assert payload["long_output"] is not None and payload["tools"] is not None
+    assert payload["parallel"] is not None
     # ~10% headroom for a failing ceiling's bisection calls.
     assert cli.DEFAULT_BUDGETS["full"].max_calls - spent["calls"] >= 50
     assert cli.DEFAULT_BUDGETS["full"] == cli.DEFAULT_BUDGETS["thorough"]

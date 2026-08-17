@@ -9,8 +9,8 @@ from assay.report import VERDICT_ORDER, render_report
 
 from test_profile import make_profile  # the canonical full-profile builder
 from test_profile import (_DEEP_GRADES, make_codecs, make_geometry,
-                          make_long_output, make_loop, make_tools,
-                          unscorable_rung)
+                          make_long_output, make_loop, make_parallel,
+                          make_tools, unscorable_rung)
 
 _EVIDENCE = Path(__file__).resolve().parents[1] / "docs/superpowers/evidence"
 _LIVE = _EVIDENCE / "live"
@@ -91,13 +91,14 @@ def test_report_escapes_every_profile_sourced_cell_not_just_the_name():
     p["geometry"]["kv_kib_per_token"] = payload          # geometry line
     p["ceiling"]["max_verified"] = payload               # ceiling line
     p["envelope"]["fidelity"] = payload                  # envelope line
+    p["parallel"]["rows"][0]["mode"] = payload           # parallel grid
 
     html = render_report([p])
 
     assert "<script>" not in html
     # ...and every one of them still reached the page, escaped: dropping
     # the cell would hide the finding instead of neutering the markup.
-    assert html.count("&lt;script&gt;alert(1)&lt;/script&gt;") == 7
+    assert html.count("&lt;script&gt;alert(1)&lt;/script&gt;") == 8
 
 
 # --- v1.5: the long_output column and its rung grid ------------------------
@@ -320,6 +321,75 @@ def test_detail_loop_rates_that_were_never_measured_read_as_dashes():
     line = _detail_line(render_report([p]), "loop")
     assert "None" not in line
     assert line.count("—") == 2
+
+
+# --- v1.7: the parallel family's per-k grid --------------------------------
+
+
+def _parallel_grid(html: str) -> str:
+    """The parallel table, alone — the tolerance line above it carries
+    numbers of its own, and an assertion that reads them by accident
+    proves nothing about the rows."""
+    start = html.index('<table class="grid"><tr><th>concurrent lanes</th>')
+    return html[start:html.index("</table>", start)]
+
+
+def test_parallel_grid_prints_each_k_with_its_mode_and_its_ratio():
+    # The headline the family exists for: at k=2 this endpoint BATCHES
+    # (lanes slower, aggregate up) and at k=4 it QUEUES (each lane's rate
+    # divided). A page that showed only an average would hide the
+    # difference a fleet operator is reading for.
+    grid = _parallel_grid(render_report([profile_dict()]))
+
+    assert "<td>parallel</td>" in grid and "<td>serialized</td>" in grid
+    for cell in (">2<", ">4<"):          # the k column
+        assert cell in grid, cell
+    assert "12.00" in grid and "4.00" in grid      # per-lane rates
+    assert "24.00" in grid and "16.00" in grid     # totals
+    assert "0.75" in grid and "0.25" in grid       # degradation ratios
+
+
+def test_parallel_detail_names_the_baseline_and_its_chosen_tolerance():
+    # A ratio is meaningless without the denominator, and a CHOSEN
+    # threshold must travel with the fact that it was chosen — otherwise
+    # a reader takes 0.25s for a derived constant.
+    line = _detail_line(render_report([profile_dict()]), "parallel")
+
+    assert "16.00" in line                 # the single-lane baseline
+    assert "0.25" in line                  # the overlap tolerance
+    assert "chosen-2026-08-17" in line
+
+
+def test_parallel_grid_dashes_what_a_k_could_not_measure():
+    # Every lane errored: nothing was measured, and 0.00 in any of these
+    # columns would report an unreachable endpoint as a slow one. The
+    # errors themselves are named — infrastructure evidence, never a zero.
+    from assay.parallel import ParallelRow
+
+    dead = ParallelRow(
+        k=4, per_lane_decode_tps=None, total_throughput_tps=None,
+        degradation_ratio=None, mode=None, n_lanes_ok=0,
+        lane_errors=("lane 0: InfrastructureError: connection refused",),
+        evidence="unmeasured")
+    html = render_report([profile_dict(parallel=make_parallel(rows=(dead,)))])
+
+    grid = _parallel_grid(html)
+    assert grid.count("—") == 4    # per-lane, total, ratio, mode
+    assert "0.00" not in grid
+    assert "lane 0: InfrastructureError: connection refused" in html
+
+
+def test_parallel_absent_from_the_schema_reads_unmeasured_not_a_crash():
+    # Every profile written before v1.7 has no parallel key at all; the
+    # page renders them, so a missing family is a schema fact, not a
+    # traceback.
+    p = profile_dict()
+    del p["parallel"]
+
+    html = render_report([p])
+
+    assert "parallel unmeasured" in html
+    assert "concurrent lanes" not in html
 
 
 def test_detail_dashes_the_pre_v16_ceiling_and_envelope_nulls_too():

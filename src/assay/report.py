@@ -120,6 +120,15 @@ def _num(value: object, spec: str = ".2f") -> str:
     return _esc(value)
 
 
+def _word(value: object) -> str:
+    """A measured classification, or a dash — ``_num``'s counterpart for
+    the cells that carry a word rather than a rate. It escapes rather
+    than formats, because a number that arrived where a word belongs is
+    document text like any other and must not reach ``format`` with a
+    string spec (which raises and takes the page with it)."""
+    return "—" if value is None else _esc(value)
+
+
 def _show(value: object) -> str:
     """``None`` is unmeasured, in words. Same convention as
     ``profile.render_table`` — the two views of one profile must not
@@ -352,6 +361,60 @@ def _tools_detail(tools: dict | None) -> str:
             f"result-use {_num(tools.get('result_use_rate'))}</p>")
 
 
+def _parallel_grid(parallel: dict | None) -> str:
+    """What k concurrent requests did to one endpoint, row per k (v1.7).
+
+    ``mode`` leads the row because it is the headline: an endpoint that
+    BATCHES shares its throughput (each lane slower, the aggregate
+    roughly held) and one that QUEUES simply serializes (each lane's
+    rate divided by k), and the two look nothing alike to anyone running
+    a fleet of agents. An average over both shapes would hide exactly
+    the difference this family exists to show.
+
+    Every rate goes through ``_num``, and for the family's own reason: a
+    lane that errored is named in ``lane_errors`` and excluded from the
+    mean, so a k where every lane failed carries None rates. 0.00 there
+    would publish an unreachable endpoint as a very slow one.
+
+    The baseline and the overlap tolerance ride above the table. A ratio
+    without its denominator is not a measurement, and the tolerance is a
+    CHOSEN constant that travels with the fact that it was chosen — a
+    reader must not take 0.25s for a derived one.
+    """
+    if not parallel:
+        return '<p class="k">parallel unmeasured</p>'
+    rows = parallel.get("rows") or []
+    head = (f"<p><span class='k'>parallel</span> single-lane baseline "
+            f"{_num(parallel.get('baseline_decode_tps'))} tok/s · overlap "
+            f"tolerance {_num(parallel.get('tolerance_s'))}s "
+            f"({_word(parallel.get('tolerance_provenance'))})</p>")
+    if not rows:
+        return head + '<p class="k">no k was measured</p>'
+    body = "".join(
+        f'<tr><td class="mono">{_num(r.get("k"), "g")}</td>'
+        f'<td>{_word(r.get("mode"))}</td>'
+        f'<td class="mono">{_num(r.get("per_lane_decode_tps"))}</td>'
+        f'<td class="mono">{_num(r.get("total_throughput_tps"))}</td>'
+        f'<td class="mono">{_num(r.get("degradation_ratio"))}</td>'
+        f'<td class="mono">{_num(r.get("n_lanes_ok"), "g")}</td>'
+        f'<td class="k">{_word(r.get("evidence"))}</td></tr>'
+        for r in rows if isinstance(r, dict))
+    errors = [error for r in rows if isinstance(r, dict)
+              for error in (r.get("lane_errors") or [])]
+    tail = ""
+    if errors:
+        # Named, never folded into a rate: a lane that failed is
+        # infrastructure evidence about the box, and the page is where a
+        # reader meets it.
+        items = "".join(f"<li>{_esc(e)}</li>" for e in errors)
+        tail = ('<p class="dropped">lanes that errored:</p>'
+                f'<ul class="dropped">{items}</ul>')
+    return (head + '<table class="grid"><tr><th>concurrent lanes</th>'
+            '<th>mode</th><th>per-lane tok/s</th><th>total tok/s</th>'
+            '<th>vs 1 lane</th><th>lanes ok</th><th>evidence</th></tr>'
+            + body + "</table>" + tail)
+
+
 def _loop_detail(loop: dict) -> str:
     """The scripted loop, both scripts.
 
@@ -415,6 +478,10 @@ def _detail(profile: dict) -> str:
         bits.append(_loop_detail(loop))
     bits.append(_long_output_grid(profile.get("long_output")))
     bits.append(_tools_detail(profile.get("tools")))
+    # parallel last of the families: it is read AGAINST the single-lane
+    # decode rate in the matrix row above, so it belongs after everything
+    # that describes one request at a time.
+    bits.append(_parallel_grid(profile.get("parallel")))
     dropped = prov.get("dropped") or []
     if dropped:
         items = "".join(f"<li>{_esc(d)}</li>" for d in dropped)

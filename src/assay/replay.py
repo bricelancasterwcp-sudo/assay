@@ -20,6 +20,7 @@ does not get rewritten to suit a later schema.
 
 import hashlib
 import json
+import threading
 from collections import deque
 from pathlib import Path
 
@@ -114,6 +115,12 @@ class CallRecorder:
         self.caps = inner.caps
         self.model = inner.model
         self._path.write_text("", encoding="utf-8")  # fresh transcript
+        # The parallel family (v1.7) is the first probe to call a backend
+        # from several threads at once, and this wrapper may be the
+        # backend it calls. One lock around the append keeps a lane's row
+        # whole: a half-written row is not a smaller transcript, it is an
+        # unparseable one, and the transcript IS the evidence.
+        self._write_lock = threading.Lock()
 
     def generate(
         self,
@@ -205,7 +212,7 @@ class CallRecorder:
 
     def _write_row(self, *, kind: str, **fields) -> None:
         row = {"model": self.model, "kind": kind, **fields}
-        with self._path.open("a", encoding="utf-8") as handle:
+        with self._write_lock, self._path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row) + "\n")
 
 

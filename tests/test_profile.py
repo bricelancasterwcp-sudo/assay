@@ -17,7 +17,7 @@ from assay.profile import (PROFILE_VERSION, Profile, compute_verdicts,
                            render_table)
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
-             "speed", "loop", "long_output", "tools")
+             "speed", "loop", "long_output", "tools", "parallel")
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _V1_PROFILE = (_REPO_ROOT / "docs/superpowers/evidence/live"
                / "qwen2.5-coder-7b-instruct-q8_0-quick.json")
@@ -124,6 +124,37 @@ def make_speed():
                  decode_samples=(15.0, 17.0), prefill_samples=(1024.0,))
 
 
+def make_parallel(**overrides):
+    """A fully-measured parallel family: two k rows, every lane reporting.
+
+    The textbook pair of shapes, one per row: at k=2 the endpoint BATCHES
+    (each lane slower, aggregate up), at k=4 it QUEUES (each lane's rate
+    divided, aggregate held at one lane's worth). The baseline is
+    ``make_speed``'s decode rate on purpose — the ratios are the ones
+    this profile's own speed family would produce, so nothing in the
+    fixture invites a reader to compare two unrelated numbers.
+    """
+    from assay.parallel import (OVERLAP_TOLERANCE_S, TOLERANCE_PROVENANCE,
+                                Parallel, ParallelRow)
+    fields = dict(
+        rows=(
+            ParallelRow(k=2, per_lane_decode_tps=12.0,
+                        total_throughput_tps=24.0, degradation_ratio=0.75,
+                        mode="parallel", n_lanes_ok=2, lane_errors=(),
+                        evidence="server_timings"),
+            ParallelRow(k=4, per_lane_decode_tps=4.0,
+                        total_throughput_tps=16.0, degradation_ratio=0.25,
+                        mode="serialized", n_lanes_ok=4, lane_errors=(),
+                        evidence="server_timings"),
+        ),
+        baseline_decode_tps=16.0,
+        tolerance_s=OVERLAP_TOLERANCE_S,
+        tolerance_provenance=TOLERANCE_PROVENANCE,
+    )
+    fields.update(overrides)
+    return Parallel(**fields)
+
+
 def make_long_output(
     *, degenerate_from: int | None = None,
     targets: tuple[int, ...] = (512, 1024, 2048),
@@ -202,6 +233,7 @@ def make_profile(*, provenance_dropped: tuple[str, ...] = (), **overrides) -> Pr
         loop=make_loop(),
         long_output=make_long_output(),
         tools=make_tools(),
+        parallel=make_parallel(),
         verdicts={
             "structured_extraction": {"verdict": "ready", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "ready", "lens": {"landing": "test"}},
@@ -617,6 +649,97 @@ def test_render_table_carries_a_tools_line():
         n_tasks=0, n_turns=0)))
     assert "tools      unsupported" in refused
     assert "None" not in refused
+
+
+# --- v1.7: the parallel family in the schema -------------------------------
+
+
+def test_parallel_is_a_profile_family_the_guard_covers():
+    # A FAMILY, not a loose field: the __post_init__ guard is what makes
+    # an unmeasured family impossible to write silently, and a field
+    # outside _FAMILIES gets none of it.
+    from assay.profile import _FAMILIES as families
+
+    assert "parallel" in families
+    with pytest.raises(ValueError, match="parallel"):
+        make_profile(parallel=None)
+
+
+def test_parallel_round_trips_and_every_field_is_wired_into_the_payload():
+    from assay.parallel import Parallel, ParallelRow
+
+    profile = make_profile()
+    payload = json.loads(profile.to_json())
+
+    assert set(payload["parallel"]) == {
+        field.name for field in dataclasses.fields(Parallel)}
+    assert set(payload["parallel"]["rows"][0]) == {
+        field.name for field in dataclasses.fields(ParallelRow)}
+    restored = Profile.from_json(payload)
+    assert restored == profile
+    assert isinstance(restored.parallel, Parallel)
+    assert isinstance(restored.parallel.rows, tuple)
+    assert isinstance(restored.parallel.rows[0], ParallelRow)
+    assert [row.k for row in restored.parallel.rows] == [2, 4]
+    assert restored.parallel.baseline_decode_tps == 16.0
+
+
+def test_parallel_lane_errors_survive_the_round_trip_as_tuples():
+    # JSON has no tuples: `lane_errors` comes back as a list, and a
+    # frozen dataclass holding a list stops comparing equal to itself
+    # across a round trip — the same coercion the speed samples need.
+    from assay.parallel import ParallelRow
+
+    errored = ParallelRow(
+        k=2, per_lane_decode_tps=12.0, total_throughput_tps=None,
+        degradation_ratio=0.75, mode=None, n_lanes_ok=1,
+        lane_errors=("lane 1: InfrastructureError: connection reset",),
+        evidence="server_timings")
+    profile = make_profile(parallel=make_parallel(rows=(errored,)))
+
+    restored = Profile.from_json(json.loads(profile.to_json()))
+
+    assert restored == profile
+    row = restored.parallel.rows[0]
+    assert isinstance(row.lane_errors, tuple)
+    assert row.lane_errors == ("lane 1: InfrastructureError: connection reset",)
+    # ...and the Nones stay None on the way back: an unmeasurable total
+    # is not a zero, and a k that could not be classified has no mode.
+    assert row.total_throughput_tps is None
+    assert row.mode is None
+
+
+def test_a_v4_payload_with_no_parallel_key_parses_with_it_named_absent():
+    # A profile written before the family existed has NO parallel key at
+    # all — a different fact from a modern document writing null. It
+    # parses, parallel reads None, and the absence is NAMED, exactly as
+    # every other post-v1 family's absence is.
+    payload = json.loads(make_profile().to_json())
+    del payload["parallel"]
+    payload["assay_profile_version"] = 4
+
+    profile = Profile.from_json(payload)
+
+    assert profile.parallel is None
+    assert ("parallel: not present in the parsed profile (schema v4)"
+            in profile.provenance["dropped"])
+    assert profile.tools is not None  # the families that era HAD still parse
+
+
+def test_a_present_but_null_parallel_family_still_has_to_be_named():
+    payload = json.loads(make_profile().to_json())
+    payload["parallel"] = None
+    with pytest.raises(ValueError, match="parallel"):
+        Profile.from_json(payload)
+
+
+def test_the_parallel_family_carries_no_verdict():
+    # Measurement-only in v1.7: the degradation numbers are reported and
+    # no rung is claimed from them. A verdict here would need a floor,
+    # and there is no measured floor to put one on yet.
+    verdicts = compute_verdicts(None, None, None, None)
+
+    assert not any("parallel" in name for name in verdicts)
 
 
 # --- schema v6: the loop error script in the schema and the verdict --------
@@ -1151,6 +1274,7 @@ def test_all_none_families_construct_when_all_named():
         loop=None,
         long_output=None,
         tools=None,
+        parallel=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
@@ -1175,6 +1299,7 @@ def test_render_table_names_unmeasured_not_zero():
         loop=None,
         long_output=None,
         tools=None,
+        parallel=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},

@@ -33,6 +33,12 @@ _CALLS_THROUGH_CEILING = 2 + 5
 # families, not about what the default budget covers.
 _CLEAN_FULL_RUN_HEADROOM = 700
 
+#: The line quick mode names instead of measuring concurrency (v1.7).
+#: Quick's `dropped` is not empty any more and never can be: the
+#: parallel family is None there, and an unmeasured family is named
+#: whatever the reason — a mode decision as much as a dead meter.
+_QUICK_PARALLEL_DROP = "parallel: quick mode — full mode measures concurrency"
+
 
 @pytest.fixture(autouse=True)
 def _fixed_vram(monkeypatch):
@@ -116,7 +122,10 @@ def test_full_pipeline_produces_complete_profile():
     assert spent["calls"] == _QUICK_CALLS_TOTAL == backend.calls
     assert spent["prompt_tokens"] > 0
     assert profile.provenance["mode"] == "quick"
-    assert profile.provenance["dropped"] == []
+    # One line, and it is a MODE fact rather than a failure: quick does
+    # not buy concurrency (v1.7), and an unmeasured family is named
+    # whatever the reason it went unmeasured.
+    assert profile.provenance["dropped"] == [_QUICK_PARALLEL_DROP]
     calibration = profile.provenance["calibration"]
     assert calibration["counts_available"] is True
     assert calibration["deterministic"] is True
@@ -481,7 +490,9 @@ def test_long_output_family_climbs_the_full_ladder_on_a_healthy_endpoint():
     lens = profile.verdicts["long_output"]["lens"]
     assert lens["rungs_scored"] == 4
     assert lens["deepest_scored_tokens"] == 4096
-    assert profile.provenance["dropped"] == []
+    # Quick names the parallel family it does not measure; nothing here
+    # was dropped for want of budget.
+    assert profile.provenance["dropped"] == [_QUICK_PARALLEL_DROP]
 
 
 def test_long_output_degradation_is_located_at_the_rung_it_starts():
@@ -682,6 +693,142 @@ def test_a_ladder_that_scored_nothing_is_named_in_dropped_and_kept():
     assert any("long_output:" in entry and "scorable" in entry
                for entry in profile.provenance["dropped"])
     assert profile.verdicts["long_output"]["verdict"] == "unmeasured"
+
+
+# --- the parallel family (v1.7): full mode only, on speed's baseline -------
+
+
+def _calls_before_speed() -> int:
+    """The call index the full-mode speed family's first decode call
+    falls on — MEASURED, not hand-counted.
+
+    Every family before speed costs what it costs, and a literal here
+    would rot the first time one of them changes (they all did, twice,
+    in v1.7). The probe is run once with headroom against a backend that
+    records where the decode prompt first appears; a second run capped at
+    exactly that number starves the speed family and nothing else.
+    """
+    from assay.speed import DECODE_PROMPT
+
+    class SpeedBoundary(ScriptedBackend):
+        def __init__(self):
+            super().__init__()
+            self.before_speed = None
+
+        def generate(self, prompt, *, seed, max_tokens, num_ctx=None):
+            if prompt == DECODE_PROMPT and self.before_speed is None:
+                self.before_speed = self.calls  # calls spent BEFORE this one
+            return super().generate(prompt, seed=seed, max_tokens=max_tokens,
+                                    num_ctx=num_ctx)
+
+    backend = SpeedBoundary()
+    probe(_URL, "fake-model",
+          budget=Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
+                        max_prompt_tokens=2_000_000),
+          mode="full", _backend_override=backend)
+    assert backend.before_speed is not None, "the speed family never ran"
+    return backend.before_speed
+
+
+def test_full_mode_measures_parallel_against_this_run_s_own_baseline():
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
+                      max_prompt_tokens=2_000_000),
+        mode="full", _backend_override=ScriptedBackend(),
+    )
+
+    assert profile.parallel is not None
+    assert [row.k for row in profile.parallel.rows] == [2, 4]
+    # The ratio's denominator is the SAME RUN's single-lane decode rate,
+    # never a number from another run or another instrument.
+    assert profile.parallel.baseline_decode_tps == profile.speed.decode_tps
+    for row in profile.parallel.rows:
+        # The scripted endpoint reports the same server timings on every
+        # lane, so a healthy k measures no degradation at all.
+        assert row.per_lane_decode_tps == 16.0, row
+        assert row.degradation_ratio == 1.0, row
+        assert row.n_lanes_ok == row.k, row
+        assert row.lane_errors == (), row
+        assert row.evidence == "server_timings", row
+    assert profile.provenance["dropped"] == []
+    # The family survives the document contract with the rest of them.
+    assert Profile.from_json(json.loads(profile.to_json())) == profile
+
+
+def test_quick_mode_drops_the_parallel_family_by_name():
+    # Quick is the mode an operator reaches for in a hurry; six extra
+    # calls buy a concurrency finding it did not ask for. Dropped BY
+    # NAME, never silently absent.
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", _backend_override=ScriptedBackend(),
+    )
+
+    assert profile.parallel is None
+    assert profile.provenance["dropped"] == [_QUICK_PARALLEL_DROP]
+
+
+def test_parallel_is_skipped_and_named_when_the_budget_died_earlier():
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=_CALLS_THROUGH_CEILING,
+                      max_prompt_tokens=100_000),
+        mode="full", _backend_override=ScriptedBackend(),
+    )
+
+    assert profile.parallel is None
+    dropped = profile.provenance["dropped"]
+    assert "parallel: skipped, budget exhausted earlier" in dropped
+    # Position is a measurement fact and a budget fact: the family needs
+    # the same run's single-lane baseline (so it cannot precede speed)
+    # and its six lanes are charged before the long ladder empties the
+    # meter (so it cannot follow long_output).
+    assert (dropped.index("speed: skipped, budget exhausted earlier")
+            < dropped.index("parallel: skipped, budget exhausted earlier")
+            < dropped.index("long_output: skipped, budget exhausted earlier"))
+
+
+def test_a_full_run_that_never_measured_speed_drops_parallel_by_name():
+    # `degradation_ratio` divides by the same run's single-lane decode
+    # rate. A run that never measured one has nothing to divide by, and
+    # the family is dropped by name rather than run against a baseline
+    # from somewhere else.
+    starved = _calls_before_speed()
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=starved, max_prompt_tokens=2_000_000),
+        mode="full", _backend_override=ScriptedBackend(),
+    )
+
+    assert profile.speed is None
+    assert profile.parallel is None
+    assert ("parallel: no single-lane baseline (speed unmeasured)"
+            in profile.provenance["dropped"])
+
+
+def test_a_meter_that_refuses_the_first_k_names_parallel_and_stops_the_rest():
+    # The one path where probe_parallel raises: the budget refused k=2
+    # before any lane ran, so nothing was measured. That is a budget
+    # death, and the families after it must be skipped and named rather
+    # than quietly attempted on an exhausted meter.
+    from assay.run import MODE_PARAMS
+
+    through_speed = (_calls_before_speed()
+                     + MODE_PARAMS["full"].speed_decode_calls + 1)  # +prefill
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=through_speed, max_prompt_tokens=2_000_000),
+        mode="full", _backend_override=ScriptedBackend(),
+    )
+
+    assert profile.speed is not None and profile.speed.decode_tps == 16.0
+    assert profile.parallel is None
+    dropped = profile.provenance["dropped"]
+    assert "parallel: budget exhausted before any lane ran" in dropped
+    assert "long_output: skipped, budget exhausted earlier" in dropped
+    assert "tools: skipped, budget exhausted earlier" in dropped
 
 
 def test_thorough_params_equal_full_params():

@@ -2,7 +2,8 @@
 
 Order: detect/build backend (recorded when asked) -> model_info ->
 geometry (pure, no model calls) -> calibrate -> ceiling -> envelope ->
-codecs -> loop -> speed -> long_output -> tools -> verdicts -> Profile.
+codecs -> loop -> speed -> parallel -> long_output -> tools -> verdicts
+-> Profile.
 
 Budget discipline: ``budget`` has NO default — a library consumer
 burning a user's GPU time must say how much (spec §9). Any probe
@@ -32,6 +33,7 @@ from assay.loop import Loop, probe_loop
 from assay.envelope import probe_envelope
 from assay.errors import BudgetExhausted
 from assay.geometry import free_vram_mib, plan_window
+from assay.parallel import Parallel, probe_parallel
 from assay.profile import (PROFILE_VERSION, Profile, best_patch_cell,
                            compute_verdicts, verdict_cell)
 from assay.replay import CallRecorder
@@ -315,6 +317,7 @@ def probe(
     loop: Loop | None = None
     long_output: LongOutput | None = None
     tools: Tools | None = None
+    parallel: Parallel | None = None
 
     if budget_death is not None:
         dropped.append("codecs: skipped, budget exhausted earlier")
@@ -359,6 +362,32 @@ def probe(
         if speed.n_decode == 0 and speed.n_prefill == 0:
             speed = None
             dropped.append("speed: budget exhausted before any probe completed")
+
+    # parallel (v1.7) runs IMMEDIATELY after speed, and full mode only.
+    # Both halves are measurement decisions, not scheduling taste. The
+    # ratio's denominator is this run's own single-lane decode rate, so
+    # the family cannot start before speed has one and must not start at
+    # all without one — a degradation ratio against a baseline from
+    # another run is a comparison of two boxes wearing one number. And
+    # quick is the mode an operator reaches for in a hurry: six lanes buy
+    # a concurrency finding it did not ask for, so quick NAMES the family
+    # instead of running it.
+    if budget_death is not None:
+        dropped.append("parallel: skipped, budget exhausted earlier")
+    elif mode == "quick":
+        dropped.append("parallel: quick mode — full mode measures concurrency")
+    elif speed is None or speed.decode_tps is None:
+        dropped.append("parallel: no single-lane baseline (speed unmeasured)")
+    else:
+        try:
+            parallel = probe_parallel(active, meter,
+                                      baseline_decode_tps=speed.decode_tps)
+        except BudgetExhausted as exc:
+            # Raised only when the meter refused the FIRST k, so nothing
+            # was measured: the family is None, named, and the meter is
+            # dry for everyone after it.
+            budget_death = exc
+            dropped.append("parallel: budget exhausted before any lane ran")
 
     if budget_death is not None:
         dropped.append("long_output: skipped, budget exhausted earlier")
@@ -434,6 +463,8 @@ def probe(
         loop=loop,
         long_output=long_output,
         tools=tools,
+        # No verdict argument: parallel is measurement-only in v1.7.
+        parallel=parallel,
         verdicts=compute_verdicts(
             geometry, ceiling, envelope, codecs, speed, loop, long_output,
             tools,

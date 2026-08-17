@@ -24,6 +24,7 @@ from assay.long_output import (DISTINCT_FLOOR, LONG_OUTPUT_TASK,
 from assay.loop import LOOP_INSTRUMENT, Loop
 from assay.envelope import Envelope
 from assay.geometry import Geometry
+from assay.parallel import Parallel, ParallelRow
 from assay.speed import Speed
 # The verdict arithmetic lives in assay.stats (a leaf module) so that
 # codecs can stop sequentially without importing profile back. The
@@ -40,13 +41,13 @@ from assay.tools import TOOLS_INSTRUMENT, TOOLSET_NAME, Tools
 PROFILE_VERSION = 7
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
-             "speed", "loop", "long_output", "tools")
+             "speed", "loop", "long_output", "tools", "parallel")
 #: Families the v1 schema did not have. A document written before one of
 #: them existed simply has no key for it — a different fact from a
 #: modern document that writes ``null`` because the family measured
 #: nothing, and ``from_json`` keeps the two apart (spec §4).
 _POST_V1_FAMILIES = ("ceiling_shapes", "speed", "loop", "long_output",
-                     "tools")
+                     "tools", "parallel")
 _GRADE_FOR_VERDICTS = "small"
 #: The codecs ``patch_editing`` may be carried by — either can carry it.
 _PATCH_CODECS = ("search_replace", "whole_file")
@@ -81,6 +82,11 @@ class Profile:
     loop: Loop | None
     long_output: LongOutput | None
     tools: Tools | None
+    # Measurement-only (v1.7): what k concurrent requests do to one
+    # endpoint. No verdict reads it — there is no measured floor to
+    # ladder a degradation ratio against yet, and a rung invented for one
+    # would be the overclaim the rest of this schema exists to refuse.
+    parallel: Parallel | None
     verdicts: dict[str, dict]
     provenance: dict  # started/finished/mode/seeds/budget/spent/calibration/dropped
 
@@ -124,6 +130,7 @@ class Profile:
             loop=_loop_from(payload.get("loop")),
             long_output=_long_output_from(payload.get("long_output")),
             tools=_tools_from(payload.get("tools")),
+            parallel=_parallel_from(payload.get("parallel")),
             verdicts=payload["verdicts"],
             provenance=_provenance_naming_absent_families(payload),
         )
@@ -199,6 +206,26 @@ def _loop_from(payload: dict | None) -> Loop | None:
 
 def _tools_from(payload: dict | None) -> Tools | None:
     return None if payload is None else Tools(**payload)
+
+
+def _parallel_from(payload: dict | None) -> Parallel | None:
+    if payload is None:
+        return None
+    # JSON has no tuples: the rows and each row's lane errors come back
+    # as lists and must be coerced, or a round-tripped profile stops
+    # comparing equal to itself — the same rule the rungs and the speed
+    # samples follow. The lane errors are the row's only sequence, and
+    # they are never dropped or summarized: an errored lane is
+    # infrastructure evidence, and the document is where it survives.
+    return Parallel(
+        rows=tuple(
+            ParallelRow(**{**row, "lane_errors": tuple(row["lane_errors"])})
+            for row in payload["rows"]
+        ),
+        baseline_decode_tps=payload["baseline_decode_tps"],
+        tolerance_s=payload["tolerance_s"],
+        tolerance_provenance=payload["tolerance_provenance"],
+    )
 
 
 def _long_output_from(payload: dict | None) -> LongOutput | None:

@@ -92,7 +92,7 @@ from assay import Budget, probe
 profile = probe(
     "http://127.0.0.1:11434",
     "qwen2.5-coder:7b-instruct-q8_0",
-    budget=Budget(max_calls=500, max_prompt_tokens=1_000_000),
+    budget=Budget(max_calls=610, max_prompt_tokens=1_000_000),
     mode="full",
 )
 print(profile.to_json())
@@ -101,7 +101,7 @@ print(profile.to_json())
 `budget` is a **required** argument: a library consumer burning a user's
 GPU time must say how much. There is no silent default. The CLI supplies
 documented defaults — quick: 130 calls / 220k prompt tokens; full and
-thorough: 500 calls / 1M — overridable with `--max-calls` /
+thorough: 610 calls / 1M — overridable with `--max-calls` /
 `--max-prompt-tokens`. Those cover the WORST case (a full run in which
 no codec cell decides early and every one runs to the 35-sample cap); a
 typical run stops well short. `mode` is explicit above because the
@@ -646,17 +646,21 @@ from 102 in v1.6 because `json_object` gained three deeper grades, which
 takes the codec family from 45 calls to 60 and quick's worst case to
 **124 of 130**.
 
-Full and thorough are **600 calls / 1M tokens**, raised in v1.7 from
+Full and thorough are **610 calls / 1M tokens**, raised in v1.7 from
 500 / 1M for the same reason quick moved in v1.6. Full is sequential, so
 its worst case is the old thorough worst case — no codec cell decides
 early and every one runs to the 35-sample cap — which the deep json
 grades take from 315 codec calls to 420. A clean full run on the
-scripted suite measures **546 calls** and 230,125 tokens, and at the old
+scripted suite measures **552 calls** and 230,293 tokens, and at the old
 500 it exhausted after the codec matrix and reported the long-output
-ladder and the whole tools family as `dropped`. 600 is derived from that
-measurement rather than guessed: about 10% over the clean run, which is
-the room a failing ceiling ladder's bisection calls need. The token
-ceiling does not move — 230k of 1M is not close.
+ladder and the whole tools family as `dropped`. The ceiling is derived
+from that measurement rather than guessed: about 10% over the clean run,
+which is the room a failing ceiling ladder's bisection calls need — 600
+when the clean run was 546, and 610 once the parallel family's six
+concurrent lanes took it to 552. The default follows the measurement;
+the acceptance does not move to fit it. The token ceiling does not
+move — 230k of 1M is not close. Quick measures no concurrency, so its
+numbers are unchanged.
 
 The long-output ladder is the one family whose charge is dominated by
 **generation** rather than prompt: a 4096-token rung shares the context
