@@ -34,16 +34,18 @@ from assay.stats import RISKY_THRESHOLD as _RISKY_THRESHOLD  # noqa: F401
 from assay.stats import VERDICT_LENS
 from assay.stats import ladder as _ladder
 from assay.stats import wilson95
+from assay.tools import TOOLS_INSTRUMENT, TOOLSET_NAME, Tools
 
-PROFILE_VERSION = 5
+PROFILE_VERSION = 6
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
-             "speed", "loop", "long_output")
+             "speed", "loop", "long_output", "tools")
 #: Families the v1 schema did not have. A document written before one of
 #: them existed simply has no key for it — a different fact from a
 #: modern document that writes ``null`` because the family measured
 #: nothing, and ``from_json`` keeps the two apart (spec §4).
-_POST_V1_FAMILIES = ("ceiling_shapes", "speed", "loop", "long_output")
+_POST_V1_FAMILIES = ("ceiling_shapes", "speed", "loop", "long_output",
+                     "tools")
 _GRADE_FOR_VERDICTS = "small"
 #: The codecs ``patch_editing`` may be carried by — either can carry it.
 _PATCH_CODECS = ("search_replace", "whole_file")
@@ -77,6 +79,7 @@ class Profile:
     speed: Speed | None
     loop: Loop | None
     long_output: LongOutput | None
+    tools: Tools | None
     verdicts: dict[str, dict]
     provenance: dict  # started/finished/mode/seeds/budget/spent/calibration/dropped
 
@@ -119,6 +122,7 @@ class Profile:
             speed=_speed_from(payload.get("speed")),
             loop=_loop_from(payload.get("loop")),
             long_output=_long_output_from(payload.get("long_output")),
+            tools=_tools_from(payload.get("tools")),
             verdicts=payload["verdicts"],
             provenance=_provenance_naming_absent_families(payload),
         )
@@ -185,7 +189,15 @@ def _shapes_from(payload) -> tuple[ShapeCeiling, ...] | None:
 
 
 def _loop_from(payload: dict | None) -> Loop | None:
+    # A pre-v1.6 loop payload has no recovery/doom/error-run keys at all;
+    # Loop defaults them to None, which is "this schema had no such
+    # field" — never a zero that would read as a model that never
+    # recovered.
     return None if payload is None else Loop(**payload)
+
+
+def _tools_from(payload: dict | None) -> Tools | None:
+    return None if payload is None else Tools(**payload)
 
 
 def _long_output_from(payload: dict | None) -> LongOutput | None:
@@ -249,26 +261,119 @@ def _truncates_below_4k(ceiling: Ceiling | None) -> bool:
     )
 
 
+def _loop_lens(loop: Loop | None) -> dict:
+    """What a loop verdict was judged by — instrument, fixtures, sampler,
+    and the ERROR-RUN denominator.
+
+    ``n_error_runs`` is in the lens because ``recovery_rate`` alone does
+    not say how much evidence is behind it: a budget-truncated 1/1 and a
+    complete 5/5 both read 1.0, and one of them demotes a verdict. None
+    where the family is unmeasured or was written by a schema that had
+    no error script — never 0, which would claim an error script that
+    ran and completed nothing.
+    """
+    return {"instrument": LOOP_INSTRUMENT, "fixtures": FIXTURE_SET,
+            "temperature": 0.2,
+            "n_error_runs": None if loop is None else loop.n_error_runs}
+
+
 def _loop_verdict(loop: Loop | None) -> dict:
     """Turn discipline under the scripted loop: ready needs high action
-    fidelity AND a landed patch; a model that follows the envelope but
-    never advances (the 14B shape: fidelity 1.0, 0/940) is risky at
-    best. Wilson over scored turns; provisional like the codec verdicts."""
+    fidelity AND a landed patch AND, where it was measured, a way out of
+    a failed patch. A model that follows the envelope but never advances
+    (the 14B shape: fidelity 1.0, 0/940) is risky at best, and so is one
+    that answers a rejected patch by re-sending it. Wilson over scored
+    turns; provisional like the codec verdicts."""
     if loop is None or loop.action_fidelity is None:
         return {"verdict": "unmeasured", "provisional": False,
-                "interval95": None,
-                "lens": {"instrument": LOOP_INSTRUMENT,
-                         "fixtures": FIXTURE_SET, "temperature": 0.2}}
+                "interval95": None, "lens": _loop_lens(loop)}
     lo, hi = wilson95(round(loop.action_fidelity * loop.n_turns),
                       loop.n_turns)
     verdict = _ladder(loop.action_fidelity)
     if verdict == "ready" and (loop.patch_rate or 0.0) < 0.5:
         verdict = "risky"  # follows the loop, does not advance it
+    if (verdict == "ready" and loop.recovery_rate is not None
+            and loop.recovery_rate < 0.5):
+        # v1.6, mirroring the patch-rate rule one line up. The guard is
+        # `is not None`, not truthiness: recovery_rate 0.0 is a measured
+        # model that never recovered and MUST demote, while None is an
+        # error script that never ran and must demote nothing.
+        verdict = "risky"  # follows the loop, cannot get out of a failure
     provisional = _ladder(lo) != _ladder(hi)
     return {"verdict": verdict, "provisional": provisional,
             "interval95": [round(lo, 3), round(hi, 3)],
-            "lens": {"instrument": LOOP_INSTRUMENT,
-                     "fixtures": FIXTURE_SET, "temperature": 0.2}}
+            "lens": _loop_lens(loop)}
+
+
+def _tools_lens(tools: Tools | None) -> dict:
+    """What a tool_calling verdict was judged by.
+
+    The four metric rates ride in the lens rather than only in the
+    family because the verdict ladders on the COMPOSITE, and a composite
+    of 0.0 reached by never calling anything is a different finding from
+    one reached by calling the right tool with wrong arguments. Every
+    rate is None-safe: ``right_tool_rate`` and ``args_valid_rate`` are
+    None whenever no T1 emitted a call at all — there was no tool name
+    and no arguments to judge — and writing 0.0 there would claim a
+    measurement of "called badly" that never happened.
+
+    ``n_used`` is the COMPOSITE's denominator (``n_tasks``), not
+    ``n_turns``: the T2 turns score result-use, not the composite, and
+    quoting them would claim evidence the verdict never saw. It is
+    ABSENT when nothing was scored, the same rule the codec lenses
+    follow — ``n_used: 0`` reads as "graded on zero samples".
+
+    These are rates of INSTRUCTED behavior: the instrument's system line
+    announces the rubric it scores (call exactly one tool, use the
+    arguments the request names, quote the result token). See
+    ``assay.tools``' module docstring — a reader comparing them to a
+    harness that does not spell the rules out should expect them high.
+    """
+    lens = {"instrument": TOOLS_INSTRUMENT, "toolset": TOOLSET_NAME,
+            "stopping_rule": "fixed-n"}
+    if tools is not None and tools.n_tasks:
+        lens["n_used"] = tools.n_tasks
+    lens["temperature"] = 0.2
+    for rate in ("call_rate", "right_tool_rate", "args_valid_rate",
+                 "result_use_rate"):
+        lens[rate] = None if tools is None else getattr(tools, rate)
+    return lens
+
+
+def _tool_calling_verdict(tools: Tools | None) -> dict:
+    """Native tool calling, laddered on the composite (spec v1.6 §1).
+
+    Three outcomes that must never be confused:
+
+    - **unmeasured** — the family never ran (budget death, or a profile
+      from a schema that had no tools family).
+    - **unsupported** — the endpoint REFUSED the tools parameter. A
+      capability fact: not "unmeasured" (the refusal is a measurement)
+      and not "unusable" (the model was never asked to do the task).
+      ``interval95`` is None because there is no proportion to bound.
+    - the ladder — ready/risky/unusable on the composite, Wilson-95 over
+      ``round(composite * n_tasks), n_tasks``, provisional exactly as
+      the codec verdicts: True when the interval's endpoints ladder to
+      different rungs, because then the data cannot tell the achieved
+      rung from its neighbours.
+    """
+    lens = _tools_lens(tools)
+    if tools is None or tools.supported is None:
+        return {"verdict": "unmeasured", "provisional": False,
+                "interval95": None, "lens": lens}
+    if tools.supported is False:
+        return {"verdict": "unsupported", "provisional": False,
+                "interval95": None, "lens": lens}
+    if tools.composite is None:
+        # Defensive: the probe cannot report supported=True with nothing
+        # scored today. If it ever could, an unscored family is
+        # unmeasured — never a rung it did not earn.
+        return {"verdict": "unmeasured", "provisional": False,
+                "interval95": None, "lens": lens}
+    lo, hi = wilson95(round(tools.composite * tools.n_tasks), tools.n_tasks)
+    verdict, provisional = _ladder_provisional(tools.composite, lo, hi)
+    return {"verdict": verdict, "provisional": provisional,
+            "interval95": [round(lo, 3), round(hi, 3)], "lens": lens}
 
 
 def _long_output_lens(scorable: list[LongRung]) -> dict:
@@ -467,6 +572,7 @@ def compute_verdicts(
     speed: Speed | None = None,
     loop: Loop | None = None,
     long_output: LongOutput | None = None,
+    tools: Tools | None = None,
     *,
     presentation: str = "default-v1",
     stopping_rule: str = "fixed-n",
@@ -565,6 +671,7 @@ def compute_verdicts(
                                   else speed.evidence)},
         },
         "long_output": _long_output_verdict(long_output),
+        "tool_calling": _tool_calling_verdict(tools),
     }
 
 
@@ -661,6 +768,33 @@ def _render_long_output(long_output: LongOutput | None) -> str:
     return line
 
 
+def _rate(value: float | None) -> str:
+    """A rate for the human table: two places, or the word."""
+    return "unmeasured" if value is None else f"{value:.2f}"
+
+
+def _render_tools(tools: Tools | None) -> str:
+    """The tools line, with the three outcomes kept apart.
+
+    ``unsupported`` prints as itself rather than as "unmeasured": the
+    endpoint was asked and said no, which is a fact about the endpoint
+    and not a gap in the run.
+    """
+    if tools is None:
+        return "tools      unmeasured"
+    if tools.supported is False:
+        return "tools      unsupported (the endpoint refused the tools parameter)"
+    if tools.composite is None:
+        return "tools      unmeasured"
+    return (
+        f"tools      composite {tools.composite:.2f} (n={tools.n_tasks})"
+        f" | call {_rate(tools.call_rate)}"
+        f" right-tool {_rate(tools.right_tool_rate)}"
+        f" args {_rate(tools.args_valid_rate)}"
+        f" result-use {_rate(tools.result_use_rate)}"
+    )
+
+
 def _verdict_word(entry: object) -> str:
     """The verdict word, from either schema.
 
@@ -715,6 +849,7 @@ def render_table(profile: Profile) -> str:
          f"prefill {_show(profile.speed.prefill_tps)} tok/s "
          f"({profile.speed.evidence})"),
         _render_long_output(profile.long_output),
+        _render_tools(profile.tools),
         "verdicts   "
         + " | ".join(f"{name}: {_verdict_word(entry)}"
                      for name, entry in profile.verdicts.items()),

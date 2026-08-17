@@ -79,7 +79,14 @@ def _loop_patch() -> str:
 
 
 class ScriptedBackend:
-    """A well-behaved endpoint: counts reported, every probe answered."""
+    """A well-behaved endpoint: counts reported, every probe answered.
+
+    "Every probe" includes the native tool protocol (v1.6): ``probe``
+    runs the tools family on every endpoint it drives, so a fake that
+    could not answer ``chat_tools`` would not be a Backend at all — it
+    would be a backend that raises AttributeError one family before the
+    end of the suite.
+    """
 
     caps = _FULL_CAPS
 
@@ -123,6 +130,40 @@ class ScriptedBackend:
                 "prompt_eval_count": 2048,
                 "prompt_eval_duration": 2_000_000_000,
             },
+        )
+
+    def chat_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        seed: int,
+        max_tokens: int,
+    ) -> ToolReply:
+        """The scripted-tools-v1 transcript, answered by a model that has
+        fully got it: turn 1 emits exactly the golden call, turn 2 answers
+        in prose quoting the tool result (canary and all) and calls
+        nothing further. Keyed on the SCRIPT — which task, which turn —
+        never on model output, because in a scripted probe there is none
+        to branch on.
+        """
+        self.calls += 1
+        index, result = _tools_turn(messages)
+        _, name, arguments = _TOOL_TASKS[index]
+        if result is None:
+            text, calls = "", (ToolCall(name=name, arguments=dict(arguments)),)
+        else:
+            text, calls = f"The {name} call returned: {result}", ()
+        return ToolReply(
+            text=text,
+            tool_calls=calls,
+            tokens_in=max(
+                1,
+                sum(len(m["content"]) for m in messages) // CHARS_PER_TOKEN,
+            ),
+            tokens_out=max(1, len(text) // CHARS_PER_TOKEN),
+            stop_reason="stop",
+            raw={"scripted": True},
         )
 
     def _reply_text(self, prompt: str, seed: int) -> str:
@@ -262,42 +303,13 @@ def _tools_turn(messages: list[dict]) -> tuple[int, str | None]:
 
 
 class ScriptedToolsBackend(ScriptedBackend):
-    """A well-behaved endpoint that also speaks the native tool protocol.
+    """The well-behaved endpoint, named for the family under test.
 
-    Answers the scripted-tools-v1 transcript the way a model that has
-    fully got it would: turn 1 emits exactly the golden call, turn 2
-    answers in prose quoting the tool result (canary and all) and calls
-    nothing further. Keyed on the SCRIPT — which task, which turn — never
-    on model output, because in a scripted probe there is none to branch
-    on.
+    The tool-speaking behavior moved onto ``ScriptedBackend`` itself when
+    ``probe`` began running the tools family on every endpoint (v1.6);
+    the name stays because the tools tests read better naming what they
+    drive, and because ``ToolsUnsupportedBackend`` is its counterpart.
     """
-
-    def chat_tools(
-        self,
-        messages: list[dict],
-        tools: list[dict],
-        *,
-        seed: int,
-        max_tokens: int,
-    ) -> ToolReply:
-        self.calls += 1
-        index, result = _tools_turn(messages)
-        _, name, arguments = _TOOL_TASKS[index]
-        if result is None:
-            text, calls = "", (ToolCall(name=name, arguments=dict(arguments)),)
-        else:
-            text, calls = f"The {name} call returned: {result}", ()
-        return ToolReply(
-            text=text,
-            tool_calls=calls,
-            tokens_in=max(
-                1,
-                sum(len(m["content"]) for m in messages) // CHARS_PER_TOKEN,
-            ),
-            tokens_out=max(1, len(text) // CHARS_PER_TOKEN),
-            stop_reason="stop",
-            raw={"scripted": True},
-        )
 
 
 class ToolsUnsupportedBackend(ScriptedToolsBackend):

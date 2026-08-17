@@ -221,7 +221,7 @@ print(profile.to_json())
 
 `budget` is a **required** argument: a library consumer burning a user's
 GPU time must say how much. There is no silent default. The CLI supplies
-documented defaults — quick: 110 calls / 200k prompt tokens; full and
+documented defaults — quick: 130 calls / 220k prompt tokens; full and
 thorough: 500 calls / 1M — overridable with `--max-calls` /
 `--max-prompt-tokens`. Those cover the WORST case (a full run in which
 no codec cell decides early and every one runs to the 35-sample cap); a
@@ -231,7 +231,7 @@ defaults to `--full`.
 
 ## The profile
 
-One versioned JSON document (`assay_profile_version: 5`). Every field is
+One versioned JSON document (`assay_profile_version: 6`). Every field is
 a measurement, a `None` with a named reason, or provenance.
 
 | Field | What it says |

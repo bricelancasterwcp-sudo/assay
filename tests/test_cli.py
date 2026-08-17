@@ -58,21 +58,22 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
 
     assert code == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
-    assert payload["assay_profile_version"] == 5
+    assert payload["assay_profile_version"] == 6
     assert payload["ceiling"]["failure_mode"] == "none_up_to_cap"
     assert payload["verdicts"]["long_context"]["verdict"] == "ready"
     # The documented quick default budget was applied...
     assert payload["provenance"]["budget"] == {
-        "max_calls": 110,
-        "max_prompt_tokens": 200_000,
+        "max_calls": 130,
+        "max_prompt_tokens": 220_000,
     }
     # ...and it COVERS the whole quick suite (2 calibration + 5 ladder +
     # 9 shapes + 10 envelope + 45 codecs + 15 loop + 2 speed + 4
-    # long-output rungs = 92): the run must never exhaust the default
-    # budget on a well-behaved endpoint (spec §12 criterion 1). The loop
-    # family went 9 -> 15 BY DESIGN in v1.6: scripted-loop-v2 plays a
-    # two-turn error script alongside each three-turn golden run.
-    assert payload["provenance"]["spent"]["calls"] == 92
+    # long-output rungs + 10 tools = 102): the run must never exhaust the
+    # default budget on a well-behaved endpoint (spec §12 criterion 1).
+    # The loop family went 9 -> 15 BY DESIGN in v1.6 (scripted-loop-v2
+    # plays a two-turn error script alongside each three-turn golden run)
+    # and the tools family is new in v1.6.
+    assert payload["provenance"]["spent"]["calls"] == 102
     assert (payload["provenance"]["spent"]["prompt_tokens"]
             < payload["provenance"]["budget"]["max_prompt_tokens"])
     for codec in ("search_replace", "whole_file", "json_object"):
@@ -80,11 +81,28 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
             assert payload["codecs"][codec][grade]["n"] == 5, (codec, grade)
     assert payload["provenance"]["dropped"] == []
 
+    # The v1.6 families survive the document round trip end to end, with
+    # NON-None recovery/doom values: the error script is measured, not
+    # merely defaulted (Task 5 carry — these had never been pinned
+    # through the CLI).
+    assert payload["loop"]["recovery_rate"] == 1.0
+    assert payload["loop"]["doom_loop_rate"] == 0.0
+    assert payload["loop"]["n_error_runs"] == 3
+    assert payload["tools"]["supported"] is True
+    assert payload["tools"]["composite"] == 1.0
+    assert payload["tools"]["n_tasks"] == 5
+    assert payload["verdicts"]["tool_calling"]["verdict"] == "ready"
+    assert (payload["verdicts"]["loop_discipline"]["lens"]["instrument"]
+            == "scripted-loop-v2")
+    assert payload["verdicts"]["loop_discipline"]["lens"]["n_error_runs"] == 3
+
     # Human table on stdout; recording actually wrote a transcript.
     assert "assay profile" in capsys.readouterr().out
     rows = record.read_text(encoding="utf-8").strip().splitlines()
-    assert len(rows) == 92  # one recorded call per spent call
+    assert len(rows) == 102  # one recorded call per spent call
     assert json.loads(rows[0])["outcome"] == "reply"
+    # ...and the tool turns are recorded as tool turns, not as generates.
+    assert sum(json.loads(row).get("kind") == "chat_tools" for row in rows) == 10
 
 
 def test_exit_2_when_nothing_completed(monkeypatch, capsys):
@@ -138,9 +156,21 @@ def test_default_budget_for_the_default_mode_covers_the_worst_case():
     # The default mode's worst case is now thorough's old worst case
     # (a codec matrix that never decides early runs to the 315-call
     # cap); the default budget must cover it, not the old full suite.
+    # Full's worst case is 411 of 500 in v1.6 (+10 tools, +10 error-script
+    # turns), so it still has headroom and does not move.
     assert cli.DEFAULT_BUDGETS["full"].max_calls == 500
     assert cli.DEFAULT_BUDGETS["full"].max_prompt_tokens == 1_000_000
     assert cli.DEFAULT_BUDGETS["full"] == cli.DEFAULT_BUDGETS["thorough"]
+
+
+def test_the_quick_default_budget_was_raised_for_the_v1_6_families():
+    # PRE-REGISTERED (v1.6 plan): quick's worst case went 93 -> 109 with
+    # the tools family (+10) and the loop error script (+6), which is one
+    # call short of the old 110 default — a mid-family death on any run
+    # that hits the worst case. The raise is deliberate and pinned here
+    # so it cannot drift back.
+    assert cli.DEFAULT_BUDGETS["quick"].max_calls == 130
+    assert cli.DEFAULT_BUDGETS["quick"].max_prompt_tokens == 220_000
 
 
 @pytest.mark.parametrize("flags", [[], ["--full"], ["--thorough"]])
@@ -173,7 +203,13 @@ def test_codecs_subcommand_stops_sequentially_like_the_probe_command(
 
 def _diff_payload(**overrides):
     """A minimal raw profile payload: enough identity for the gate,
-    plus one exact-valued cell for a doctored copy to move."""
+    plus one exact-valued cell for a doctored copy to move.
+
+    The version stays 5 DELIBERATELY through the v6 bump: ``diff``
+    compares documents, never schema numbers, and a fixture that tracked
+    PROFILE_VERSION would quietly stop covering the case an operator
+    actually has — last month's profile against today's.
+    """
     payload = {
         "assay_profile_version": 5,
         "model": {"name": "fake-model", "quant": "Q8_0",

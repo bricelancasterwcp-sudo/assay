@@ -40,7 +40,9 @@ file is shown unchanged. Two more scored rates:
 
 A reply can be neither: reading the file again is no recovery, and it is
 no doom loop either. Both rates are None when the error script never ran
-— unmeasured is not zero. Every turn of BOTH scripts is a scored turn of
+— unmeasured is not zero — and ``n_error_runs`` carries the denominator
+they are over, because a budget-truncated 1/1 and a full 5/5 both read
+1.0 and nothing else in the family tells them apart. Every turn of BOTH scripts is a scored turn of
 the one instrument: they share the action-fidelity, repeat and anchor
 denominators, which is why ``n_turns`` counts five turns per run.
 """
@@ -154,6 +156,13 @@ class Loop:
     # measured zero" are different facts and must not collapse.
     recovery_rate: float | None = None    # error T2' patch applies AND parses
     doom_loop_rate: float | None = None   # error T2' re-emits the failure
+    #: Completed ERROR runs — the denominator the two rates above are
+    #: over. Without it a budget-truncated recovery_rate has an invisible
+    #: n: 1/1 and 5/5 both read 1.0, and only this number says which was
+    #: measured. An int (0 included, which is an honest count) on any
+    #: profile this schema writes; None only where the schema had no
+    #: such field, exactly like the rates.
+    n_error_runs: int | None = None
 
 
 def _parse_action(reply: str) -> tuple[str | None, str]:
@@ -326,7 +335,8 @@ def probe_loop(
 
     if tally.turns == 0:
         return Loop(action_fidelity=None, patch_rate=None, finish_rate=None,
-                    repeat_rate=None, anchor_violations=0, n_runs=0, n_turns=0)
+                    repeat_rate=None, anchor_violations=0, n_runs=0, n_turns=0,
+                    n_error_runs=0)
     return Loop(
         action_fidelity=tally.valid / tally.turns,
         patch_rate=(patched / golden_runs) if golden_runs else None,
@@ -337,4 +347,5 @@ def probe_loop(
         n_turns=tally.turns,
         recovery_rate=(recovered / error_runs) if error_runs else None,
         doom_loop_rate=(doomed / error_runs) if error_runs else None,
+        n_error_runs=error_runs,
     )

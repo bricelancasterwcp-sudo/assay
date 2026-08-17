@@ -17,7 +17,7 @@ from assay.profile import (PROFILE_VERSION, Profile, compute_verdicts,
                            render_table)
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
-             "speed", "loop", "long_output")
+             "speed", "loop", "long_output", "tools")
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _V1_PROFILE = (_REPO_ROOT / "docs/superpowers/evidence/live"
                / "qwen2.5-coder-7b-instruct-q8_0-quick.json")
@@ -75,10 +75,28 @@ def make_shapes():
                          failure_mode="ok_to_shape"),)
 
 
-def make_loop():
+def make_loop(**overrides):
+    """A scripted-loop-v2 measurement: both scripts ran, both scored.
+
+    n_turns is 15 rather than v1.4's 9 because the error script's two
+    turns per run join the same denominators (v1.6).
+    """
     from assay.loop import Loop
-    return Loop(action_fidelity=1.0, patch_rate=1.0, finish_rate=1.0,
-                repeat_rate=0.0, anchor_violations=0, n_runs=3, n_turns=9)
+    fields = dict(action_fidelity=1.0, patch_rate=1.0, finish_rate=1.0,
+                  repeat_rate=0.0, anchor_violations=0, n_runs=3, n_turns=15,
+                  recovery_rate=1.0, doom_loop_rate=0.0, n_error_runs=3)
+    fields.update(overrides)
+    return Loop(**fields)
+
+
+def make_tools(**overrides):
+    """A fully-measured tools family: five tasks, ten turns, all clean."""
+    from assay.tools import Tools
+    fields = dict(supported=True, call_rate=1.0, right_tool_rate=1.0,
+                  args_valid_rate=1.0, result_use_rate=1.0, composite=1.0,
+                  n_tasks=5, n_turns=10)
+    fields.update(overrides)
+    return Tools(**fields)
 
 
 def make_speed():
@@ -156,6 +174,7 @@ def make_profile(*, provenance_dropped: tuple[str, ...] = (), **overrides) -> Pr
         speed=make_speed(),
         loop=make_loop(),
         long_output=make_long_output(),
+        tools=make_tools(),
         verdicts={
             "structured_extraction": {"verdict": "ready", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "ready", "lens": {"landing": "test"}},
@@ -317,17 +336,294 @@ def test_render_omits_the_moe_marker_when_only_one_count_is_measured(half):
     assert "MoE" not in render_table(profile)
 
 
+# --- schema v6: the tools family -------------------------------------------
+
+
+def test_tools_is_a_profile_family_the_guard_covers():
+    # "tools" must be a FAMILY, not a loose field: the __post_init__
+    # guard is what makes an unmeasured family impossible to write
+    # silently, and a field outside _FAMILIES gets none of it.
+    from assay.profile import _FAMILIES as families
+
+    assert "tools" in families
+    with pytest.raises(ValueError, match="tools"):
+        make_profile(tools=None)
+
+
+def test_tools_round_trips_and_every_field_is_wired_into_the_payload():
+    from assay.tools import Tools
+
+    profile = make_profile()
+    payload = json.loads(profile.to_json())
+
+    assert set(payload["tools"]) == {
+        field.name for field in dataclasses.fields(Tools)}
+    restored = Profile.from_json(payload)
+    assert restored == profile
+    assert isinstance(restored.tools, Tools)
+    assert restored.tools.n_tasks == 5
+
+
+def test_an_unsupported_tools_family_round_trips_as_a_measurement():
+    # supported=False with every rate None is a CAPABILITY FACT, and it
+    # must survive serialization as one — not collapse into the
+    # "unmeasured" shape a None family has.
+    profile = make_profile(tools=make_tools(
+        supported=False, call_rate=None, right_tool_rate=None,
+        args_valid_rate=None, result_use_rate=None, composite=None,
+        n_tasks=0, n_turns=0))
+
+    restored = Profile.from_json(json.loads(profile.to_json()))
+
+    assert restored == profile
+    assert restored.tools.supported is False
+    assert restored.tools.composite is None
+
+
+def test_a_v5_payload_with_no_tools_key_parses_with_tools_dropped_named():
+    # A profile written one schema version ago has NO tools key at all —
+    # a different fact from a modern document writing null. It parses,
+    # tools reads None, and the absence is NAMED, exactly as every other
+    # post-v1 family's absence is.
+    payload = json.loads(make_profile().to_json())
+    del payload["tools"]
+    payload["assay_profile_version"] = 5
+
+    profile = Profile.from_json(payload)
+
+    assert profile.tools is None
+    assert any(entry.startswith("tools:")
+               for entry in profile.provenance["dropped"])
+    assert profile.loop is not None  # the v5 families still parsed
+
+
+def test_a_present_but_null_tools_family_still_has_to_be_named():
+    payload = json.loads(make_profile().to_json())
+    payload["tools"] = None
+    with pytest.raises(ValueError, match="tools"):
+        Profile.from_json(payload)
+
+
+def test_unmeasured_tools_is_unmeasured_with_a_lens_and_no_interval():
+    from assay.tools import TOOLS_INSTRUMENT, TOOLSET_NAME
+
+    entry = compute_verdicts(None, None, None, None)["tool_calling"]
+
+    assert entry["verdict"] == "unmeasured"
+    assert entry["provisional"] is False
+    assert entry["interval95"] is None
+    lens = entry["lens"]
+    assert lens["instrument"] == TOOLS_INSTRUMENT == "scripted-tools-v1"
+    assert lens["toolset"] == TOOLSET_NAME == "toolset-v1"
+    assert lens["stopping_rule"] == "fixed-n"
+    assert lens["temperature"] == 0.2
+    # None-vs-zero at the lens layer: nothing was measured, so there is
+    # no n_used at all and every rate is None, never 0.0.
+    assert "n_used" not in lens
+    for rate in ("call_rate", "right_tool_rate", "args_valid_rate",
+                 "result_use_rate"):
+        assert lens[rate] is None, rate
+
+
+def test_a_refused_tools_parameter_is_unsupported_not_unmeasured():
+    # The capability fact (spec v1.6 §1): the endpoint was ASKED and
+    # said no. Not "unmeasured" (we measured the refusal) and not
+    # "unusable" (the model was never asked to do the task).
+    tools = make_tools(supported=False, call_rate=None, right_tool_rate=None,
+                       args_valid_rate=None, result_use_rate=None,
+                       composite=None, n_tasks=0, n_turns=0)
+
+    entry = compute_verdicts(None, None, None, None, tools=tools)["tool_calling"]
+
+    assert entry["verdict"] == "unsupported"
+    assert entry["provisional"] is False
+    assert entry["interval95"] is None
+    assert "n_used" not in entry["lens"]
+
+
+@pytest.mark.parametrize(("composite", "expected"), [
+    (1.0, "ready"),
+    (0.9, "ready"),
+    (0.89, "risky"),
+    (0.6, "risky"),
+    (0.59, "unusable"),
+    (0.0, "unusable"),
+])
+def test_tool_calling_ladders_on_the_composite(composite, expected):
+    # The composite is the per-task AND of the three T1 criteria: a model
+    # that calls the right tool with junk arguments has not done the job,
+    # so the verdict may not ladder on call_rate.
+    tools = make_tools(composite=composite, call_rate=1.0, n_tasks=100,
+                       n_turns=200)
+
+    entry = compute_verdicts(None, None, None, None, tools=tools)["tool_calling"]
+
+    assert entry["verdict"] == expected
+
+
+def test_tool_calling_interval_is_wilson_over_the_composites_own_n():
+    # n_tasks, never n_turns: the composite is scored per TASK, and
+    # widening its denominator with the T2 turns would narrow the
+    # interval on evidence the composite never saw.
+    from assay.profile import wilson95
+
+    tools = make_tools(composite=0.8, n_tasks=5, n_turns=10)
+    entry = compute_verdicts(None, None, None, None, tools=tools)["tool_calling"]
+
+    lo, hi = wilson95(4, 5)
+    assert entry["interval95"] == [round(lo, 3), round(hi, 3)]
+    assert entry["lens"]["n_used"] == 5
+
+
+def test_five_of_five_tool_tasks_is_ready_but_provisional():
+    # Same rule as the codec verdicts: at n=5 the interval spans ready
+    # and risky, and the verdict has to say so.
+    entry = compute_verdicts(None, None, None, None,
+                             tools=make_tools())["tool_calling"]
+    assert entry["verdict"] == "ready"
+    assert entry["provisional"] is True
+
+    decided = compute_verdicts(
+        None, None, None, None,
+        tools=make_tools(composite=0.0, n_tasks=5))["tool_calling"]
+    assert decided["verdict"] == "unusable"
+    assert decided["provisional"] is False
+
+
+def test_the_tool_lens_carries_all_four_metric_rates():
+    tools = make_tools(call_rate=1.0, right_tool_rate=0.8,
+                       args_valid_rate=0.6, result_use_rate=0.4,
+                       composite=0.6)
+
+    lens = compute_verdicts(None, None, None, None,
+                            tools=tools)["tool_calling"]["lens"]
+
+    assert lens["call_rate"] == 1.0
+    assert lens["right_tool_rate"] == 0.8
+    assert lens["args_valid_rate"] == 0.6
+    assert lens["result_use_rate"] == 0.4
+
+
+def test_a_rate_that_was_never_measured_stays_none_beside_a_scored_composite():
+    # The prose-answer shape (Task 4): nothing was called, so there is no
+    # tool name and no arguments to judge — right_tool/args_valid are
+    # None while the composite is a real 0.0. A lens that wrote 0.0 there
+    # would claim a measurement of "called badly" that never happened.
+    tools = make_tools(call_rate=0.0, right_tool_rate=None,
+                       args_valid_rate=None, result_use_rate=0.0,
+                       composite=0.0, n_tasks=5, n_turns=10)
+
+    entry = compute_verdicts(None, None, None, None, tools=tools)["tool_calling"]
+
+    assert entry["verdict"] == "unusable"
+    assert entry["lens"]["right_tool_rate"] is None
+    assert entry["lens"]["args_valid_rate"] is None
+    assert entry["lens"]["call_rate"] == 0.0
+
+
+def test_render_table_carries_a_tools_line():
+    rendered = render_table(make_profile())
+    assert "tools" in rendered
+    assert "composite 1.00" in rendered
+
+    unmeasured = render_table(
+        make_profile(tools=None, provenance_dropped=("tools: budget exhausted",)))
+    assert "tools      unmeasured" in unmeasured
+
+    refused = render_table(make_profile(tools=make_tools(
+        supported=False, call_rate=None, right_tool_rate=None,
+        args_valid_rate=None, result_use_rate=None, composite=None,
+        n_tasks=0, n_turns=0)))
+    assert "tools      unsupported" in refused
+    assert "None" not in refused
+
+
+# --- schema v6: the loop error script in the schema and the verdict --------
+
+
+def test_loop_round_trips_the_error_script_fields():
+    from assay.loop import Loop
+
+    profile = make_profile()
+    payload = json.loads(profile.to_json())
+
+    assert set(payload["loop"]) == {
+        field.name for field in dataclasses.fields(Loop)}
+    restored = Profile.from_json(payload)
+    assert restored == profile
+    assert restored.loop.recovery_rate == 1.0
+    assert restored.loop.doom_loop_rate == 0.0
+    assert restored.loop.n_error_runs == 3
+
+
+def test_a_loop_payload_predating_the_error_script_parses_as_none():
+    # Every profile this project has written must still parse. A v1.4/v1.5
+    # loop has no recovery, doom or error-run keys at all, and they reload
+    # as None — "this schema had no such field" — never as zeros, which
+    # would read as a model that never recovered.
+    from assay.profile import _loop_from
+
+    loop = _loop_from({"action_fidelity": 1.0, "patch_rate": 1.0,
+                       "finish_rate": 1.0, "repeat_rate": 0.0,
+                       "anchor_violations": 0, "n_runs": 3, "n_turns": 9})
+
+    assert loop.recovery_rate is None
+    assert loop.doom_loop_rate is None
+    assert loop.n_error_runs is None
+
+
+def test_loop_lens_names_the_error_run_denominator():
+    # A partial-budget recovery_rate has an invisible denominator without
+    # this: 1/1 and 5/5 both read 1.0, and only the error-run count says
+    # which was measured (Task 5 carry).
+    lens = compute_verdicts(None, None, None, None, None,
+                            make_loop(n_error_runs=3))["loop_discipline"]["lens"]
+    assert lens["n_error_runs"] == 3
+    assert lens["instrument"] == "scripted-loop-v2"
+
+    unmeasured = compute_verdicts(None, None, None, None,
+                                  None)["loop_discipline"]["lens"]
+    assert unmeasured["n_error_runs"] is None
+
+
+@pytest.mark.parametrize(("recovery", "expected"), [
+    (1.0, "ready"),
+    (0.5, "ready"),      # the floor itself still passes
+    (0.49, "risky"),
+    (0.0, "risky"),
+    (None, "ready"),     # unmeasured demotes NOTHING
+])
+def test_loop_ready_demotes_on_a_measured_low_recovery(recovery, expected):
+    # Mirrors the patch-rate rule: a model with perfect action fidelity
+    # that cannot get out of a failed patch is not ready for a loop.
+    loop = make_loop(action_fidelity=1.0, patch_rate=1.0,
+                     recovery_rate=recovery,
+                     n_error_runs=None if recovery is None else 3)
+
+    entry = compute_verdicts(None, None, None, None, None, loop)["loop_discipline"]
+
+    assert entry["verdict"] == expected
+
+
+def test_the_recovery_demotion_never_promotes():
+    # A demotion rule may only move a verdict DOWN: perfect recovery does
+    # not rescue a model whose action fidelity is unusable.
+    loop = make_loop(action_fidelity=0.2, patch_rate=1.0, recovery_rate=1.0)
+    entry = compute_verdicts(None, None, None, None, None, loop)["loop_discipline"]
+    assert entry["verdict"] == "unusable"
+
+
 # --- schema v5: the long_output family -------------------------------------
 
 
 def test_schema_version_and_package_version_move_together():
     # The schema and the distribution version are one release, not two:
-    # a profile that says v5 must have been written by a 0.6.0 probe.
+    # a profile that says v6 must have been written by a 0.7.0 probe.
     import assay
 
-    assert PROFILE_VERSION == 5
-    assert assay.__version__ == "0.6.0"
-    assert 'version = "0.6.0"' in (
+    assert PROFILE_VERSION == 6
+    assert assay.__version__ == "0.7.0"
+    assert 'version = "0.7.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite
@@ -570,7 +866,7 @@ def test_a_committed_v1_profile_still_parses():
 
     assert profile.ceiling is not None  # a v1 family really parsed
     assert profile.geometry is not None
-    for family in ("ceiling_shapes", "speed", "loop", "long_output"):
+    for family in ("ceiling_shapes", "speed", "loop", "long_output", "tools"):
         assert getattr(profile, family) is None
         assert any(entry.startswith(f"{family}:")
                    for entry in profile.provenance["dropped"]), family
@@ -672,6 +968,7 @@ def test_unmeasured_inputs_yield_unmeasured_not_unusable():
         "chat_speed": "unmeasured",
         "agent_speed": "unmeasured",
         "long_output": "unmeasured",
+        "tool_calling": "unmeasured",
     }
     # v1.1: every verdict names its lens, even when unmeasured.
     for entry in verdicts.values():
@@ -710,6 +1007,7 @@ def test_all_none_families_construct_when_all_named():
         speed=None,
         loop=None,
         long_output=None,
+        tools=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},
@@ -733,6 +1031,7 @@ def test_render_table_names_unmeasured_not_zero():
         speed=None,
         loop=None,
         long_output=None,
+        tools=None,
         verdicts={
             "structured_extraction": {"verdict": "unmeasured", "lens": {"landing": "test"}},
             "patch_editing": {"verdict": "unmeasured", "lens": {"landing": "test"}},

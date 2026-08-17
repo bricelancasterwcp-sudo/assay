@@ -2,7 +2,7 @@
 
 Order: detect/build backend (recorded when asked) -> model_info ->
 geometry (pure, no model calls) -> calibrate -> ceiling -> envelope ->
-codecs -> verdicts -> Profile.
+codecs -> loop -> speed -> long_output -> tools -> verdicts -> Profile.
 
 Budget discipline: ``budget`` has NO default — a library consumer
 burning a user's GPU time must say how much (spec §9). Any probe
@@ -37,6 +37,7 @@ from assay.profile import (PROFILE_VERSION, Profile, best_patch_cell,
 from assay.replay import CallRecorder
 from assay.speed import Speed, probe_speed
 from assay.stats import LOOK_SCHEDULE
+from assay.tools import Tools, probe_tools
 
 
 @dataclass(frozen=True)
@@ -304,6 +305,7 @@ def probe(
     speed: Speed | None = None
     loop: Loop | None = None
     long_output: LongOutput | None = None
+    tools: Tools | None = None
 
     if budget_death is not None:
         dropped.append("codecs: skipped, budget exhausted earlier")
@@ -372,6 +374,24 @@ def probe(
                 "long_output: rungs ran but no reply was scorable — "
                 "the ladder measured nothing")
 
+    # tools runs LAST (v1.6). Order is a budget decision: on a meter that
+    # cannot pay for everything, the families that have carried verdicts
+    # since v1 keep their calls and the newest one goes hungry, visibly.
+    if budget_death is not None:
+        dropped.append("tools: skipped, budget exhausted earlier")
+    else:
+        # A ToolsUnsupported is classified and absorbed INSIDE
+        # probe_tools, which returns supported=False — a MEASURED
+        # capability. Nothing here catches it, and nothing here treats
+        # that value as a gap.
+        tools = probe_tools(active, meter)
+        if tools.supported is None:
+            # Never attempted: the meter refused the first charge. Not a
+            # refusal (that reads False) and not a partial (that keeps
+            # its honest n) — it is unmeasured, and it is named.
+            tools = None
+            dropped.append("tools: budget exhausted before any turn completed")
+
     if (
         budget_death is not None
         and geometry is None
@@ -403,8 +423,10 @@ def probe(
         speed=speed,
         loop=loop,
         long_output=long_output,
+        tools=tools,
         verdicts=compute_verdicts(
             geometry, ceiling, envelope, codecs, speed, loop, long_output,
+            tools,
             presentation=("custom" if directives is not None
                           else DEFAULT_PRESENTATION),
             stopping_rule=_stopping_rule(params.codec_look_schedule),

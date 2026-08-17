@@ -5,7 +5,7 @@ import json
 import pytest
 from fakes import (CodecFailingBackend, LongOutputDegradingBackend,
                    LongOutputTerseBackend, MetadataFreeBackend,
-                   ScriptedBackend)
+                   ScriptedBackend, ToolsUnsupportedBackend)
 
 from assay import Budget, Profile, probe
 
@@ -15,10 +15,13 @@ _VRAM_MIB = 14558
 # Quick mode against ScriptedBackend, call by call: 2 calibration,
 # 5 ladder sizes (1024..16384, one seed, no bisection when clean),
 # 10 envelope, 3 codecs x 3 grades x 5 = 45 codec probes.
-# +shapes +loop (v1.4), +4 long-output rungs (v1.5).
+# +shapes +loop (v1.4), +4 long-output rungs (v1.5), +10 tools (v1.6).
 # The loop term is 15, not 9, BY DESIGN (v1.6): scripted-loop-v2 plays a
 # 2-turn error script alongside each of the 3 golden 3-turn runs.
-_QUICK_CALLS_TOTAL = 2 + 5 + 9 + 10 + 45 + 15 + 2 + 4
+_QUICK_CALLS_LONG_OUTPUT = 4
+_QUICK_CALLS_TOOLS = 10  # 5 scripted tasks x 2 turns
+_QUICK_CALLS_TOTAL = (2 + 5 + 9 + 10 + 45 + 15 + 2
+                      + _QUICK_CALLS_LONG_OUTPUT + _QUICK_CALLS_TOOLS)
 _CALLS_THROUGH_CEILING = 2 + 5
 
 
@@ -75,7 +78,19 @@ def test_full_pipeline_produces_complete_profile():
         "chat_speed": "ready",
         "agent_speed": "ready",
         "long_output": "ready",
+        "tool_calling": "ready",
     }
+    # The tools family ran, and ran LAST: five tasks, two turns each.
+    assert profile.tools is not None
+    assert profile.tools.supported is True
+    assert profile.tools.composite == 1.0
+    assert (profile.tools.n_tasks, profile.tools.n_turns) == (5, 10)
+    assert profile.verdicts["tool_calling"]["lens"]["n_used"] == 5
+    # ...and the loop family's error script is in the profile with a
+    # visible denominator, not just in the rates.
+    assert profile.loop.recovery_rate == 1.0
+    assert profile.loop.doom_loop_rate == 0.0
+    assert profile.loop.n_error_runs == 3
     assert profile.speed is not None
     assert profile.speed.decode_tps == 16.0
     assert profile.speed.evidence == "server_timings"
@@ -514,7 +529,8 @@ def test_a_ladder_that_ran_no_rung_is_none_and_named():
     # every rung is skipped, nothing is measured, and the family is
     # None — named, never a silently empty ladder.
     backend = ScriptedBackend()
-    through_speed = _QUICK_CALLS_TOTAL - 4
+    through_speed = (_QUICK_CALLS_TOTAL - _QUICK_CALLS_LONG_OUTPUT
+                     - _QUICK_CALLS_TOOLS)
     profile = probe(
         _URL, "fake-model",
         budget=Budget(max_calls=through_speed, max_prompt_tokens=1_000_000),
@@ -526,6 +542,84 @@ def test_a_ladder_that_ran_no_rung_is_none_and_named():
     assert any(entry.startswith("long_output: no rung ran")
                for entry in profile.provenance["dropped"])
     assert profile.verdicts["long_output"]["verdict"] == "unmeasured"
+    # tools runs after long_output on the same dry meter: it attempts
+    # nothing, is None, and is NAMED.
+    assert profile.tools is None
+    assert "tools: budget exhausted before any turn completed" in (
+        profile.provenance["dropped"])
+
+
+# --- the tools family, last in the chain (v1.6) ----------------------------
+
+
+def test_tools_runs_last_after_the_long_output_ladder():
+    # Order is a budget fact, not a stylistic one: with exactly enough
+    # calls for everything through the ladder, the ladder is COMPLETE and
+    # tools is the family that goes hungry. Were the order reversed, the
+    # same budget would buy ten tool turns and a truncated ladder.
+    backend = ScriptedBackend()
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=_QUICK_CALLS_TOTAL - _QUICK_CALLS_TOOLS,
+                      max_prompt_tokens=1_000_000),
+        mode="quick", _backend_override=backend,
+    )
+    assert len(profile.long_output.rungs) == 4
+    assert all(rung.degenerate is False for rung in profile.long_output.rungs)
+    assert profile.tools is None
+    assert "tools: budget exhausted before any turn completed" in (
+        profile.provenance["dropped"])
+    assert profile.verdicts["tool_calling"]["verdict"] == "unmeasured"
+
+
+def test_tools_is_skipped_and_named_when_the_budget_died_earlier():
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=_CALLS_THROUGH_CEILING,
+                      max_prompt_tokens=100_000),
+        mode="quick", _backend_override=ScriptedBackend(),
+    )
+    assert profile.tools is None
+    assert "tools: skipped, budget exhausted earlier" in (
+        profile.provenance["dropped"])
+    assert profile.verdicts["tool_calling"]["verdict"] == "unmeasured"
+
+
+def test_a_tools_run_cut_off_mid_script_keeps_its_honest_partial():
+    # Five extra calls buy T1+T2 for two tasks and T1 for a third: the
+    # family is a MEASUREMENT at n_tasks=3, not None and not padded to 5.
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=_QUICK_CALLS_TOTAL - _QUICK_CALLS_TOOLS + 5,
+                      max_prompt_tokens=1_000_000),
+        mode="quick", _backend_override=ScriptedBackend(),
+    )
+    assert profile.tools is not None
+    assert profile.tools.supported is True
+    assert (profile.tools.n_tasks, profile.tools.n_turns) == (3, 5)
+    assert profile.verdicts["tool_calling"]["lens"]["n_used"] == 3
+
+
+def test_an_endpoint_that_refuses_tools_records_the_capability():
+    # A ToolsUnsupported is handled INSIDE probe_tools: the orchestrator
+    # sees an ordinary Tools value, keeps it (it is a measurement), and
+    # never names it in dropped.
+    backend = ToolsUnsupportedBackend()
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=1_000_000),
+        mode="quick", _backend_override=backend,
+    )
+    assert profile.tools is not None
+    assert profile.tools.supported is False
+    assert profile.tools.composite is None
+    assert profile.verdicts["tool_calling"]["verdict"] == "unsupported"
+    assert profile.verdicts["tool_calling"]["interval95"] is None
+    assert not any("tools" in entry for entry in profile.provenance["dropped"])
+    # One refused call, not ten: nine more refusals measure nothing new.
+    assert backend.calls == _QUICK_CALLS_TOTAL - _QUICK_CALLS_TOOLS + 1
+    # The whole profile still serializes, refusal and all.
+    assert Profile.from_json(json.loads(profile.to_json())) == profile
 
 
 def test_a_ladder_that_scored_nothing_is_named_in_dropped_and_kept():

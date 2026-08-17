@@ -67,7 +67,14 @@ def make_verdicts(**overrides):
 
 def make_profile(**overrides):
     """A small valid payload dict; every override is one flat keyword so
-    a test states only the thing it is varying."""
+    a test states only the thing it is varying.
+
+    ``assay_profile_version`` stays 5 DELIBERATELY through the v6 bump:
+    ``diff`` compares documents and never reads the schema number, and a
+    fixture that tracked PROFILE_VERSION would quietly stop covering the
+    case an operator actually has — last month's profile against
+    today's.
+    """
     model = {
         "name": overrides.pop("model_name", "qwen2.5-coder:7b"),
         "quant": overrides.pop("quant", "Q8_0"),
