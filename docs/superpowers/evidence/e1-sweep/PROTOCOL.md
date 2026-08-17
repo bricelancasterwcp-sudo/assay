@@ -63,9 +63,20 @@ Identity gate, both parts required for an AFFECTED/UNAFFECTED verdict:
 Exactly the confirmed-rows procedure: `plan_window` under the
 profile's OWN recorded `vram_free_mib`, `user_cap=None`, `kv_bits=16`,
 default overhead, `loaded=True` forced (a profile writes its geometry
-mid-run with its own model resident). Corrected `kv_kib_per_token` and
+mid-run with its own model resident).¹ Corrected `kv_kib_per_token` and
 `usable_window` are reported beside the committed values; committed
 profiles are **not edited**.
+
+¹ **Amended 2026-08-17, before the classifier ran** (original text
+stands above, struck by this footnote for probe 0.1.0 rows only):
+`loaded=True` is the condition for probe **0.3.0+** profiles. The six
+probe 0.1.0 (schema v1) rows were written by code that read geometry
+**pre-load** — the README's own v0.2 note records "geometry reads the
+post-load serving state" as a v1.1 *fix* — so their replay condition
+is `loaded=False` with the weights subtraction. The rule is keyed on
+`probe_version`, deterministic per row, never fitted per profile. This
+was caught from the committed record (README v0.2 section), not from
+any sweep number.
 
 ## Endpoints
 
