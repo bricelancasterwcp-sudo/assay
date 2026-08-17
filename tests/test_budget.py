@@ -185,6 +185,74 @@ def test_would_exceed_reports_the_seconds_ceiling_without_charging():
     assert meter.spent == Spend()
 
 
+# --- asking about a WHOLE family before it starts (v1.7) --------------
+#
+# A consumer that must not start what it cannot finish asks about the
+# batch, not about the next call: k concurrent lanes, or a family whose
+# declared worst case is 30 calls. One question, all three limits.
+
+
+def test_would_exceed_n_asks_about_a_whole_batch_of_calls():
+    meter = BudgetMeter(Budget(max_calls=4, max_prompt_tokens=100))
+    meter.charge(10)
+
+    # Exactly what is left fits; one call more does not.
+    assert meter.would_exceed_n(3, 30) is False
+    assert meter.would_exceed_n(4, 40) is True
+    # ...and the token meter answers the same question independently.
+    assert meter.would_exceed_n(2, 91) is True
+    assert meter.would_exceed_n(2, 90) is False
+
+    # Asking is free.
+    assert meter.spent == Spend(calls=1, prompt_tokens=10)
+
+
+def test_would_exceed_n_reports_the_seconds_ceiling_too():
+    # The gap this closes: a batch check that counted only calls and
+    # tokens would admit a k (or a family) the clock had already closed,
+    # charging for lanes that must never launch.
+    clock = _Clock([0.0, 60.001])
+    meter = BudgetMeter(
+        Budget(max_calls=1000, max_prompt_tokens=10**6, max_seconds=60.0),
+        clock=clock,
+    )
+
+    assert meter.would_exceed_n(2, 20) is True
+    assert meter.spent == Spend()
+
+
+def test_would_exceed_is_the_one_call_case_of_would_exceed_n():
+    meter = BudgetMeter(Budget(max_calls=2, max_prompt_tokens=50))
+    meter.charge(10)
+
+    for tokens in (5, 40, 41):
+        assert meter.would_exceed(tokens) is meter.would_exceed_n(1, tokens)
+
+
+def test_out_of_time_answers_for_the_clock_alone():
+    # A SECONDS-only predicate: the counts here are already spent to
+    # their limits, and it still answers about the clock — a caller that
+    # must name which ceiling stopped it cannot be handed a boolean that
+    # mixes them.
+    clock = _Clock([0.0, 10.0, 30.001])
+    meter = BudgetMeter(
+        Budget(max_calls=1, max_prompt_tokens=1, max_seconds=30.0), clock=clock
+    )
+
+    assert meter.out_of_time() is False
+    assert meter.out_of_time() is True
+    assert meter.spent == Spend()
+
+
+def test_out_of_time_without_a_ceiling_reads_no_clock():
+    clock = _Clock([0.0])  # the construction read, and no other
+    meter = BudgetMeter(Budget(max_calls=10, max_prompt_tokens=1000), clock=clock)
+
+    assert meter.out_of_time() is False
+    assert meter.would_exceed_n(5, 50) is False
+    assert clock.reads == 1
+
+
 def test_the_counts_limits_are_unchanged_by_a_seconds_ceiling():
     clock = _Clock([0.0, 1.0, 2.0, 3.0])
     meter = BudgetMeter(

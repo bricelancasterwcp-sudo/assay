@@ -376,6 +376,36 @@ def test_prompt_token_limit_refuses_a_k_all_or_nothing():
     assert result.skipped == ("k=4: budget refused 4 concurrent lanes",)
 
 
+def test_a_clock_that_trips_between_ks_keeps_the_k2_row_and_names_k4():
+    # The wall-clock ceiling (v1.7) is a THIRD limit, and this family's
+    # affordability question has to consult it: a k=4 admitted on a
+    # closed clock would charge four lanes, launch them, and then die
+    # mid-k — recording calls for lanes that never came back and
+    # discarding the k=2 row that was already measured. Refused BEFORE
+    # any lane launches, named like any other refused k.
+    fake = LaneFake({1720: timed_reply(30.0), 1721: timed_reply(30.0)})
+    # Time passes when the endpoint is CALLED: five seconds per lane, so
+    # k=2's two lanes put the run past a five-second ceiling.
+    tight = BudgetMeter(
+        Budget(max_calls=99, max_prompt_tokens=10**9, max_seconds=5.0),
+        clock=lambda: len(fake.requests) * 5.0,
+    )
+    runner = PinnedSpans(((0.0, 1.0), (0.1, 1.1)))
+
+    result = probe_parallel(
+        fake, tight, baseline_decode_tps=60.0, ks=(2, 4), runner=runner,
+    )
+
+    assert [row.k for row in result.rows] == [2]
+    assert result.rows[0].per_lane_decode_tps == 30.0
+    assert result.skipped == ("k=4: budget refused 4 concurrent lanes",)
+    # Two lanes launched and two lanes were charged: the clock closed the
+    # meter between the ks, never in the middle of one.
+    assert tight.spent.calls == 2
+    assert len(fake.requests) == 2
+    assert runner.calls == 1
+
+
 def test_budget_exhausted_before_any_k_propagates():
     dead = meter(calls=1)
     with pytest.raises(BudgetExhausted):

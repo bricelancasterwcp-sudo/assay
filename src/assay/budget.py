@@ -58,9 +58,38 @@ class BudgetMeter:
 
         Asking is free: the clock may be read, but nothing is recorded.
         """
+        return self.would_exceed_n(1, prompt_tokens)
+
+    def would_exceed_n(self, calls: int, prompt_tokens: int) -> bool:
+        """True if charging `calls` calls totalling `prompt_tokens` would cross
+        any limit — the question a caller asks about a WHOLE batch.
+
+        Two callers need it and both need all three limits in one answer:
+        the parallel family, which charges k lanes or none (half a k
+        answers a question nobody asked), and budget mode's family
+        preflight, which must not start a family it cannot finish. A
+        batch check that consulted only the counted limits would admit a
+        batch the clock had already closed, charge for it, and die in the
+        middle of it — recording calls that never happened and throwing
+        away what the run had already measured.
+
+        Asking is free: one clock reading when a ceiling exists, none
+        when it does not, and nothing recorded either way.
+        """
         return self._past_ceiling(self._elapsed()) or self._counts_would_exceed(
-            prompt_tokens
+            calls, prompt_tokens
         )
+
+    def out_of_time(self) -> bool:
+        """True once the wall-clock ceiling has been crossed — SECONDS ONLY.
+
+        Deliberately not a mixed answer: a caller that names the limit
+        which stopped it ("budget — seconds" vs "budget — would exceed
+        remaining") cannot do so from a boolean that folds three limits
+        together. False forever when no ceiling was set, and the clock is
+        not consulted on that path.
+        """
+        return self._past_ceiling(self._elapsed())
 
     def charge(self, prompt_tokens: int) -> None:
         """Record one call of `prompt_tokens`, or raise `BudgetExhausted`.
@@ -71,7 +100,7 @@ class BudgetMeter:
         elapsed = self._elapsed()
         if self._past_ceiling(elapsed):
             raise BudgetExhausted("budget exhausted: seconds")
-        if self._counts_would_exceed(prompt_tokens):
+        if self._counts_would_exceed(1, prompt_tokens):
             raise BudgetExhausted(
                 f"charge of 1 call / {prompt_tokens} prompt tokens would exceed "
                 f"budget (max_calls={self.budget.max_calls}, "
@@ -84,9 +113,9 @@ class BudgetMeter:
         if elapsed is not None:
             self.spent.seconds = elapsed
 
-    def _counts_would_exceed(self, prompt_tokens: int) -> bool:
+    def _counts_would_exceed(self, calls: int, prompt_tokens: int) -> bool:
         return (
-            self.spent.calls + 1 > self.budget.max_calls
+            self.spent.calls + calls > self.budget.max_calls
             or self.spent.prompt_tokens + prompt_tokens > self.budget.max_prompt_tokens
         )
 

@@ -171,12 +171,16 @@ def _affordable(meter: BudgetMeter, lanes: int, prompt_tokens: int) -> bool:
     ``spent`` is the run's evidence of what the box was actually asked
     to do. Half a k is not a smaller k, either — three lanes of a
     four-lane look would answer a question nobody asked.
+
+    The question goes to the METER rather than being re-derived here
+    (v1.7). A hand-rolled comparison against two budget fields knows
+    nothing about the third: once ``max_seconds`` existed, this function
+    admitted a k the clock had already closed, charged its lanes, and
+    let ``charge`` raise in the middle of the k — which recorded calls
+    for lanes that never launched and threw away the k the run HAD
+    measured. One batch question, all three limits.
     """
-    return (
-        meter.spent.calls + lanes <= meter.budget.max_calls
-        and meter.spent.prompt_tokens + lanes * prompt_tokens
-        <= meter.budget.max_prompt_tokens
-    )
+    return not meter.would_exceed_n(lanes, lanes * prompt_tokens)
 
 
 def classify_mode(
