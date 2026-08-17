@@ -211,12 +211,17 @@ def _tools_from(payload: dict | None) -> Tools | None:
 def _parallel_from(payload: dict | None) -> Parallel | None:
     if payload is None:
         return None
-    # JSON has no tuples: the rows and each row's lane errors come back
-    # as lists and must be coerced, or a round-tripped profile stops
-    # comparing equal to itself — the same rule the rungs and the speed
-    # samples follow. The lane errors are the row's only sequence, and
-    # they are never dropped or summarized: an errored lane is
-    # infrastructure evidence, and the document is where it survives.
+    # JSON has no tuples: the rows, each row's lane errors and the
+    # skipped ks come back as lists and must be coerced, or a
+    # round-tripped profile stops comparing equal to itself — the same
+    # rule the rungs and the speed samples follow. Neither list is ever
+    # dropped or summarized: an errored lane is infrastructure evidence
+    # and a refused k is a budget finding, and the document is where both
+    # survive.
+    #
+    # ``skipped`` is read with ``.get``, the ``stopping_rule``
+    # convention: a payload written before the list existed named no
+    # skipped k, and the field's own default says exactly that.
     return Parallel(
         rows=tuple(
             ParallelRow(**{**row, "lane_errors": tuple(row["lane_errors"])})
@@ -225,6 +230,7 @@ def _parallel_from(payload: dict | None) -> Parallel | None:
         baseline_decode_tps=payload["baseline_decode_tps"],
         tolerance_s=payload["tolerance_s"],
         tolerance_provenance=payload["tolerance_provenance"],
+        skipped=tuple(payload.get("skipped") or ()),
     )
 
 
@@ -850,6 +856,34 @@ def _render_tools(tools: Tools | None) -> str:
     )
 
 
+def _render_parallel(parallel: Parallel | None) -> str:
+    """One line per profile, one cell per k: mode, per-lane rate, ratio.
+
+    The family was measured but invisible here until v1.7 fixed it, and
+    the failure had the truth exactly inverted: quick NAMES the family it
+    does not run (so an unmeasured profile printed "parallel: quick
+    mode ..." in its dropped line) while a full run that measured both k
+    rows printed nothing at all.
+
+    Every cell goes through ``_show``/``_rate``, so a k whose lanes all
+    errored says "unmeasured" three times rather than printing zeros —
+    0.00 tok/s would report an unreachable endpoint as a very slow one.
+    The refused ks ride at the end of the line exactly as long_output's
+    skipped rungs do: what did not run belongs beside what did.
+    """
+    if parallel is None:
+        return "parallel   unmeasured"
+    cells = [
+        f"k={row.k} {_show(row.mode)} {_rate(row.per_lane_decode_tps)} tok/s"
+        f" ({_rate(row.degradation_ratio)} of 1 lane)"
+        for row in parallel.rows
+    ]
+    line = "parallel   " + (" | ".join(cells) if cells else "no k measured")
+    if parallel.skipped:
+        line += " | skipped " + "; ".join(parallel.skipped)
+    return line
+
+
 def _verdict_word(entry: object) -> str:
     """The verdict word, from either schema.
 
@@ -905,6 +939,9 @@ def render_table(profile: Profile) -> str:
          f"({profile.speed.evidence})"),
         _render_long_output(profile.long_output),
         _render_tools(profile.tools),
+        # Beside speed, whose single-lane decode rate is the number every
+        # ratio on this line is measured against.
+        _render_parallel(profile.parallel),
         "verdicts   "
         + " | ".join(f"{name}: {_verdict_word(entry)}"
                      for name, entry in profile.verdicts.items()),

@@ -388,8 +388,6 @@ def _parallel_grid(parallel: dict | None) -> str:
             f"{_num(parallel.get('baseline_decode_tps'))} tok/s · overlap "
             f"tolerance {_num(parallel.get('tolerance_s'))}s "
             f"({_word(parallel.get('tolerance_provenance'))})</p>")
-    if not rows:
-        return head + '<p class="k">no k was measured</p>'
     body = "".join(
         f'<tr><td class="mono">{_num(r.get("k"), "g")}</td>'
         f'<td>{_word(r.get("mode"))}</td>'
@@ -409,6 +407,15 @@ def _parallel_grid(parallel: dict | None) -> str:
         items = "".join(f"<li>{_esc(e)}</li>" for e in errors)
         tail = ('<p class="dropped">lanes that errored:</p>'
                 f'<ul class="dropped">{items}</ul>')
+    skipped = parallel.get("skipped") or []
+    if skipped:
+        # The rung grid's idiom: a k the meter refused is not a k that
+        # came back clean, and an absent row says neither.
+        items = "".join(f"<li>{_esc(s)}</li>" for s in skipped)
+        tail += ('<p class="dropped">k values skipped:</p>'
+                 f'<ul class="dropped">{items}</ul>')
+    if not body:
+        return head + '<p class="k">no k was measured</p>' + tail
     return (head + '<table class="grid"><tr><th>concurrent lanes</th>'
             '<th>mode</th><th>per-lane tok/s</th><th>total tok/s</th>'
             '<th>vs 1 lane</th><th>lanes ok</th><th>evidence</th></tr>'

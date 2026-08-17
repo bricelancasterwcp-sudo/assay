@@ -26,9 +26,9 @@ _QUICK_CALLS_TOTAL = (2 + 5 + 9 + 10 + _QUICK_CALLS_CODECS + 15 + 2
                       + _QUICK_CALLS_LONG_OUTPUT + _QUICK_CALLS_TOOLS)
 _CALLS_THROUGH_CEILING = 2 + 5
 
-# Headroom for a CLEAN full run against these fakes, which is 546 calls
-# in v1.7 (12 codec cells to the 35-sample cap + 40 tools turns + the
-# rest). This is test headroom, deliberately above the shipped default
+# Headroom for a CLEAN full run against these fakes, which is 552 calls
+# in v1.7 (12 codec cells to the 35-sample cap + 40 tools turns + 6
+# parallel lanes + the rest). This is test headroom, above the default
 # in cli.DEFAULT_BUDGETS — these tests are about the mode table and the
 # families, not about what the default budget covers.
 _CLEAN_FULL_RUN_HEADROOM = 700
@@ -751,6 +751,8 @@ def test_full_mode_measures_parallel_against_this_run_s_own_baseline():
         assert row.n_lanes_ok == row.k, row
         assert row.lane_errors == (), row
         assert row.evidence == "server_timings", row
+    # Both configured k values were affordable, so no k is named skipped.
+    assert profile.parallel.skipped == ()
     assert profile.provenance["dropped"] == []
     # The family survives the document contract with the rest of them.
     assert Profile.from_json(json.loads(profile.to_json())) == profile

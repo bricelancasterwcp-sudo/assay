@@ -345,6 +345,12 @@ def test_meter_refusal_at_k4_keeps_the_k2_row_and_skips_k4():
         runner=runner,
     )
     assert [row.k for row in result.rows] == [2]
+    # ...and the k that did NOT run is NAMED. An absent row cannot say
+    # whether k=4 was never asked for, was refused by the meter, or was
+    # simply not in this run's ks — three different findings that read
+    # identically as "one row". The measured row survives beside it.
+    assert result.skipped == ("k=4: budget refused 4 concurrent lanes",)
+    assert result.rows[0].per_lane_decode_tps == 30.0
     # Nothing was charged for the k the probe never ran.
     assert tight.spent.calls == 2
     assert runner.calls == 1
@@ -365,6 +371,9 @@ def test_prompt_token_limit_refuses_a_k_all_or_nothing():
     # partial charge is never made, so the third lane's tokens stay
     # unspent rather than paying for lanes that never launched.
     assert tight.spent.prompt_tokens == per_lane_tokens * 2
+    # The token meter refuses by the same rule and names the k the same
+    # way: a skipped k is a budget finding whichever meter stopped it.
+    assert result.skipped == ("k=4: budget refused 4 concurrent lanes",)
 
 
 def test_budget_exhausted_before_any_k_propagates():
@@ -425,6 +434,11 @@ def test_result_carries_the_tolerance_and_its_chosen_provenance():
     assert isinstance(result.rows[0], ParallelRow)
     assert isinstance(result.rows, tuple)
     assert result.baseline_decode_tps == 60.0
+    # Every k the run asked for ran, so nothing is named skipped. The
+    # empty tuple is the measured claim "no k was refused" — the field
+    # is never absent, because a reader must be able to tell that from a
+    # run whose budget quietly dropped a k.
+    assert result.skipped == ()
     assert result.tolerance_s == OVERLAP_TOLERANCE_S
     # A CHOSEN threshold travels with the fact that it was chosen, so a
     # reader never mistakes it for a derived one.

@@ -95,6 +95,13 @@ class Parallel:
     baseline_decode_tps: float
     tolerance_s: float                  # == OVERLAP_TOLERANCE_S as run
     tolerance_provenance: str           # == TOLERANCE_PROVENANCE
+    # The k values the meter refused, NAMED — ``LongOutput.skipped``'s
+    # rule applied here. An absent row is silent about why it is absent:
+    # "only k=2 was asked for", "k=4 was refused by the budget" and "this
+    # run used different ks" all read as one row and mean three different
+    # things. Defaulted, so a document written before the list existed
+    # parses as the honest "no k was named skipped".
+    skipped: tuple[str, ...] = ()
 
 
 def _threaded_runner(clock: Callable[[], float]) -> Runner:
@@ -280,18 +287,22 @@ def probe_parallel(
 
     Budget: each k is charged in full before any of its lanes launches.
     A k the meter refuses is skipped — its row is absent rather than
-    empty, because a k that never ran measured nothing. Refusal before
-    ANY k has run propagates ``BudgetExhausted`` so the caller drops the
-    whole family by name.
+    empty, because a k that never ran measured nothing — and NAMED in
+    ``skipped``, because an absent row cannot say whether the k was
+    refused or never asked for. Refusal before ANY k has run propagates
+    ``BudgetExhausted`` so the caller drops the whole family by name.
     """
     run = runner if runner is not None else _threaded_runner(clock)
     lane_tokens = max(1, len(DECODE_PROMPT) // 3)
     rows: list[ParallelRow] = []
+    skipped: list[str] = []
 
     for k in ks:
         if not _affordable(meter, k, lane_tokens):
             if rows:
-                continue  # this k is skipped; what was measured stands
+                # This k is skipped and SAID SO; what was measured stands.
+                skipped.append(f"k={k}: budget refused {k} concurrent lanes")
+                continue
             raise BudgetExhausted(
                 f"parallel: k={k} needs {k} calls / {k * lane_tokens} prompt "
                 f"tokens and the budget refused before any lane ran; spent so "
@@ -313,4 +324,5 @@ def probe_parallel(
         baseline_decode_tps=baseline_decode_tps,
         tolerance_s=OVERLAP_TOLERANCE_S,
         tolerance_provenance=TOLERANCE_PROVENANCE,
+        skipped=tuple(skipped),
     )

@@ -379,6 +379,18 @@ def test_parallel_grid_dashes_what_a_k_could_not_measure():
     assert "lane 0: InfrastructureError: connection refused" in html
 
 
+def test_parallel_grid_names_the_ks_the_meter_refused():
+    # The rung grid's idiom, for the same reason: a k that never ran is
+    # not a k that ran cleanly, and an absent row says neither.
+    row = make_parallel().rows[0]
+    html = render_report([profile_dict(parallel=make_parallel(
+        rows=(row,), skipped=("k=4: budget refused 4 concurrent lanes",)))])
+
+    assert "k=4: budget refused 4 concurrent lanes" in html
+    # ...and the k that DID run is still on the page beside it.
+    assert "<td>parallel</td>" in _parallel_grid(html)
+
+
 def test_parallel_absent_from_the_schema_reads_unmeasured_not_a_crash():
     # Every profile written before v1.7 has no parallel key at all; the
     # page renders them, so a missing family is a schema fact, not a

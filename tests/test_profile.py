@@ -651,6 +651,67 @@ def test_render_table_carries_a_tools_line():
     assert "None" not in refused
 
 
+def _table_line(rendered: str, prefix: str) -> str:
+    """The one line of the human table that starts with ``prefix``."""
+    return next(line for line in rendered.splitlines()
+                if line.startswith(prefix))
+
+
+def test_render_table_carries_a_parallel_line():
+    """The human view used to show this family ONLY when it was ABSENT.
+
+    Quick names the family it does not run, so a quick profile printed
+    "parallel: quick mode ..." in its dropped line — while a full
+    profile that measured both k rows printed nothing at all. The one
+    view a human reads had the truth exactly inverted.
+    """
+    rendered = render_table(make_profile())
+
+    line = _table_line(rendered, "parallel")
+    assert "k=2 parallel 12.00 tok/s (0.75 of 1 lane)" in line
+    assert "k=4 serialized 4.00 tok/s (0.25 of 1 lane)" in line
+
+    unmeasured = render_table(make_profile(
+        parallel=None, provenance_dropped=("parallel: budget exhausted",)))
+    assert "parallel   unmeasured" in unmeasured
+
+
+def test_render_table_names_the_ks_the_meter_refused():
+    # long_output's idiom, for the same reason: what did NOT run belongs
+    # beside what did, or a two-k family that could only afford one k
+    # reads as a one-k family.
+    row = make_parallel().rows[0]
+    profile = make_profile(parallel=make_parallel(
+        rows=(row,), skipped=("k=4: budget refused 4 concurrent lanes",)))
+
+    line = _table_line(render_table(profile), "parallel")
+
+    assert "k=2 parallel" in line
+    assert "skipped k=4: budget refused 4 concurrent lanes" in line
+
+
+def test_render_table_says_unmeasured_for_a_k_that_measured_nothing():
+    # Every lane errored: no rate, no ratio, no mode. Said in words on
+    # the line, never printed as a zero (which would report an
+    # unreachable endpoint as a very slow one) and never as Python's
+    # None.
+    from assay.parallel import ParallelRow
+
+    dead = ParallelRow(
+        k=4, per_lane_decode_tps=None, total_throughput_tps=None,
+        degradation_ratio=None, mode=None, n_lanes_ok=0,
+        lane_errors=("lane 0: InfrastructureError: connection refused",),
+        evidence="unmeasured")
+
+    line = _table_line(
+        render_table(make_profile(parallel=make_parallel(rows=(dead,)))),
+        "parallel")
+
+    assert "k=4 unmeasured unmeasured tok/s (unmeasured of 1 lane)" in line
+    assert "0.0" not in line
+    assert "None" not in line
+
+
 # --- v1.7: the parallel family in the schema -------------------------------
 
 
@@ -731,6 +792,41 @@ def test_a_present_but_null_parallel_family_still_has_to_be_named():
     payload["parallel"] = None
     with pytest.raises(ValueError, match="parallel"):
         Profile.from_json(payload)
+
+
+def test_parallel_skipped_ks_survive_the_round_trip_as_tuples():
+    # The k the meter refused is a finding, and it has to reach the
+    # document as one: a run that measured k=2 and could not afford k=4
+    # must not read like a run that only ever asked for k=2.
+    from assay.parallel import ParallelRow
+
+    measured = ParallelRow(
+        k=2, per_lane_decode_tps=12.0, total_throughput_tps=24.0,
+        degradation_ratio=0.75, mode="parallel", n_lanes_ok=2,
+        lane_errors=(), evidence="server_timings")
+    profile = make_profile(parallel=make_parallel(
+        rows=(measured,),
+        skipped=("k=4: budget refused 4 concurrent lanes",)))
+
+    restored = Profile.from_json(json.loads(profile.to_json()))
+
+    assert restored == profile
+    assert isinstance(restored.parallel.skipped, tuple)
+    assert restored.parallel.skipped == (
+        "k=4: budget refused 4 concurrent lanes",)
+    assert [row.k for row in restored.parallel.rows] == [2]
+
+
+def test_a_parallel_payload_predating_the_skipped_list_parses_as_empty():
+    # The `stopping_rule` convention: a field added later reads its
+    # DEFAULT, which here is the honest one — a document written before
+    # the list existed named no skipped k, and () says exactly that.
+    from assay.profile import _parallel_from
+
+    payload = json.loads(make_profile().to_json())["parallel"]
+    del payload["skipped"]
+
+    assert _parallel_from(payload).skipped == ()
 
 
 def test_the_parallel_family_carries_no_verdict():
