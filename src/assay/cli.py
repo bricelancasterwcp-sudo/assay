@@ -194,18 +194,29 @@ def _build_parser() -> argparse.ArgumentParser:
                  "sequential cap)",
         )
         sub.set_defaults(mode="full", mode_flag_given=False)
-        sub.add_argument(
-            "--budget-calls", type=int, metavar="N",
-            help="BUDGET MODE: measure the pre-registered family priority "
-                 "under a ceiling of N model calls, dropping by name every "
-                 "family that does not fit (implies budget mode)",
-        )
-        sub.add_argument(
-            "--budget-seconds", type=float, metavar="S",
-            help="BUDGET MODE: stop starting families after S wall-clock "
-                 "seconds; checked between calls, never mid-call "
-                 "(implies budget mode; combines with --budget-calls)",
-        )
+        if name == "probe":
+            # PROBE ONLY, and that is the whole point of the mode: the
+            # budget flags promise a priority-ordered run that drops
+            # whole families by name, and only ``probe`` runs that
+            # orchestrator. On a family subcommand the same flag would
+            # charge calibration and then truncate the one family the
+            # command exists to run — the started-and-truncated family
+            # budget mode was written to forbid, under a flag whose help
+            # says otherwise. Unknown here, so argparse refuses it.
+            sub.add_argument(
+                "--budget-calls", type=int, metavar="N",
+                help="BUDGET MODE: measure the pre-registered family "
+                     "priority under a ceiling of N model calls, dropping "
+                     "by name every family that does not fit (implies "
+                     "budget mode)",
+            )
+            sub.add_argument(
+                "--budget-seconds", type=float, metavar="S",
+                help="BUDGET MODE: stop starting families after S "
+                     "wall-clock seconds; checked between calls, never "
+                     "mid-call (implies budget mode; combines with "
+                     "--budget-calls)",
+            )
         sub.add_argument(
             "--backend", choices=("ollama", "openai"),
             help="force the backend kind instead of auto-detecting",
@@ -395,6 +406,9 @@ def _apply_budget_mode(parser: argparse.ArgumentParser,
     --thorough would leave the profile's own provenance unable to say
     which mode measured it, so argparse refuses the invocation the way
     it refuses any other mutually exclusive pair.
+
+    Only ``probe`` defines the flags at all (``_build_parser``), so this
+    is only ever asked about the command that implements the mode.
     """
     if args.budget_calls is None and args.budget_seconds is None:
         return
@@ -416,10 +430,14 @@ def _budget_for(args: argparse.Namespace) -> Budget:
     # The budget flags are the mode's own ceilings, so they are applied
     # last: a run that names both --max-calls and --budget-calls asked
     # for budget mode, and budget mode's ceiling is the one it gets.
-    if args.budget_calls is not None:
-        budget = dataclasses.replace(budget, max_calls=args.budget_calls)
-    if args.budget_seconds is not None:
-        budget = dataclasses.replace(budget, max_seconds=args.budget_seconds)
+    # ``getattr``: only the probe subparser defines them, because only
+    # probe runs the orchestrator that honours them.
+    budget_calls = getattr(args, "budget_calls", None)
+    budget_seconds = getattr(args, "budget_seconds", None)
+    if budget_calls is not None:
+        budget = dataclasses.replace(budget, max_calls=budget_calls)
+    if budget_seconds is not None:
+        budget = dataclasses.replace(budget, max_seconds=budget_seconds)
     return budget
 
 
@@ -499,7 +517,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     # Only the measuring commands take a budget; report and diff read
     # files that already exist and never touch an endpoint.
-    if args.command in _COMMANDS:
+    if args.command == "probe":
         _apply_budget_mode(parser, args)
     budget = _budget_for(args) if args.command in _COMMANDS else None
     try:

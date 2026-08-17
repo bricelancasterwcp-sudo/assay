@@ -708,6 +708,14 @@ schedules — because its scarce resource is coverage, not depth. Whatever
 it did not buy reads `unmeasured` through the same None-vs-zero path as
 any other unmeasured family.
 
+One difference from `--quick` shows up in a **diff** rather than in an
+error: budget mode narrows the ceiling ladder by the model's
+`training_ctx` (as `--full` does and `--quick` does not), which is what
+lets its preflight reserve half as much on the small-context models
+where a consumer's budget is tightest. On such a model a budget profile
+can therefore report a lower `ceiling.max_verified` than a quick profile
+of the same endpoint — a mode artifact, not a regression.
+
 The long-output ladder is the one family whose charge is dominated by
 **generation** rather than prompt: a 4096-token rung shares the context
 window with its prompt and is not the same load as a 512-token one, so

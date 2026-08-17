@@ -325,6 +325,29 @@ def test_a_budget_flag_and_a_mode_flag_is_an_error(mode_flag, monkeypatch,
     assert "budget" in capsys.readouterr().err.lower()
 
 
+@pytest.mark.parametrize("command", ["geometry", "ceiling", "envelope",
+                                     "codecs"])
+@pytest.mark.parametrize("flag", ["--budget-calls", "--budget-seconds"])
+def test_the_budget_flags_exist_only_on_the_command_that_implements_them(
+    command, flag, monkeypatch, capsys
+):
+    # The flags promise a priority-ordered run that drops whole families
+    # by name, and only `probe` runs that orchestrator. On a family
+    # subcommand the same flag would charge calibration and then TRUNCATE
+    # the single family the command exists to run — exactly what budget
+    # mode forbids, under a flag whose help says it does not. Unknown
+    # here, so argparse refuses the invocation and nothing is probed.
+    backend = ScriptedBackend()
+    _use_backend(monkeypatch, backend)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main([command, _URL, "--model", "fake-model", flag, "3"])
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments" in capsys.readouterr().err
+    assert backend.calls == 0
+
+
 def test_budget_mode_exits_2_when_it_could_measure_nothing(monkeypatch,
                                                            capsys):
     # A budget below the entry fee against a backend with no metadata:

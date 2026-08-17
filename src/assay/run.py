@@ -123,6 +123,17 @@ MODE_PARAMS = {
 # deciding one cell to n=35 while the ceiling, the loop and the tools
 # families went unmeasured. What differs is the ORDER and the preflight
 # (``PRIORITY``, ``_probe_budget``), not the sampling.
+#
+# ONE CONSEQUENCE WORTH KNOWING, because it shows up in a diff rather
+# than in an error: budget shares quick's numbers but NOT quick's ladder
+# cap rule — ``ceiling_cap_for`` narrows every non-quick mode by the
+# model's training_ctx, so on a small-context model budget's ladder
+# stops where quick's would have gone on (training_ctx 8192: budget caps
+# at 8192, quick at 16384). That is deliberate — the narrower cap is
+# what makes the ceiling preflight reserve half as much on the models
+# where a consumer's budget is tightest — but it means a quick-to-budget
+# comparison can show ``ceiling.max_verified`` falling for a model that
+# did not change: read it as a mode artifact, not a regression.
 MODE_PARAMS["budget"] = MODE_PARAMS["quick"]
 
 
