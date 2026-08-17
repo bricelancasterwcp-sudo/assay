@@ -7,6 +7,7 @@ import pytest
 from assay.backends.base import BackendCaps, Reply
 from assay.budget import Budget, BudgetMeter
 from assay.ceiling import (
+    CALIBRATION_CALLS,
     Calibration,
     build_filler,
     calibrate,
@@ -510,7 +511,9 @@ def test_calibrate_measures_chars_per_token_and_determinism():
     assert cal.counts_available is True
     assert cal.chars_per_token == pytest.approx(4.0, rel=0.01)
     assert cal.deterministic is True
-    assert meter.spent.calls == 2  # one probe + one repeat, both charged
+    # One probe + one repeat, both charged — and the number the cost
+    # table declares for the family is THIS number, not a second count.
+    assert meter.spent.calls == 2 == CALIBRATION_CALLS
 
 
 def test_calibrate_requests_a_covering_num_ctx_when_available():
@@ -537,3 +540,74 @@ def test_calibrate_without_counts_reports_none_not_a_guess():
     assert cal.chars_per_token is None
     assert cal.counts_available is False
     assert cal.deterministic is True
+
+
+# --- what the family COSTS: the ladder enumeration and the bisection ------
+
+
+def test_ladder_steps_are_the_sizes_the_ladder_walks():
+    """The declared cost of the family reads this enumeration, so the
+    enumeration has to be the one the probe itself walks — not a second
+    copy of `1024 doubling to the cap` living in a cost table."""
+    from assay.ceiling import ladder_steps
+
+    assert ladder_steps(16384) == (1024, 2048, 4096, 8192, 16384)
+    assert ladder_steps(32768) == (1024, 2048, 4096, 8192, 16384, 32768)
+    # A cap under the first rung enumerates nothing: the ladder has no
+    # size it could send, and 0 is the honest cost of that.
+    assert ladder_steps(512) == ()
+    # Not a power of two: the last rung is the largest that FITS.
+    assert ladder_steps(5000) == (1024, 2048, 4096)
+
+    backend = HonestBackend()
+    ceiling = probe_ceiling(backend, _meter(), cap_tokens=16384, seeds=(0, 1),
+                            calibration=CAL)
+    assert ceiling.failure_mode == "none_up_to_cap"
+    assert tuple(sorted({e.est_tokens for e in ceiling.evidence})) == ladder_steps(16384)
+    assert len(ceiling.evidence) == len(ladder_steps(16384)) * 2
+
+
+def test_bisection_never_costs_more_than_its_declared_worst_case():
+    """The one family whose cost depends on what the endpoint DOES.
+
+    A clean ladder walks every rung and bisects nothing; a failing one
+    stops early and bisects instead. The extra is declared here, and this
+    test drives a failure at every rung the ladder can reach to prove no
+    outcome beats the declaration — and that some outcome reaches it, so
+    the number is the worst case rather than a comfortable over-estimate.
+    """
+    from assay.ceiling import bisection_worst_case_steps, ladder_steps
+
+    cap = 16384
+    declared = bisection_worst_case_steps(cap)
+    observed = []
+    for rung in ladder_steps(cap):
+        # The endpoint's real ceiling sits JUST above the rung below —
+        # the worst place for it, because then every midpoint fails and
+        # the interval creeps down toward `lo`, where the settle
+        # tolerance (10%, floor 256) is at its tightest. +64 covers the
+        # ~35 tokens of canary instruction riding on every probe.
+        backend = MixedSignalBackend(hard_error_seeds=(),
+                                     threshold=rung // 2 + 64)
+        meter = _meter()
+        ceiling = probe_ceiling(backend, meter, cap_tokens=cap, seeds=(0,),
+                                calibration=CAL)
+        assert ceiling.first_failure is not None
+        rungs = [e for e in ceiling.evidence if e.est_tokens in ladder_steps(cap)]
+        bisection = meter.spent.calls - len(rungs)
+        assert bisection <= declared, rung
+        observed.append(bisection)
+
+    assert max(observed) == declared
+
+
+def test_shape_probe_sizes_are_the_three_probes_a_shape_costs():
+    from assay.ceiling import probe_fixed_shapes, shape_probe_sizes
+
+    shapes = (2048, 4096, 8192)
+    meter = _meter()
+    probe_fixed_shapes(HonestBackend(), meter, calibration=CAL, shapes=shapes)
+
+    declared = sum(len(shape_probe_sizes(shape)) for shape in shapes)
+    assert declared == 9  # quarter, half, near-full, per shape
+    assert meter.spent.calls == declared

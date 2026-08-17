@@ -864,3 +864,188 @@ def test_thorough_mode_buys_a_decidable_ready():
     assert entry["verdict"] == "ready"
     assert entry["provisional"] is False
     assert profile.codecs["json_object"]["small"].n == 35
+
+
+# --- the declared worst-case cost table (v1.7) ----------------------------
+
+#: The clean full run tests/test_cli.py METERS end to end. The table is
+#: checked against it rather than against a fresh hand count: a per-family
+#: number that no longer sums to what the suite spends is a number that
+#: has drifted from the instrument.
+_MEASURED_CLEAN_FULL_RUN = 552
+
+
+def _fat_meter():
+    """A meter no family can exhaust: the ceiling under test is the
+    TABLE's, not the budget's."""
+    from assay.budget import BudgetMeter
+
+    return BudgetMeter(Budget(max_calls=10_000, max_prompt_tokens=10**9))
+
+
+def _family_runners():
+    """family name -> the call the orchestrator makes for that family.
+
+    Each entry takes the SAME arguments probe() passes, so a family whose
+    parameters change breaks here rather than quietly costing something
+    else than the table says.
+    """
+    from assay.ceiling import calibrate, probe_fixed_shapes
+    from assay.codecs import JSON_CODECS, PATCH_CODECS, probe_codecs
+    from assay.envelope import probe_envelope
+    from assay.long_output import probe_long_output
+    from assay.loop import probe_loop
+    from assay.speed import probe_speed
+    from assay.tools import probe_tools
+
+    def calibrated(backend, params):
+        """What probe() hands the families that size their own prompts.
+
+        Not an ornament. Sized from the 3.0 fallback instead of this
+        endpoint's measured chars-per-token, the fake's own token counts
+        come back below the truncation floor and the shape family stops
+        after ONE probe per shape — a starved run, not a maximizing one,
+        and it would be the table this test blamed for the difference.
+        The meter is a throwaway: the calibration calls belong to the
+        calibration family, which is metered on its own row.
+        """
+        return calibrate(backend, _fat_meter(), seed=params.seeds[0])
+
+    return {
+        "calibration": lambda b, m, p: calibrate(b, m, seed=p.seeds[0]),
+        "ceiling_shapes": lambda b, m, p: probe_fixed_shapes(
+            b, m, calibration=calibrated(b, p), shapes=p.shape_probes),
+        "envelope": lambda b, m, p: probe_envelope(b, m, n=p.envelope_n),
+        "codecs-json": lambda b, m, p: probe_codecs(
+            b, m, n_per_cell=p.codecs_n_per_cell,
+            look_schedule=p.codec_look_schedule, only=JSON_CODECS),
+        "codecs-patch": lambda b, m, p: probe_codecs(
+            b, m, n_per_cell=p.codecs_n_per_cell,
+            look_schedule=p.codec_look_schedule, only=PATCH_CODECS),
+        "speed": lambda b, m, p: probe_speed(
+            b, m, calibration=calibrated(b, p),
+            decode_calls=p.speed_decode_calls),
+        "loop": lambda b, m, p: probe_loop(b, m, runs=p.loop_runs),
+        "long_output": lambda b, m, p: probe_long_output(b, m, ceiling_max=None),
+        "tools": lambda b, m, p: probe_tools(
+            b, m, look_schedule=p.tools_look_schedule),
+    }
+
+
+@pytest.mark.parametrize("mode", ("quick", "full"))
+@pytest.mark.parametrize("family", sorted(_family_runners()))
+def test_no_family_outspends_what_the_table_declares(family, mode):
+    """The never-exceeds property, MEASURED against a maximizing endpoint.
+
+    ScriptedBackend answers every probe and lands every codec cell, so
+    nothing decides early anywhere: every family runs the longest run it
+    has. The spend is metered and compared against the declaration — the
+    test measures the instrument against the table, never the table
+    against itself.
+    """
+    from assay.run import MODE_PARAMS, worst_case_calls
+
+    params = MODE_PARAMS[mode]
+    meter = _fat_meter()
+    _family_runners()[family](ScriptedBackend(), meter, params)
+
+    declared = worst_case_calls(family, params)
+    assert meter.spent.calls <= declared
+    # ...and TIGHT: a declaration comfortably above the real cost would
+    # pass the line above while reserving budget nobody needs.
+    assert meter.spent.calls == declared
+
+
+def test_the_table_names_every_family_the_orchestrator_runs():
+    """The keys are an interface: budget mode preflights BY these names,
+    and the codec halves are split because it buys them separately."""
+    from assay.run import _WORST_CASE
+
+    assert set(_WORST_CASE) == {
+        "geometry", "calibration", "ceiling", "ceiling_shapes", "envelope",
+        "codecs-json", "codecs-patch", "speed", "loop", "long_output",
+        "tools", "parallel",
+    }
+
+
+def test_the_table_refuses_a_family_it_does_not_know():
+    """No guessed cost, ever: an unknown family is a KeyError, not a 0
+    that would let a consumer run something it never budgeted for."""
+    from assay.run import MODE_PARAMS, worst_case_calls
+
+    with pytest.raises(KeyError):
+        worst_case_calls("nonsense", MODE_PARAMS["quick"])
+
+
+def test_geometry_costs_no_generative_calls():
+    from assay.run import MODE_PARAMS, worst_case_calls
+
+    for mode in ("quick", "full"):
+        assert worst_case_calls("geometry", MODE_PARAMS[mode]) == 0
+
+
+def test_the_ceiling_entry_is_the_ladder_enumeration_at_the_mode_cap():
+    """Asserted against the ladder's own step function — running a
+    maximizing ladder would measure the bisection too, and the bisection
+    is declared separately (see the budget test below)."""
+    from assay.ceiling import ladder_steps
+    from assay.run import MODE_PARAMS, worst_case_calls
+
+    for mode in ("quick", "full", "thorough"):
+        params = MODE_PARAMS[mode]
+        assert worst_case_calls("ceiling", params) == (
+            len(ladder_steps(params.ceiling_cap)) * len(params.seeds))
+    assert worst_case_calls("ceiling", MODE_PARAMS["quick"]) == 5
+    assert worst_case_calls("ceiling", MODE_PARAMS["full"]) == 12
+
+
+def test_the_parallel_entry_is_the_registered_lane_counts():
+    from assay.parallel import DEFAULT_KS
+    from assay.run import MODE_PARAMS, worst_case_calls
+
+    assert worst_case_calls("parallel", MODE_PARAMS["full"]) == sum(DEFAULT_KS) == 6
+
+
+def test_the_loop_and_long_output_entries_come_from_their_own_scripts():
+    """Both are pure script lengths, and both are cross-checked against
+    the hand count in cli.py's budget derivation (25 loop turns, 4 rungs)."""
+    from assay.long_output import RUNGS
+    from assay.loop import error_turn_prompts, turn_prompts
+    from assay.run import MODE_PARAMS, worst_case_calls
+
+    full = MODE_PARAMS["full"]
+    assert worst_case_calls("loop", full) == 25 == full.loop_runs * (
+        len(turn_prompts()) + len(error_turn_prompts()))
+    assert worst_case_calls("long_output", full) == 4 == len(RUNGS)
+
+
+def test_the_table_explains_the_measured_runs_and_fits_the_default_budget():
+    """The sum is the whole point: it has to equal what a clean run
+    SPENDS, and it has to fit the default budget with the one term the
+    per-family numbers cannot carry — a failing ceiling's bisection —
+    named rather than left as slack.
+    """
+    from assay.ceiling import bisection_worst_case_steps
+    from assay.cli import DEFAULT_BUDGETS
+    from assay.run import MODE_PARAMS, _WORST_CASE, worst_case_calls
+
+    full = MODE_PARAMS["full"]
+    declared = sum(worst_case_calls(family, full) for family in _WORST_CASE)
+    assert declared == _MEASURED_CLEAN_FULL_RUN
+
+    # A ladder that fails stops EARLY (it never reaches the cap) and
+    # bisects instead; the extra is at most this, whatever it finds.
+    bisection = bisection_worst_case_steps(full.ceiling_cap) * len(full.seeds)
+    assert bisection == 8
+    assert declared + bisection <= DEFAULT_BUDGETS["full"].max_calls
+
+    quick = MODE_PARAMS["quick"]
+    # Quick NAMES the parallel family instead of running it (run.py), so
+    # its declared cost is not part of a quick run's bill.
+    quick_declared = sum(worst_case_calls(family, quick)
+                         for family in _WORST_CASE if family != "parallel")
+    assert quick_declared == _QUICK_CALLS_TOTAL
+    quick_bisection = (bisection_worst_case_steps(quick.ceiling_cap)
+                       * len(quick.seeds))
+    assert (quick_declared + quick_bisection
+            <= DEFAULT_BUDGETS["quick"].max_calls)

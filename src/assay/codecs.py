@@ -34,6 +34,15 @@ _REPLACE_MARKER = ">>>>>>> REPLACE"
 CODECS = ("search_replace", "whole_file", "json_object")
 GRADES = ("tiny", "small", "medium")
 
+#: The two halves the matrix is bought in (v1.7). A consumer working
+#: under a call ceiling preflights structured extraction and patch
+#: editing SEPARATELY — they carry different verdicts and cost different
+#: numbers of calls — so the split is registered here, once, and both the
+#: ``only=`` filter and the cost table name these tuples instead of
+#: re-typing the membership.
+JSON_CODECS = ("json_object",)
+PATCH_CODECS = tuple(codec for codec in CODECS if codec not in JSON_CODECS)
+
 #: The json codec's DEEP grades (v1.7). ``tiny``/``small``/``medium``
 #: grade the same flat object against three prompt sizes; these three
 #: grade three different SHAPES — a second level of nesting, a
@@ -471,6 +480,39 @@ def _attempt_order(n_tasks: int, n_per_cell: int,
     return [attempt % n_tasks for attempt in range(cap)]
 
 
+def _cell_tasks(codec: str, grade: str) -> list[tuple]:
+    """One cell's HETEROGENEOUS tasks, as ``(filename, instruction,
+    original, expected)`` — five defect classes on the grade's base
+    module for the patch codecs, five task variants for json (v1.3: a
+    cell that redraws one prompt measures sampler variance, not
+    capability).
+
+    The single source for both what ``probe_codecs`` sends and what
+    ``cell_attempts`` prices: a cell whose task list changed size would
+    otherwise cost one number and declare another.
+    """
+    if codec == "json_object":
+        deep = _DEEP_GRADES.get(grade)
+        tasks = deep[1] if deep is not None else JSON_TASKS
+        return [(None, task, None, None) for task in tasks]
+    return [(entry[2], entry[3], entry[4], entry[5])
+            for entry in fixtures.EXPECTED if entry[0] == grade]
+
+
+def cell_attempts(codec: str, grade: str, *, n_per_cell: int,
+                  look_schedule: tuple[int, ...] | None) -> int:
+    """The most calls one cell can cost, from the probe's OWN enumeration.
+
+    Fixed-n: the attempt order is whole reps of the cell's task list, so
+    a cell can cost slightly more or less than ``n_per_cell`` and this
+    reports what it really costs. Sequential: the schedule's last entry
+    is the cap, and a cell that decides early costs less — this is the
+    ceiling, which is what a budget has to reserve.
+    """
+    return len(_attempt_order(len(_cell_tasks(codec, grade)), n_per_cell,
+                              look_schedule))
+
+
 def _stop_count(codec: str, landed: int, landed_applies: int) -> int:
     """The count the stop test reads: the codec's VERDICT lens.
 
@@ -515,6 +557,7 @@ def probe_codecs(
     backend, meter, *, n_per_cell: int, seed_base: int = 500,
     directives: CodecDirectives | None = None,
     look_schedule: tuple[int, ...] | None = None,
+    only: tuple[str, ...] | None = None,
 ) -> dict[str, dict[str, Landing]]:
     """Landing rates per codec x grade (spec §7), both lenses.
 
@@ -532,6 +575,20 @@ def probe_codecs(
     fixed-n=5 cell only in the lens the caller stamps, so run.py records
     the stopping rule and n_used.
 
+    ``only`` measures a SUBSET of the codecs (v1.7): the named ones are
+    sampled exactly as they would be in a whole-matrix run, and every
+    other codec's cells come back ``Landing(None, None, 0)`` — unmeasured,
+    which is the value run.py's dropped loop names cell by cell. ``None``
+    is the whole matrix, exactly the behaviour every committed profile
+    was measured under. A name that is not a codec raises rather than
+    quietly measuring nothing: a matrix of unmeasured cells is
+    indistinguishable from a budget death, and a typo must not be able to
+    produce one. The measured codecs are walked in ``CODECS`` order and
+    seed from ``seed_base``, so a subset run is a subset OF THE MATRIX
+    and not a full run with holes punched in it: its cells carry their
+    own seeds rather than the ones they would have drawn behind the
+    codecs nobody bought.
+
     Each reply is scored under byte-equality AND applies-and-parses (see
     Landing). ``directives`` substitutes the consumer's own presentation
     for the built-in one — the caller records which was used (run.py
@@ -548,10 +605,20 @@ def probe_codecs(
         # the number was reached.
         raise ValueError("look_schedule must name at least one look point "
                          "(pass None for fixed-n sampling)")
+    if only is not None:
+        unknown = [codec for codec in only if codec not in CODECS]
+        if unknown:
+            raise ValueError(
+                f"unknown codec(s) in only={only!r}: {', '.join(unknown)} "
+                f"(known: {', '.join(CODECS)})")
+        if not only:
+            raise ValueError("only must name at least one codec "
+                             "(pass None for the whole matrix)")
+    # Canonical order, whatever order `only` spelled: the same subset
+    # asked for two ways must sample the same tasks under the same seeds.
+    measured = tuple(codec for codec in CODECS
+                     if only is None or codec in only)
     directives = directives or DEFAULT_DIRECTIVES
-    by_grade: dict[str, list] = {g: [] for g in GRADES}
-    for entry in fixtures.EXPECTED:
-        by_grade[entry[0]].append(entry)
     results: dict[str, dict[str, Landing]] = {
         codec: {grade: Landing(lands=None, lands_applies=None, n=0)
                 for grade in GRADES_FOR[codec]}
@@ -559,7 +626,7 @@ def probe_codecs(
     }
     seed = seed_base
     exhausted = False
-    for codec in CODECS:
+    for codec in measured:
         if exhausted:
             break
         for grade in GRADES_FOR[codec]:
@@ -569,13 +636,7 @@ def probe_codecs(
             # (five defect classes on the grade's base module; five task
             # variants for json), not repeated draws of one prompt — the
             # v1/v2 sets measured sampler variance on a single fixture.
-            if codec == "json_object":
-                deep = _DEEP_GRADES.get(grade)
-                tasks = deep[1] if deep is not None else JSON_TASKS
-                cell_tasks = [(None, task, None, None) for task in tasks]
-            else:
-                cell_tasks = [(entry[2], entry[3], entry[4], entry[5])
-                              for entry in by_grade[grade]]
+            cell_tasks = _cell_tasks(codec, grade)
             prompts = [_build_prompt(codec, grade, filename, instruction,
                                      original, directives)
                        for filename, instruction, original, _ in cell_tasks]

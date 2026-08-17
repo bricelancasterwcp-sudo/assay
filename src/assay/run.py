@@ -23,23 +23,31 @@ from assay.backends.base import PROBE_TEMPERATURE
 from assay.backends.ollama import OllamaNative
 from assay.backends.openai_compat import OpenAICompat
 from assay.budget import Budget, BudgetMeter
-from assay.ceiling import (Calibration, Ceiling, ShapeCeiling,
-                           calibrate, probe_ceiling, probe_fixed_shapes)
-from assay.codecs import (CodecDirectives, DEFAULT_PRESENTATION, Landing,
+from assay.ceiling import (CALIBRATION_CALLS, Calibration, Ceiling,
+                           ShapeCeiling, calibrate, ladder_steps,
+                           probe_ceiling, probe_fixed_shapes,
+                           shape_probe_sizes)
+from assay.codecs import (CodecDirectives, DEFAULT_PRESENTATION, GRADES_FOR,
+                          JSON_CODECS, Landing, PATCH_CODECS, cell_attempts,
                           probe_codecs, stopped_on_rule)
 from assay.fixtures import FIXTURE_SET
-from assay.long_output import LongOutput, probe_long_output
-from assay.loop import Loop, probe_loop
+from assay.long_output import RUNGS, LongOutput, probe_long_output
+from assay.loop import Loop, error_turn_prompts, probe_loop, turn_prompts
 from assay.envelope import probe_envelope
 from assay.errors import BudgetExhausted
 from assay.geometry import free_vram_mib, plan_window
-from assay.parallel import Parallel, probe_parallel
+from assay.parallel import DEFAULT_KS, Parallel, probe_parallel
 from assay.profile import (PROFILE_VERSION, Profile, best_patch_cell,
                            compute_verdicts, verdict_cell)
 from assay.replay import CallRecorder
 from assay.speed import Speed, probe_speed
 from assay.stats import LOOK_SCHEDULE, stopping_rule_name
-from assay.tools import TOOLS_LOOK_SCHEDULE, Tools, probe_tools
+from assay.tools import (TOOLS_LOOK_SCHEDULE, TURNS_PER_TASK, Tools,
+                         probe_tools, task_cap)
+
+
+_QUICK_CEILING_CAP = 16384
+_FULL_CEILING_CAP = 32768
 
 
 @dataclass(frozen=True)
@@ -49,6 +57,11 @@ class ModeParams:
     codecs_n_per_cell: int
     loop_runs: int
     shape_probes: tuple[int, ...]
+    # The tallest rung the ladder may reach in this mode, before the
+    # model's training_ctx and the user's --window-cap narrow it further
+    # (``ceiling_cap_for``). Lives on the params so the cost table can
+    # price the family from the params alone.
+    ceiling_cap: int
     # None = fixed-n codec sampling; a schedule = sequential looks, and
     # then codecs_n_per_cell is the cap the schedule already carries.
     codec_look_schedule: tuple[int, ...] | None
@@ -62,6 +75,7 @@ class ModeParams:
 MODE_PARAMS = {
     "quick": ModeParams(seeds=(0,), envelope_n=10, codecs_n_per_cell=5,
                         loop_runs=3, shape_probes=(2048, 4096, 8192),
+                        ceiling_cap=_QUICK_CEILING_CAP,
                         codec_look_schedule=None, tools_look_schedule=None,
                         speed_decode_calls=1),
     # v1.5: the default mode samples codec cells SEQUENTIALLY — every
@@ -76,6 +90,7 @@ MODE_PARAMS = {
     # certainty this rule usually reaches for far less.
     "full": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=35,
                        loop_runs=5, shape_probes=(2048, 4096, 8192),
+                       ceiling_cap=_FULL_CEILING_CAP,
                        codec_look_schedule=LOOK_SCHEDULE,
                        tools_look_schedule=TOOLS_LOOK_SCHEDULE,
                        speed_decode_calls=3),
@@ -85,13 +100,11 @@ MODE_PARAMS = {
     # parses and old invocations keep working.
     "thorough": ModeParams(seeds=(0, 1), envelope_n=30, codecs_n_per_cell=35,
                            loop_runs=5, shape_probes=(2048, 4096, 8192),
+                           ceiling_cap=_FULL_CEILING_CAP,
                            codec_look_schedule=LOOK_SCHEDULE,
                            tools_look_schedule=TOOLS_LOOK_SCHEDULE,
                            speed_decode_calls=3),
 }
-
-_QUICK_CEILING_CAP = 16384
-_FULL_CEILING_CAP = 32768
 
 
 def ceiling_cap_for(
@@ -99,14 +112,82 @@ def ceiling_cap_for(
 ) -> int:
     """The ladder cap: mode table, then the user's cap if tighter."""
     # thorough shares full's cap: its extra budget buys codec samples,
-    # not a taller ladder.
-    if mode == "quick":
-        cap = _QUICK_CEILING_CAP
-    else:
-        cap = min(training_ctx or _FULL_CEILING_CAP, _FULL_CEILING_CAP)
+    # not a taller ladder. An unrecognised mode is priced as full, which
+    # is what this function has always done.
+    params = MODE_PARAMS.get(mode, MODE_PARAMS["full"])
+    cap = params.ceiling_cap
+    if mode != "quick":
+        cap = min(training_ctx or cap, cap)
     if window_cap is not None:
         cap = min(cap, window_cap)
     return cap
+
+
+def _codec_half_calls(codecs: tuple[str, ...], params: ModeParams) -> int:
+    """What one half of the codec matrix costs, cell by cell."""
+    return sum(
+        cell_attempts(codec, grade, n_per_cell=params.codecs_n_per_cell,
+                      look_schedule=params.codec_look_schedule)
+        for codec in codecs
+        for grade in GRADES_FOR[codec]
+    )
+
+
+#: family -> what it costs when NOTHING decides early: every probe runs,
+#: every cell reaches its cap, every task is scored. Each entry DERIVES
+#: from the constants the probe itself consumes — the schedules, the task
+#: pools, the fixture counts, the script lengths, the ladder's own step
+#: enumeration — so a family that grows re-prices itself here instead of
+#: waiting for a hand count to be corrected after a mid-family death.
+#:
+#: The codec matrix is split into its two halves because that is how a
+#: consumer under a call ceiling buys it: `structured_extraction` and
+#: `patch_editing` are separate verdicts and separate preflights.
+#:
+#: The ceiling entry is the LADDER: every rung at every seed, which is
+#: what a run that finds no failure spends. A ladder that DOES fail stops
+#: early and bisects instead, and the bisection's own worst case
+#: (``ceiling.bisection_worst_case_steps`` x seeds — 8 calls in full
+#: mode) is the run-level headroom the default budgets carry rather than
+#: a per-family reservation, because no run pays for both tails: see the
+#: derivation above ``cli.DEFAULT_BUDGETS``.
+_WORST_CASE = {
+    # Geometry is arithmetic over model_info plus a VRAM reading: it asks
+    # the model nothing, and 0 is a measurement, not a placeholder.
+    "geometry": lambda p: 0,
+    "calibration": lambda p: CALIBRATION_CALLS,
+    "ceiling": lambda p: len(ladder_steps(p.ceiling_cap)) * len(p.seeds),
+    "ceiling_shapes": lambda p: sum(len(shape_probe_sizes(shape))
+                                    for shape in p.shape_probes),
+    "envelope": lambda p: p.envelope_n,
+    "codecs-json": lambda p: _codec_half_calls(JSON_CODECS, p),
+    "codecs-patch": lambda p: _codec_half_calls(PATCH_CODECS, p),
+    # The decode calls, plus probe_speed's single prefill probe.
+    "speed": lambda p: p.speed_decode_calls + 1,
+    # Every run plays both scripts: the golden turns and the error turns.
+    "loop": lambda p: p.loop_runs * (len(turn_prompts())
+                                     + len(error_turn_prompts())),
+    "long_output": lambda p: len(RUNGS),
+    "tools": lambda p: task_cap(p.tools_look_schedule) * TURNS_PER_TASK,
+    # Charged in full before either k launches; quick names the family
+    # instead of running it, which is the caller's decision, not a cost.
+    "parallel": lambda p: sum(DEFAULT_KS),
+}
+
+
+def worst_case_calls(family: str, params: ModeParams) -> int:
+    """The calls ``family`` can cost in this mode — declared, never guessed.
+
+    For a consumer deciding whether a family FITS before starting it: what
+    starts, finishes, so the number has to bound the whole family rather
+    than describe a typical run. Families that stop early (a decided codec
+    cell, a tools pool that settles at the first look, a rung above the
+    measured ceiling) cost less; none costs more.
+
+    An unknown family raises ``KeyError``. There is no default cost: a
+    guessed number is how a run starts something it cannot pay for.
+    """
+    return _WORST_CASE[family](params)
 
 
 def _utc_now() -> str:

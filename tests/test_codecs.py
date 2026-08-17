@@ -1123,3 +1123,124 @@ def test_the_stop_test_reads_the_shared_lens_registry(monkeypatch):
 
     monkeypatch.setitem(stats.VERDICT_LENS, "json_object", "lands_applies")
     assert stopped_on_rule("json_object", cell, stats.LOOK_SCHEDULE) is False
+
+
+# --- the subset filter (v1.7): measure some codecs, name the rest ---------
+
+
+def test_only_measures_the_named_codec_and_leaves_the_others_unmeasured():
+    """`only` is a SUBSET of the matrix, not a matrix with quiet holes.
+
+    The budget-mode consumer preflights the json half and the patch half
+    separately, so it must be able to buy one without buying the other —
+    and the half it did not buy has to come back `n == 0`, which is the
+    value run.py's dropped loop names cell by cell.
+    """
+    from assay.codecs import GRADES_FOR, Landing, probe_codecs
+
+    backend = ScriptedBackend(grade_matrix_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=5,
+                          only=("json_object",))
+
+    for grade in GRADES_FOR["json_object"]:
+        assert result["json_object"][grade].n == 5, grade
+    for codec in ("search_replace", "whole_file"):
+        for grade in GRADES_FOR[codec]:
+            assert result[codec][grade] == Landing(lands=None,
+                                                   lands_applies=None, n=0)
+    # Not one call was spent on the codecs nobody asked for.
+    assert len(backend.calls) == 5 * len(GRADES_FOR["json_object"])
+
+
+def test_only_the_patch_codecs_leaves_the_json_cells_unmeasured():
+    from assay.codecs import GRADES_FOR, Landing, probe_codecs
+
+    backend = ScriptedBackend(grade_matrix_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=5,
+                          only=("search_replace", "whole_file"))
+
+    for codec in ("search_replace", "whole_file"):
+        for grade in GRADES_FOR[codec]:
+            assert result[codec][grade].n == 5, (codec, grade)
+    for grade in GRADES_FOR["json_object"]:
+        assert result["json_object"][grade] == Landing(lands=None,
+                                                       lands_applies=None, n=0)
+    assert len(backend.calls) == 5 * 3 * 2
+
+
+def test_only_none_is_exactly_the_whole_matrix():
+    """The default is the behavior every committed profile was measured
+    under: no filter, every cell."""
+    from assay.codecs import probe_codecs
+
+    filtered = probe_codecs(ScriptedBackend(grade_matrix_script), make_meter(),
+                            n_per_cell=5, only=None)
+    unfiltered = probe_codecs(ScriptedBackend(grade_matrix_script),
+                              make_meter(), n_per_cell=5)
+    assert filtered == unfiltered
+    assert all(cell.n == 5 for grades in filtered.values()
+               for cell in grades.values())
+
+
+def test_only_rejects_a_codec_it_does_not_know():
+    """A misspelt codec name is a caller bug, and a silent no-op would
+    hand back a matrix of unmeasured cells that reads exactly like a
+    budget death. It raises before a single call is charged."""
+    from assay.codecs import probe_codecs
+
+    backend = ScriptedBackend(grade_matrix_script)
+    meter = make_meter()
+    with pytest.raises(ValueError) as excinfo:
+        probe_codecs(backend, meter, n_per_cell=5, only=("json-object",))
+
+    assert "json-object" in str(excinfo.value)
+    assert backend.calls == []
+    assert meter.spent.calls == 0
+
+
+def test_an_empty_only_is_rejected_too():
+    """Zero codecs is not a subset anyone can act on: it would spend
+    nothing and report twelve unmeasured cells."""
+    from assay.codecs import probe_codecs
+
+    with pytest.raises(ValueError):
+        probe_codecs(ScriptedBackend(grade_matrix_script), make_meter(),
+                     n_per_cell=5, only=())
+
+
+# --- cell_attempts: what a cell costs, from the probe's own enumeration ---
+
+
+def test_cell_attempts_is_what_the_fixed_n_cell_actually_sends():
+    from assay.codecs import CODECS, GRADES_FOR, cell_attempts, probe_codecs
+
+    for codec in CODECS:
+        backend = ScriptedBackend(grade_matrix_script)
+        meter = make_meter()
+        probe_codecs(backend, meter, n_per_cell=5, only=(codec,))
+        declared = sum(cell_attempts(codec, grade, n_per_cell=5,
+                                     look_schedule=None)
+                       for grade in GRADES_FOR[codec])
+        assert meter.spent.calls == declared, codec
+
+
+def test_cell_attempts_is_the_cap_a_never_deciding_cell_runs_to():
+    """Under a schedule the cap is the cost, and a cell that lands every
+    time reaches it: 35/35 is the first look that decides `ready`."""
+    from assay.codecs import CODECS, GRADES_FOR, cell_attempts, probe_codecs
+    from assay.stats import LOOK_SCHEDULE
+
+    for codec in CODECS:
+        backend = ScriptedBackend(grade_matrix_script)
+        meter = make_meter()
+        probe_codecs(backend, meter, n_per_cell=35, only=(codec,),
+                     look_schedule=LOOK_SCHEDULE)
+        declared = sum(cell_attempts(codec, grade, n_per_cell=35,
+                                     look_schedule=LOOK_SCHEDULE)
+                       for grade in GRADES_FOR[codec])
+        assert declared == len(GRADES_FOR[codec]) * LOOK_SCHEDULE[-1]
+        # search_replace flubs small/medium under this script, and a
+        # decided cell stops early — the declaration is a ceiling.
+        assert meter.spent.calls <= declared
+        if codec != "search_replace":
+            assert meter.spent.calls == declared

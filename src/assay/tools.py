@@ -254,6 +254,25 @@ committed tools-anchor captures replay against exactly these five with
 the v1 seeds.
 """
 
+TURNS_PER_TASK = 2
+"""Calls one scored task costs: the tool-call turn and the result turn.
+
+Both are charged and both are scored (``n_turns`` is their sum), and a
+task never stops between them — the look is taken with the task
+complete. The family's cost is therefore this times ``task_cap``.
+"""
+
+
+def task_cap(look_schedule: tuple[int, ...] | None) -> int:
+    """How many tasks a run walks at most.
+
+    Fixed-n: the frozen five-task pool. Sequential: the schedule's last
+    entry, which is the cap a pool that never decides runs to. One
+    function so the probe and anyone pricing the probe read the same
+    rule.
+    """
+    return _FIXED_N_POOL if look_schedule is None else look_schedule[-1]
+
 _SYSTEM = (
     "You are a tool-using assistant. When one of the supplied tools fits "
     "the user's request, call exactly one tool with the arguments the "
@@ -459,7 +478,7 @@ def probe_tools(
     """
     rule = stopping_rule_name(look_schedule)
     looks = frozenset(look_schedule or ())
-    cap = _FIXED_N_POOL if look_schedule is None else look_schedule[-1]
+    cap = task_cap(look_schedule)
 
     supported: bool | None = None
     scored_t1 = one_call = right_tool = valid_args = composite = called = 0

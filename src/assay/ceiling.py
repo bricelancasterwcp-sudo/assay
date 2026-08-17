@@ -33,6 +33,18 @@ _LADDER_START = 1024
 _PROBE_MAX_TOKENS = 32
 _TRUNCATION_FRACTION = 0.8
 
+#: Calls ``calibrate`` makes: the sizing probe and the repeat that
+#: measures determinism. Named because a consumer budgeting a run has to
+#: reserve them, and a second hand count of this function is a number
+#: that can drift away from the function.
+CALIBRATION_CALLS = 2
+
+#: The bisection's resolution: an interval is settled once it is within
+#: 1/10th of the verified size, floored at 256 tokens (below that the
+#: filler sizing proxy is noisier than the answer would be precise).
+_BISECTION_TOLERANCE_DIVISOR = 10
+_BISECTION_FLOOR_TOKENS = 256
+
 # Signals that fail a size and stop/steer the ladder. attention_loss
 # is deliberately absent: it is a model result, not a ceiling.
 _FAIL_SIGNALS = frozenset(
@@ -190,7 +202,8 @@ def classify_call(
 
 
 def calibrate(backend: Backend, meter: BudgetMeter, *, seed: int) -> Calibration:
-    """One ~500-token probe for chars_per_token, one repeat for determinism.
+    """One ~500-token probe for chars_per_token, one repeat for
+    determinism — ``CALIBRATION_CALLS`` calls, always both charged.
 
     Counts missing → ``chars_per_token`` is None (the 3.0 fallback is
     sizing-only, never reported). Either call failing → the affected
@@ -236,6 +249,62 @@ def calibrate(backend: Backend, meter: BudgetMeter, *, seed: int) -> Calibration
 
 class _MeterDry(Exception):
     """Internal: the budget died mid-probe after evidence existed."""
+
+
+def ladder_steps(cap_tokens: int) -> tuple[int, ...]:
+    """The sizes the ladder walks: 1024, doubling, while it fits the cap.
+
+    The enumeration the probe itself iterates, exported because the cost
+    of the family is ``len(...) x seeds`` and a hand count living beside
+    it would be a second, drifting answer to the same question. A cap
+    below the first rung enumerates nothing — there is no size the ladder
+    could send, and zero is the honest cost of that.
+    """
+    steps: list[int] = []
+    size = _LADDER_START
+    while size <= cap_tokens:
+        steps.append(size)
+        size *= 2
+    return tuple(steps)
+
+
+def _bisection_settled(lo: int, hi: int) -> bool:
+    """True once the interval is inside the reported resolution."""
+    return hi - lo <= max(lo // _BISECTION_TOLERANCE_DIVISOR,
+                          _BISECTION_FLOOR_TOKENS)
+
+
+def bisection_worst_case_steps(cap_tokens: int) -> int:
+    """The most bisection probes any endpoint can force, per seed.
+
+    The ladder's cost is fixed; the bisection's is not — it runs only
+    when a rung FAILS, over whichever interval the failure handed it, and
+    how deep it goes depends on where the real ceiling sits. This is the
+    maximum over every interval the ladder can produce and every way the
+    probes inside it can land, computed by walking the same halving with
+    the same stop test the probe uses (an interval is realizable by some
+    endpoint whenever its enclosing branch is, so no path counted here is
+    hypothetical).
+
+    Declared for the budget derivation: a clean ladder walks every rung
+    and bisects nothing, a failing one stops early and bisects instead,
+    so a run's ceiling cost is the ladder OR a prefix of it plus this —
+    never both in full.
+    """
+
+    def steps(lo: int, hi: int) -> int:
+        if _bisection_settled(lo, hi):
+            return 0
+        mid = (lo + hi) // 2
+        return 1 + max(steps(lo, mid), steps(mid, hi))
+
+    rungs = ladder_steps(cap_tokens)
+    if not rungs:
+        return 0
+    # lo is the largest verified size (0 when the first rung failed) and
+    # hi the rung that failed: exactly the pairs the ladder can hand over.
+    intervals = [(0, rungs[0])] + list(zip(rungs, rungs[1:]))
+    return max(steps(lo, hi) for lo, hi in intervals)
 
 
 def _majority_failure(signals: Sequence[str]) -> str:
@@ -302,15 +371,13 @@ def probe_ceiling(
     hi: int | None = None  # smallest fully-measured failing size
     budget_died = False
     try:
-        size = _LADDER_START
-        while size <= cap_tokens:
+        for size in ladder_steps(cap_tokens):
             if size_fails(size):
                 hi = size
                 break
             lo = size
-            size *= 2
         if hi is not None:
-            while hi - lo > max(lo // 10, 256):
+            while not _bisection_settled(lo, hi):
                 mid = (lo + hi) // 2
                 if size_fails(mid):
                     hi = mid
@@ -353,6 +420,17 @@ class ShapeCeiling:
                                 # silent_truncation | canary_loss | unmeasured
 
 
+def shape_probe_sizes(shape: int) -> tuple[int, int, int]:
+    """The three probes one pinned request shape is measured with:
+    quarter, half, and near-full (the shape less reply headroom).
+
+    Exported for the same reason as ``ladder_steps``: the family costs
+    ``len(...)`` calls per shape, and the cost table reads the
+    enumeration the probe sends rather than counting it again.
+    """
+    return (shape // 4, shape // 2, max(256, shape - 384))
+
+
 def probe_fixed_shapes(
     backend: Backend,
     meter: BudgetMeter,
@@ -371,7 +449,7 @@ def probe_fixed_shapes(
 
     results: list[ShapeCeiling] = []
     for shape in shapes:
-        sizes = (shape // 4, shape // 2, max(256, shape - 384))
+        sizes = shape_probe_sizes(shape)
         max_ok: int | None = None
         mode = "ok_to_shape"
         for est in sizes:

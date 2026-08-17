@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from assay.ceiling import CallEvidence, Ceiling, ShapeCeiling
 from assay.codecs import GRADES as _GRADES
+from assay.codecs import PATCH_CODECS as _CODECS_PATCH
 from assay.codecs import Landing
 from assay.fixtures import FIXTURE_SET
 from assay.long_output import (DISTINCT_FLOOR, LONG_OUTPUT_TASK,
@@ -50,7 +51,10 @@ _POST_V1_FAMILIES = ("ceiling_shapes", "speed", "loop", "long_output",
                      "tools", "parallel")
 _GRADE_FOR_VERDICTS = "small"
 #: The codecs ``patch_editing`` may be carried by — either can carry it.
-_PATCH_CODECS = ("search_replace", "whole_file")
+#: The membership is registered in ``codecs`` (v1.7), where the subset
+#: filter and the cost table read it too: three copies of "which codecs
+#: are the patch ones" are three chances to disagree.
+_PATCH_CODECS = _CODECS_PATCH
 _LONG_CONTEXT_TOKENS = 16384
 _TRUNCATION_GUARD_TOKENS = 4096
 # Speed floors (v1.2): tok/s a verdict is judged against. Defaults are
