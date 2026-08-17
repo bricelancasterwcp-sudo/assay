@@ -7,7 +7,9 @@ CallReplayer is STRICT: a miss raises TranscriptMiss, never falls
 through to live or to a canned value. Same key recorded N times replays
 in order, N times. Recorded infrastructure errors replay by re-raising
 the same type — as does a recorded ToolsUnsupported, which is a
-capability fact the evidence trail must not lose.
+capability fact the evidence trail must not lose. Error rows carry
+``error_raw``, the endpoint's own error body, so a replayed refusal
+still carries the primary source assay classified it from.
 
 Rows carry ``kind`` ("generate" | "chat_tools") because the two call
 shapes share one keyspace. A row written before the tool surface
@@ -84,15 +86,23 @@ KIND_CHAT_TOOLS = "chat_tools"
 
 
 def _recorded_error(row: dict, key: str) -> Exception:
-    """The exception a recorded error row replays as.
+    """The exception a recorded error row replays as, body and all.
 
     An unknown name replays as InfrastructureError: a transcript written
     by a future assay may carry an error type this build has never heard
     of, and "the endpoint failed us" is the safe reading — never a
     silent success, and never a capability fact this build cannot check.
+
+    ``error_raw`` is restored onto the exception because it is the
+    PRIMARY SOURCE behind a classification: an unsupported-tools anchor
+    whose refusal body was dropped leaves assay asserting its own verdict
+    with the evidence discarded. A row without the column (every v1.5
+    transcript) restores None — not recorded, never a fabricated body.
     """
     error_cls = _ERROR_TYPES.get(row["error_type"], InfrastructureError)
-    return error_cls(f"replayed {row['error_type']} for key {key[:12]}")
+    error = error_cls(f"replayed {row['error_type']} for key {key[:12]}")
+    error.raw = row.get("error_raw")
+    return error
 
 
 class CallRecorder:
@@ -129,6 +139,7 @@ class CallRecorder:
                 tokens_out=None,
                 stop_reason=None,
                 error_type=type(error).__name__,
+                error_raw=getattr(error, "raw", None),
             )
             raise
         self._write_row(
@@ -169,6 +180,7 @@ class CallRecorder:
                 tokens_out=None,
                 stop_reason=None,
                 error_type=type(error).__name__,
+                error_raw=getattr(error, "raw", None),
             )
             raise
         self._write_row(
@@ -271,6 +283,12 @@ class CallReplayer:
         the serialized tool payload keys identically — and a tool row
         must never answer a generate call. The declined row is left in
         the queue: a call it was not recorded for does not consume it.
+
+        Rows sharing a key replay strictly in FILE ORDER — the head is
+        the only row considered, and a kind mismatch is a miss even when
+        a matching row sits behind it. No kind-aware lookahead: order is
+        part of what a transcript records, and reordering replies to
+        suit the caller would be the replayer inventing a run.
         """
         queue = self._rows.get(key)
         if not queue:

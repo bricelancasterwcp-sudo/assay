@@ -20,7 +20,7 @@ from assay.backends.base import (
     ToolReply,
     ToolsUnsupported,
 )
-from assay.errors import ContractViolation
+from assay.errors import ContractViolation, InfrastructureError
 from assay.replay import (
     CallRecorder,
     CallReplayer,
@@ -287,6 +287,130 @@ def test_recorded_tools_unsupported_replays_as_tools_unsupported(tmp_path):
     with pytest.raises(ToolsUnsupported) as caught:
         replayer.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
     assert type(caught.value) is ToolsUnsupported
+
+
+def test_a_refusal_body_survives_the_transcript(tmp_path):
+    # The refusal body is the PRIMARY SOURCE behind tools_supported=False.
+    # A transcript that dropped it would leave assay asserting its own
+    # classification with the evidence thrown away.
+    path = tmp_path / "tools.jsonl"
+    body = {"error": "qwen2.5-coder:7b does not support tools"}
+    refusal = ToolsUnsupported("HTTP 400: endpoint refused the tools parameter")
+    refusal.raw = body
+    recorder = CallRecorder(ScriptedBackend([refusal]), path)
+    with pytest.raises(ToolsUnsupported):
+        recorder.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+
+    assert read_rows(path)[0]["error_raw"] == body
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    with pytest.raises(ToolsUnsupported) as caught:
+        replayer.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+    assert caught.value.raw == body
+
+
+def test_a_generate_error_body_survives_the_transcript_too(tmp_path):
+    # Symmetric, not a tools-only column: the 11.5k-bug body that makes a
+    # ContractViolation legible has to replay as well.
+    path = tmp_path / "generate.jsonl"
+    body = {"model": MODEL, "response": "an answer", "done": True}
+    violation = ContractViolation("promised counts, delivered none")
+    violation.raw = body
+    recorder = CallRecorder(ScriptedBackend([violation]), path)
+    with pytest.raises(ContractViolation):
+        recorder.generate("bug prompt", seed=3, max_tokens=32)
+
+    assert read_rows(path)[0]["error_raw"] == body
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    with pytest.raises(ContractViolation) as caught:
+        replayer.generate("bug prompt", seed=3, max_tokens=32)
+    assert caught.value.raw == body
+
+
+def test_an_error_that_carries_no_body_records_none(tmp_path):
+    # A transport failure never had a body. None means "no body", and is
+    # never softened into {} — which would read as "the server said
+    # nothing", a different fact.
+    path = tmp_path / "generate.jsonl"
+    recorder = CallRecorder(ScriptedBackend([InfrastructureError("refused")]), path)
+    with pytest.raises(InfrastructureError):
+        recorder.generate("a prompt", seed=1, max_tokens=32)
+
+    assert read_rows(path)[0]["error_raw"] is None
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    with pytest.raises(InfrastructureError) as caught:
+        replayer.generate("a prompt", seed=1, max_tokens=32)
+    assert caught.value.raw is None
+
+
+def test_an_error_row_without_the_column_replays_with_no_body(tmp_path):
+    # v1.5 rows have neither `kind` nor `error_raw`. Absent means "not
+    # recorded", which replays as None — never as a fabricated body.
+    path = tmp_path / "v15.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "model": MODEL,
+                "key": key_for(MODEL, "old prompt", 9),
+                "seed": 9,
+                "outcome": "error",
+                "text": None,
+                "tokens_in": None,
+                "tokens_out": None,
+                "stop_reason": None,
+                "error_type": "ContractViolation",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    with pytest.raises(ContractViolation) as caught:
+        replayer.generate("old prompt", seed=9, max_tokens=32)
+    assert caught.value.raw is None
+
+
+def test_an_unrecordable_exception_escapes_with_no_row_written(tmp_path):
+    # The recorded-error tuple is narrow ON PURPOSE: a bug in assay is not
+    # a measurement, and a row claiming the endpoint erred would be a lie
+    # about what happened.
+    path = tmp_path / "tools.jsonl"
+    recorder = CallRecorder(ScriptedBackend([ValueError("a bug in assay")]), path)
+    with pytest.raises(ValueError):
+        recorder.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+    assert read_rows(path) == []
+
+    other = tmp_path / "generate.jsonl"
+    recorder = CallRecorder(ScriptedBackend([ValueError("a bug in assay")]), other)
+    with pytest.raises(ValueError):
+        recorder.generate("a prompt", seed=5, max_tokens=32)
+    assert read_rows(other) == []
+
+
+def test_rows_under_one_key_replay_in_file_order_with_no_lookahead(tmp_path):
+    # Two kinds under one key (constructible, since a generate prompt can
+    # BE the canonical tool payload): the replayer reads the head of the
+    # queue and never scans past it for a row of the kind being asked for.
+    path = tmp_path / "interleaved.jsonl"
+    canonical = tools_key_material(MESSAGES, TOOLSET)
+    recorder = CallRecorder(
+        ScriptedBackend([make_tool_reply(text="tool row"), make_reply("plain row")]),
+        path,
+    )
+    recorder.chat_tools(MESSAGES, TOOLSET, seed=8, max_tokens=32)
+    recorder.generate(canonical, seed=8, max_tokens=32)
+    assert len({row["key"] for row in read_rows(path)}) == 1  # one key, two kinds
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    # The generate row is IN the queue, second. Asking generate first is
+    # still a miss: file order rules, and the tool row stays put.
+    with pytest.raises(TranscriptMiss):
+        replayer.generate(canonical, seed=8, max_tokens=32)
+    assert replayer.chat_tools(MESSAGES, TOOLSET, seed=8, max_tokens=32).text == (
+        "tool row")
+    assert replayer.generate(canonical, seed=8, max_tokens=32).text == "plain row"
 
 
 def test_recorded_contract_violation_on_a_tool_call_replays_as_itself(tmp_path):
