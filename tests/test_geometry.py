@@ -306,9 +306,10 @@ def test_the_anchor_covers_a_real_moe_and_a_real_non_moe():
     # An anchor that only ever saw one of the two would pin nothing about
     # the distinction it exists to check.
     records = anchor_moe()
-    assert [r["is_moe"] for r in records] == [True, False]
+    assert sorted(r["is_moe"] for r in records) == [False, True]
+    moe = next(r for r in records if r["is_moe"])
+    dense = next(r for r in records if not r["is_moe"])
 
-    moe = records[0]
     assert moe["architecture"] == "deepseek2"
     assert moe["expert_count"] == 64 and moe["expert_used_count"] == 6
     show = json.loads((ANCHOR / moe["show"]).read_text())
@@ -318,7 +319,9 @@ def test_the_anchor_covers_a_real_moe_and_a_real_non_moe():
     # three siblings sitting beside them.
     assert len(reported) == 5
 
-    dense = records[1]
+    # The other model was ASSUMED to be the box's MoE and is not: its
+    # metadata carries no expert key at all, which is what makes it the
+    # right partner here — a None that was measured, not defaulted.
     assert dense["architecture"] == "qwen35"
     other = json.loads((ANCHOR / dense["show"]).read_text())
     assert [k for k in other["model_info"] if "expert" in k] == []

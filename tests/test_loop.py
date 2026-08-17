@@ -7,6 +7,7 @@ what it does next (recover, or re-emit the same broken block).
 
 import json
 import pathlib
+from dataclasses import fields
 
 from assay.backends.base import Reply
 from assay.backends.ollama import OllamaNative
@@ -429,7 +430,10 @@ def test_the_committed_loop_transcript_replays_to_its_recorded_values():
         runs=3,
     )
 
-    # Re-derived by the unmodified probe, never read out of results.json.
+    # Re-derived by the unmodified probe, never read out of results.json —
+    # and every field of the measurement, not the subset someone chose to
+    # write down.
+    assert set(capture["result"]) == {f.name for f in fields(Loop)}
     for field, recorded in capture["result"].items():
         assert getattr(replayed, field) == recorded, field
 

@@ -132,11 +132,13 @@ database:
   password: secret
 ```
 
-— and never mentions the canary on any of the five. llama3.1 quotes it on 2
-of 5 (once while inventing a claim around it: "It is set to `CANARY-1502` by
-default") and answers from thin air on the other 3. Neither model emitted a
-spurious second tool call, so every miss here is the model answering past
-the tool result it was given rather than a protocol slip.
+— and never mentions the canary on any of the five. Four of its five misses
+are fabrications like this one; the fifth ("The test suite has passed") is
+the `run_tests` task, where there is nothing to invent. llama3.1 quotes the
+canary on 2 of 5 (once while inventing a claim around it: "It is set to
+`CANARY-1502` by default") and fabricates on 2 of the remaining 3. Neither
+model emitted a spurious second tool call, so every miss here is the model
+answering past the tool result it was given, not a protocol slip.
 
 Note the ordering this produces: on `call_rate` alone qwen2.5-coder is last
 and the other two are tied at the top, while on `result_use_rate` the order

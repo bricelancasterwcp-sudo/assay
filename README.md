@@ -600,9 +600,9 @@ Three things the capture settled:
 
 Also captured, and worth its own line: `result_use_rate` orders these
 three models the opposite way round from `call_rate` (0.80 / 0.40 /
-0.00), with mistral-nemo answering the tool turn from an entirely
-invented file. No single number ranks them, which is why the family
-reports five.
+0.00), with mistral-nemo answering four of its five tool turns from an
+entirely invented file rather than the result it was handed. No single
+number ranks them, which is why the family reports five.
 
 ## Long-output integrity
 

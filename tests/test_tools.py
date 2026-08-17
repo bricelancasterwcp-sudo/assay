@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+from dataclasses import fields
 from typing import NamedTuple
 
 import pytest
@@ -560,7 +561,7 @@ def anchor_captures() -> list[dict]:
     return anchor_results()["tools"]["captures"]
 
 
-def test_the_anchor_capture_is_committed_whole():
+def test_the_tools_anchor_capture_is_committed_whole():
     results = anchor_results()
     assert results["daemon"]["version"] == "0.32.13"
     assert results["tools"]["instrument"] == TOOLS_INSTRUMENT
@@ -595,6 +596,10 @@ def test_every_committed_capture_replays_to_its_recorded_values(capture):
         BudgetMeter(Budget(max_calls=20, max_prompt_tokens=200_000)),
     )
 
+    # Every field of the measurement, not the subset someone chose to
+    # write down: a recorded value pruned out of results.json would
+    # otherwise stop being checked without anything failing.
+    assert set(capture["result"]) == {f.name for f in fields(Tools)}
     for field, recorded in capture["result"].items():
         assert getattr(replayed, field) == recorded, field
 
