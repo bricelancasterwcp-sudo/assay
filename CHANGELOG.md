@@ -64,11 +64,11 @@ question the other modes cannot.
   one that is not stays flagged until evidence retires it. The
   campaign's live rows have now sanity-checked it and **the flag
   stands**: all fifteen models read `mode: parallel` at both k = 2 and
-  k = 4 — thirty lane readings, no errored lane, no `skipped` k — so the
-  tolerance was never the binding term in any of them. It is consistent
-  with every live row and exercised at its edge by none, which is a
-  weaker claim than a derived threshold and is left saying so. And
-  nothing partial is reported as whole:
+  k = 4 — thirty k-readings (ninety lanes), no errored lane, no
+  `skipped` k — so the tolerance was never the binding term in any of
+  them. It is consistent with every live row and exercised at its edge
+  by none, which is a weaker claim than a derived threshold and is left
+  saying so. And nothing partial is reported as whole:
   `total_throughput_tps` is `None` unless **every** returned lane
   reported timings, an errored lane is named in `lane_errors` rather
   than averaged in as a zero, and a k the budget refused is named in
@@ -146,6 +146,11 @@ question the other modes cannot.
   anchor's replayed `Tools` values and that committed profile's `tools`
   block are one measurement reached by two roads — the suite asserts
   they agree, and they cannot drift apart without a test failing.
+
+What this wave deliberately did **not** close is written down rather
+than forgotten: [`docs/CARRIED-DEBT.md`](docs/CARRIED-DEBT.md) is the
+ledger of every gap carried out of v1.7, each with the ruling that
+carried it and the task that raised it.
 
 ## v0.8 (v1.6 fast-follow): the tools probe records its own ceiling
 

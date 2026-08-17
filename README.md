@@ -12,7 +12,9 @@ that codec*, and an application that knows this before shipping work to
 it can choose another format or another model.
 
 Version history — what each release changed in what the numbers
-*mean* — lives in [CHANGELOG.md](CHANGELOG.md).
+*mean* — lives in [CHANGELOG.md](CHANGELOG.md); the gaps a release
+deliberately carried rather than closed are ledgered in
+[docs/CARRIED-DEBT.md](docs/CARRIED-DEBT.md).
 
 **The measurements.** Fifteen models profiled on one enthusiast-tier box
 (RTX 5080 16 GiB, ollama 0.32.13) on 2026-08-17 are published as the

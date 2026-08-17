@@ -269,13 +269,28 @@ was recorded for each at the time and is preserved where it bites.
 41. The empty-only check sits after the unknown-name check and reads
     backwards. **(T8)**
 42. `_MEASURED_CLEAN_FULL_RUN` is a third copy of the literal 552. **(T8)**
-43. **Quick's margin is 6 calls (124 worst case of 130) — a live
+43. **Quick's margin is 9 calls (121 worst case of 130) — a live
     constraint, not a note.** The deep grades cost quick 15 codec calls
     and the next quick-mode call added anywhere spends the remainder.
-    Full has headroom by derivation; quick does not. **(T3/T6)**
-44. The headroom prose double-counts the bisection: 546 already
-    contained ~12 ladder calls, so the true worst case was ~553 and the
-    cost-narrative clause built on it was false. **(T3)**
+    Full has headroom by derivation; quick does not. *Restated at the
+    final fix wave: this item was raised as "124 of 130, margin 6", off
+    the hand-counted bisection tail that item 91 closed at T8. The
+    derived tail is 4 calls for quick, which puts the worst case at 121
+    of 130 — the numbers the CHANGELOG and `run.WORST_CASE` carry. The
+    constraint the item records is unchanged; only its arithmetic was
+    superseded, and a debt file quoting retired figures is a debt file
+    a reader has to check twice.* **(T3/T6)**
+44. The headroom prose double-counts the bisection: the clean-run
+    figure already contained the ladder's own calls, so the worst case
+    the prose derived from it was wrong and the cost-narrative clause
+    built on that number was false. *Restated at the final fix wave for
+    the same reason as item 43: the "546 already contained ~12 ladder
+    calls, so the true worst case was ~553" arithmetic this item was
+    raised with came from the same hand count its closed companion
+    (item 91) retired at T8. The derived terms are a bisection of at
+    most 4 calls quick / 8 full over T6's re-measured 552-call clean
+    full run, which puts full's worst case at 560 of 610. The
+    double-count the item records stands; its figures do not.* **(T3)**
 45. `ceiling_cap_for` **branches on the mode STRING rather than on the
     params** (`if mode != "quick"`) — this is the CAUSE behind the diff
     findings at item 48: quick alone skips the `training_ctx` narrowing
@@ -339,9 +354,10 @@ Detail and evidence:
     **(T4)**
 59. `_GRADES_V4` is defined after its use. **(T4)**
 60. The changes-non-empty vacuity guard is missing. **(T4)**
-61. The published matrix page was **not visually opened** during T14 —
-    its content was verified by parsing, not by eye. The final review
-    takes the look. **(T14)**
+61. ~~The published matrix page was not visually opened during T14 — its
+    content was verified by parsing, not by eye. The final review takes
+    the look.~~ **CLOSED at the final fix wave** — the whole-branch
+    review took the look and reported the page sound. **(T14)**
 62. ~~The report page carries SCHEMA versions but not `probe_version`,
     so a row measured by an older instrument is indistinguishable.~~
     **CLOSED at T11** — every row's detail block names the probe
@@ -403,14 +419,17 @@ Detail and evidence:
 82. `run.py:896`'s bare "What starts, finishes." is paragraph-scoped
     correctly but unqualified on its own line. **(T10)**
 83. CHANGELOG uses "TOKEN" caps where the README uses bold. **(T10)**
-84. **"Thirty lane readings" is loose wording** in the CHANGELOG and the
+84. ~~"Thirty lane readings" is loose wording in the CHANGELOG and the
     diffs read-out: thirty is the count of k-readings (15 models × 2 k
     values); the lanes themselves number 90. This file says it
-    correctly; those two do not. **(T14)**
-85. **CARRIED-DEBT.md is linked from nothing.** A durable ledger nobody
-    can find is halfway to a dead pointer. Deliberately not fixed here
-    to keep the fix round's scope tight; ledgered for the final review.
+    correctly; those two do not.~~ **CLOSED at the final fix wave** —
+    both now say k-readings and name the ninety lanes beside them.
     **(T14)**
+85. ~~CARRIED-DEBT.md is linked from nothing. A durable ledger nobody
+    can find is halfway to a dead pointer. Deliberately not fixed here
+    to keep the fix round's scope tight; ledgered for the final
+    review.~~ **CLOSED at the final fix wave** — README's version-history
+    paragraph and the v0.9 CHANGELOG entry both point here. **(T14)**
 86. The T14 commit subjects were the implementer's own grouping rather
     than the plan's stated subject line, and the substitution went
     undisclosed at the time. **(T14)**

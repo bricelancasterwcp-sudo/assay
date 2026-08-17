@@ -262,4 +262,4 @@ degradation ratios between 0.995 and 1.007. No live endpoint in this
 campaign read serialized. That is a fact about the corpus, and it is
 carried into `docs/CARRIED-DEBT.md` as the tolerance sanity-check
 outcome: `OVERLAP_TOLERANCE_S` was never the binding term across 30 live
-lane readings, so its edge remains untested by evidence.
+k-readings (90 lanes), so its edge remains untested by evidence.
