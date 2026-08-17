@@ -237,6 +237,107 @@ def test_codecs_subcommand_stops_sequentially_like_the_probe_command(
     assert backend.calls == 60  # 12 cells x one look of 5
 
 
+# --- budget mode (v1.7): the flags ARE the mode ----------------------
+
+
+def test_budget_calls_selects_budget_mode_and_is_the_call_ceiling(
+    tmp_path, monkeypatch, capsys
+):
+    # The consumer invocation: "give me the most load-bearing profile you
+    # can for 44 calls". No mode flag — the budget flag IS the mode.
+    backend = ScriptedBackend()
+    _use_backend(monkeypatch, backend)
+    out = tmp_path / "profile.json"
+
+    code = cli.main(["probe", _URL, "--model", "fake-model",
+                     "--budget-calls", "44", "--json", str(out)])
+
+    assert code == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["provenance"]["mode"] == "budget"
+    assert payload["provenance"]["budget"]["max_calls"] == 44
+    # The documented token ceiling comes from the mode's own default
+    # (budget mode runs quick-shaped families), and the run stays inside
+    # it — a call budget that outran its token budget would just relocate
+    # the death to the other meter.
+    assert (payload["provenance"]["budget"]["max_prompt_tokens"]
+            == cli.DEFAULT_BUDGETS["budget"].max_prompt_tokens)
+    assert payload["provenance"]["spent"]["calls"] == 44 == backend.calls
+    assert payload["provenance"]["spent"]["prompt_tokens"] < (
+        payload["provenance"]["budget"]["max_prompt_tokens"])
+    # No wall-clock ceiling was granted, so none is reported.
+    assert "max_seconds" not in payload["provenance"]["budget"]
+    assert "seconds" not in payload["provenance"]["spent"]
+    # Every family that did not fit is named with the budget wording.
+    assert "codecs-patch: budget — would exceed remaining" in (
+        payload["provenance"]["dropped"])
+    capsys.readouterr()
+
+
+def test_budget_seconds_alone_selects_budget_mode_and_is_recorded(
+    tmp_path, monkeypatch, capsys
+):
+    _use_backend(monkeypatch, ScriptedBackend())
+    out = tmp_path / "profile.json"
+
+    # An hour is a ceiling this scripted run cannot reach: the flag's job
+    # here is to select the mode and to be RECORDED, granted and spent.
+    code = cli.main(["probe", _URL, "--model", "fake-model",
+                     "--budget-seconds", "3600", "--json", str(out)])
+
+    assert code == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["provenance"]["mode"] == "budget"
+    assert payload["provenance"]["budget"]["max_seconds"] == 3600.0
+    # The call ceiling falls back to the mode's documented default.
+    assert (payload["provenance"]["budget"]["max_calls"]
+            == cli.DEFAULT_BUDGETS["budget"].max_calls)
+    assert payload["provenance"]["spent"]["seconds"] >= 0.0
+    capsys.readouterr()
+
+
+def test_the_two_budget_flags_combine(tmp_path, monkeypatch, capsys):
+    _use_backend(monkeypatch, ScriptedBackend())
+    out = tmp_path / "profile.json"
+
+    code = cli.main(["probe", _URL, "--model", "fake-model",
+                     "--budget-calls", "44", "--budget-seconds", "600",
+                     "--json", str(out)])
+
+    assert code == 0
+    granted = json.loads(out.read_text(encoding="utf-8"))["provenance"]["budget"]
+    assert granted["max_calls"] == 44 and granted["max_seconds"] == 600.0
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize("mode_flag", ["--quick", "--full", "--thorough"])
+def test_a_budget_flag_and_a_mode_flag_is_an_error(mode_flag, monkeypatch,
+                                                   capsys):
+    # Budget mode IS a mode: combining it with another one would leave
+    # the run's own provenance unable to say which one it measured under.
+    _use_backend(monkeypatch, ScriptedBackend())
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["probe", _URL, "--model", "fake-model",
+                  "--budget-calls", "44", mode_flag])
+
+    assert excinfo.value.code == 2
+    assert "budget" in capsys.readouterr().err.lower()
+
+
+def test_budget_mode_exits_2_when_it_could_measure_nothing(monkeypatch,
+                                                           capsys):
+    # A budget below the entry fee against a backend with no metadata:
+    # not one family measured, so the CLI must not print a profile.
+    _use_backend(monkeypatch, MetadataFreeBackend())
+
+    code = cli.main(["probe", _URL, "--model", "fake-model",
+                     "--budget-calls", "1"])
+
+    assert code == 2
+    assert "budget" in capsys.readouterr().err.lower()
+
+
 # --- diff subcommand -------------------------------------------------
 #
 # Exit codes here are a DIFFERENT taxonomy from probe's: 1 = drift

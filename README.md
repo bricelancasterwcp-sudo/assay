@@ -58,6 +58,9 @@ assay probe http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0 --json
 # Time-boxed instead: fixed n=5 per codec cell, and the lens says so.
 assay probe http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0 --quick --json profile.json
 
+# Budget mode: the most profile 60 calls (and 90 seconds) can buy.
+assay probe http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0 --budget-calls 60 --budget-seconds 90
+
 # One family at a time:
 assay geometry http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
 assay ceiling  http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
@@ -71,6 +74,8 @@ assay report profile-*.json --out report.html  # N profiles as one matrix page
 
 Flags: `--full | --thorough | --quick` (`--full` is the default;
 `--thorough` is an alias of it, kept so old invocations still parse),
+`--budget-calls N` / `--budget-seconds S` (either one selects **budget
+mode** — see below — and they do not combine with the mode flags),
 `--backend ollama|openai` (else auto-detect), `--json PATH`,
 `--record PATH` (JSONL call transcript), `--max-calls N`,
 `--max-prompt-tokens N`, `--window-cap N`, `--tier NAME` (requires
@@ -106,7 +111,9 @@ thorough: 610 calls / 1M — overridable with `--max-calls` /
 no codec cell decides early and every one runs to the 35-sample cap); a
 typical run stops well short. `mode` is explicit above because the
 library's default is still `"quick"` — the cheap one — while the CLI
-defaults to `--full`.
+defaults to `--full`. `mode="budget"` runs the priority-ordered consumer
+probe, taking its ceilings from the `Budget` itself (`max_calls`, and
+`max_seconds` for the wall clock).
 
 ## The profile
 
@@ -667,6 +674,39 @@ measurement;
 the acceptance does not move to fit it. The token ceiling does not
 move — 230k of 1M is not close. Quick measures no concurrency, so its
 numbers are unchanged.
+
+### Budget mode
+
+`--budget-calls N` (and optionally `--budget-seconds S`) answers a
+different question from the other modes: not "measure everything" but
+**"measure the most load-bearing profile you can for N calls"**. It is
+the settings-time probe an application runs against whatever endpoint a
+user pointed it at.
+
+Families run in a pre-registered priority — geometry, envelope, speed,
+the `json_object` cells, the patch cells, tools, ceiling, loop,
+long-output (`assay.run.PRIORITY`, pinned by a test so a reordering
+cannot happen quietly). Before each one starts, its **declared worst
+case** (`worst_case_calls`, plus the bisection a failing ceiling ladder
+would need) is checked against what is left. A family that does not fit
+is dropped by name — `"<family>: budget — would exceed remaining"` —
+and never started, because a family cut off halfway spends calls on a
+number no verdict can be read off. What starts, finishes.
+
+A refusal is not the end of the run: the order is a priority, not a
+cliff, so a cheaper family further down still runs. The wall clock works
+the same way — checked at family boundaries and between calls, never
+mid-call, so a run that runs out of time stops before the next call
+rather than leaving a half-measurement behind, and the families after it
+read `"<family>: budget — seconds"`. Two families are not in the
+priority and say so as mode facts: `ceiling_shapes` (a capacity-planning
+question, not a settings-time one) and `parallel` (full mode measures
+concurrency).
+
+Budget mode measures quick-shaped families — fixed n, no sequential
+schedules — because its scarce resource is coverage, not depth. Whatever
+it did not buy reads `unmeasured` through the same None-vs-zero path as
+any other unmeasured family.
 
 The long-output ladder is the one family whose charge is dominated by
 **generation** rather than prompt: a 4096-token rung shares the context

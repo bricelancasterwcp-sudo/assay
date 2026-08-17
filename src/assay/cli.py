@@ -117,10 +117,19 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 # the token ceilings do not move: a call budget that outruns its token
 # budget just relocates the mid-family death to the other meter, and 1M
 # is nowhere near 230k.
+#
+# BUDGET MODE (v1.7) is the consumer's own ceiling, so its defaults are
+# only what the flags do not say. ``--budget-calls N`` replaces the call
+# ceiling and ``--budget-seconds S`` adds a wall-clock one; whatever is
+# left over comes from quick's documented numbers, because budget mode
+# runs quick-shaped families (run.MODE_PARAMS). A consumer who names
+# only seconds still gets a call ceiling — an unbounded one would be a
+# budget nobody granted.
 DEFAULT_BUDGETS = {
     "quick": Budget(max_calls=130, max_prompt_tokens=220_000),
     "full": Budget(max_calls=610, max_prompt_tokens=1_000_000),
     "thorough": Budget(max_calls=610, max_prompt_tokens=1_000_000),
+    "budget": Budget(max_calls=130, max_prompt_tokens=220_000),
 }
 
 #: The commands that spend GPU time, and so take a budget.
@@ -130,6 +139,24 @@ _DIFF_COMMAND = "diff"
 #: The key every profile schema has carried since v1. A document
 #: without it is not a profile, whatever else it parses as.
 PROFILE_VERSION_KEY = "assay_profile_version"
+
+
+class _ModeFlag(argparse.Action):
+    """``--quick``/``--full``/``--thorough``, and a record that one was TYPED.
+
+    The default mode is full, so ``args.mode`` alone cannot tell a run
+    that asked for full from one that asked for nothing — and budget
+    mode has to know the difference, because ``--budget-calls`` selects
+    a mode and combining two mode selections is an error rather than a
+    silent precedence rule.
+    """
+
+    def __init__(self, option_strings, dest, const, **kwargs) -> None:
+        super().__init__(option_strings, dest, nargs=0, const=const, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None) -> None:
+        setattr(namespace, self.dest, self.const)
+        namespace.mode_flag_given = True
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -151,22 +178,34 @@ def _build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--model", required=True, help="model name to probe")
         mode = sub.add_mutually_exclusive_group()
         mode.add_argument(
-            "--quick", dest="mode", action="store_const", const="quick",
+            "--quick", dest="mode", action=_ModeFlag, const="quick",
             help="short ladder, reduced probe counts "
                  "(fixed n=5, fixed-n lens)",
         )
         mode.add_argument(
-            "--full", dest="mode", action="store_const", const="full",
+            "--full", dest="mode", action=_ModeFlag, const="full",
             help="full seeds, full ladder, full probe counts (default; "
                  "sequential codec sampling, stops at the first decided "
                  "look)",
         )
         mode.add_argument(
-            "--thorough", dest="mode", action="store_const", const="thorough",
+            "--thorough", dest="mode", action=_ModeFlag, const="thorough",
             help="alias of --full (its old fixed n=35 is subsumed by the "
                  "sequential cap)",
         )
-        sub.set_defaults(mode="full")
+        sub.set_defaults(mode="full", mode_flag_given=False)
+        sub.add_argument(
+            "--budget-calls", type=int, metavar="N",
+            help="BUDGET MODE: measure the pre-registered family priority "
+                 "under a ceiling of N model calls, dropping by name every "
+                 "family that does not fit (implies budget mode)",
+        )
+        sub.add_argument(
+            "--budget-seconds", type=float, metavar="S",
+            help="BUDGET MODE: stop starting families after S wall-clock "
+                 "seconds; checked between calls, never mid-call "
+                 "(implies budget mode; combines with --budget-calls)",
+        )
         sub.add_argument(
             "--backend", choices=("ollama", "openai"),
             help="force the backend kind instead of auto-detecting",
@@ -347,6 +386,25 @@ def _load_directives(path: Path | None) -> CodecDirectives | None:
     )
 
 
+def _apply_budget_mode(parser: argparse.ArgumentParser,
+                       args: argparse.Namespace) -> None:
+    """Either budget flag selects budget mode; a second mode is an error.
+
+    The flags ARE the mode (spec §4): a consumer says what it can spend,
+    not which sampling table to use. Combining them with --quick/--full/
+    --thorough would leave the profile's own provenance unable to say
+    which mode measured it, so argparse refuses the invocation the way
+    it refuses any other mutually exclusive pair.
+    """
+    if args.budget_calls is None and args.budget_seconds is None:
+        return
+    if args.mode_flag_given:
+        parser.error(
+            "--budget-calls/--budget-seconds cannot be combined with "
+            "--quick/--full/--thorough: a budget IS a mode")
+    args.mode = "budget"
+
+
 def _budget_for(args: argparse.Namespace) -> Budget:
     budget = DEFAULT_BUDGETS[args.mode]
     if args.max_calls is not None:
@@ -355,6 +413,13 @@ def _budget_for(args: argparse.Namespace) -> Budget:
         budget = dataclasses.replace(
             budget, max_prompt_tokens=args.max_prompt_tokens
         )
+    # The budget flags are the mode's own ceilings, so they are applied
+    # last: a run that names both --max-calls and --budget-calls asked
+    # for budget mode, and budget mode's ceiling is the one it gets.
+    if args.budget_calls is not None:
+        budget = dataclasses.replace(budget, max_calls=args.budget_calls)
+    if args.budget_seconds is not None:
+        budget = dataclasses.replace(budget, max_seconds=args.budget_seconds)
     return budget
 
 
@@ -430,9 +495,12 @@ def _run_probe(args: argparse.Namespace, budget: Budget) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
     # Only the measuring commands take a budget; report and diff read
     # files that already exist and never touch an endpoint.
+    if args.command in _COMMANDS:
+        _apply_budget_mode(parser, args)
     budget = _budget_for(args) if args.command in _COMMANDS else None
     try:
         if args.command == _REPORT_COMMAND:

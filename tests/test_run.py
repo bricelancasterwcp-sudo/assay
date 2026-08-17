@@ -8,6 +8,7 @@ from fakes import (CodecFailingBackend, LongOutputDegradingBackend,
                    ScriptedBackend, ToolsUnsupportedBackend)
 
 from assay import Budget, Profile, probe
+from assay.errors import BudgetExhausted
 
 _URL = "http://fake-host:11434"
 _VRAM_MIB = 14558
@@ -993,9 +994,9 @@ def test_no_family_outspends_what_the_table_declares(family, mode):
 def test_the_table_names_every_family_the_orchestrator_runs():
     """The keys are an interface: budget mode preflights BY these names,
     and the codec halves are split because it buys them separately."""
-    from assay.run import _WORST_CASE
+    from assay.run import WORST_CASE
 
-    assert set(_WORST_CASE) == {
+    assert set(WORST_CASE) == {
         "geometry", "calibration", "ceiling", "ceiling_shapes", "envelope",
         "codecs-json", "codecs-patch", "speed", "loop", "long_output",
         "tools", "parallel",
@@ -1061,10 +1062,10 @@ def test_the_table_explains_the_measured_runs_and_fits_the_default_budget():
     """
     from assay.ceiling import bisection_worst_case_steps
     from assay.cli import DEFAULT_BUDGETS
-    from assay.run import MODE_PARAMS, _WORST_CASE, worst_case_calls
+    from assay.run import MODE_PARAMS, WORST_CASE, worst_case_calls
 
     full = MODE_PARAMS["full"]
-    declared = sum(worst_case_calls(family, full) for family in _WORST_CASE)
+    declared = sum(worst_case_calls(family, full) for family in WORST_CASE)
     assert declared == _MEASURED_CLEAN_FULL_RUN
 
     # A ladder that fails stops EARLY (it never reaches the cap) and
@@ -1077,9 +1078,306 @@ def test_the_table_explains_the_measured_runs_and_fits_the_default_budget():
     # Quick NAMES the parallel family instead of running it (run.py), so
     # its declared cost is not part of a quick run's bill.
     quick_declared = sum(worst_case_calls(family, quick)
-                         for family in _WORST_CASE if family != "parallel")
+                         for family in WORST_CASE if family != "parallel")
     assert quick_declared == _QUICK_CALLS_TOTAL
     quick_bisection = (bisection_worst_case_steps(quick.ceiling_cap)
                        * len(quick.seeds))
     assert (quick_declared + quick_bisection
             <= DEFAULT_BUDGETS["quick"].max_calls)
+
+
+# --- budget mode: the priority-ordered consumer probe (v1.7) ---------------
+#
+# The consumer story: an application at settings-time wants the most
+# load-bearing profile it can get in <=N calls and optionally <=S
+# seconds. Every number below is DERIVED from the declared cost table
+# above, because the whole mode is that table used as a preflight: a
+# family that does not fit is dropped BY NAME and never started, and a
+# cheaper family further down the priority may still fit.
+
+#: What each family costs a budget-mode run, in priority order. The
+#: ceiling term carries its bisection tail (see the preflight test).
+_BUDGET_CALIBRATION = 2
+_BUDGET_ENVELOPE = 10
+_BUDGET_SPEED = 2
+_BUDGET_CODECS_JSON = 30
+_BUDGET_CODECS_PATCH = 30
+_BUDGET_TOOLS = 10
+_BUDGET_CEILING_LADDER = 5
+_BUDGET_CEILING_BISECTION = 4
+_BUDGET_LOOP = 15
+_BUDGET_LONG_OUTPUT = 4
+
+#: THE WORKED EXAMPLE (spec §4). The spec wrote 25 before calibration
+#: was measured at two calls and before the deep json grades tripled the
+#: json half; re-derived against the table this task consumes, the
+#: budget that buys exactly {geometry, envelope, speed, json quick} is
+#: 2 + 0 + 10 + 2 + 30 = 44 — and buys it exactly, with nothing left
+#: over for the 4-call long-output ladder that follows the drops.
+_WORKED_EXAMPLE_CALLS = (_BUDGET_CALIBRATION + _BUDGET_ENVELOPE
+                         + _BUDGET_SPEED + _BUDGET_CODECS_JSON)
+
+#: The two families budget mode does not run at all, named as MODE facts
+#: rather than as budget failures — the reason is the priority, not the
+#: meter, and a consumer reading `dropped` must be able to tell those
+#: apart.
+_BUDGET_MODE_FACTS = [
+    "ceiling_shapes: budget mode — not in the registered priority",
+    "parallel: budget mode — full mode measures concurrency",
+]
+
+
+def _budget_probe(calls, *, budget_kwargs=None, **kwargs):
+    """One budget-mode run under a call ceiling and a token budget no
+    family can reach — these tests are about the CALL preflight."""
+    budget = Budget(max_calls=calls, max_prompt_tokens=10**9,
+                    **(budget_kwargs or {}))
+    return probe(_URL, "fake-model", budget=budget, mode="budget", **kwargs)
+
+
+def test_the_budget_priority_order_is_the_registered_one():
+    # Pinned as DATA, cheapest-and-most-load-bearing first. Reordering it
+    # is a change to what a consumer's N calls buy, and it must fail a
+    # test rather than quietly re-rank someone's settings-time probe.
+    from assay.run import PRIORITY, WORST_CASE
+
+    assert PRIORITY == ("geometry", "envelope", "speed", "codecs-json",
+                        "codecs-patch", "tools", "ceiling", "loop",
+                        "long_output")
+    # Every name in it is priced by the declared table — an unpriced
+    # family cannot be preflighted, and a preflight that guessed would be
+    # exactly the mid-family death this mode exists to prevent.
+    assert set(PRIORITY) <= set(WORST_CASE)
+    # The families NOT in the priority are the two the mode names as mode
+    # facts; calibration is not a family, it is the run's entry fee.
+    assert set(WORST_CASE) - set(PRIORITY) == {
+        "calibration", "ceiling_shapes", "parallel"}
+
+
+def test_budget_mode_params_are_quicks_numbers():
+    # Budget mode measures quick-SHAPED families under a consumer's
+    # ceiling: the point is coverage order, not sequential depth. A
+    # sequential codec schedule here would spend a whole budget deciding
+    # one cell.
+    from assay.run import MODE_PARAMS
+
+    assert MODE_PARAMS["budget"] == MODE_PARAMS["quick"]
+    assert MODE_PARAMS["budget"].codec_look_schedule is None
+    assert MODE_PARAMS["budget"].tools_look_schedule is None
+
+
+def test_the_worked_example_buys_geometry_envelope_speed_and_json():
+    backend = ScriptedBackend()
+    profile = _budget_probe(_WORKED_EXAMPLE_CALLS, _backend_override=backend)
+
+    assert profile.provenance["mode"] == "budget"
+    # What the priority bought, in order.
+    assert profile.geometry is not None
+    assert profile.envelope is not None and profile.envelope.n == 10
+    assert profile.speed is not None and profile.speed.decode_tps == 16.0
+    from assay.codecs import GRADES_FOR
+    for grade in GRADES_FOR["json_object"]:
+        assert profile.codecs["json_object"][grade].n == 5, grade
+    # ...and what it did not buy: every patch cell unmeasured, and the
+    # family that owns them named ONCE, by its priority name.
+    for codec in ("search_replace", "whole_file"):
+        for grade in GRADES_FOR[codec]:
+            assert profile.codecs[codec][grade].n == 0, (codec, grade)
+    assert profile.ceiling is None
+    assert profile.loop is None
+    assert profile.long_output is None
+    assert profile.tools is None
+
+    assert profile.provenance["dropped"] == [
+        "codecs-patch: budget — would exceed remaining",
+        "tools: budget — would exceed remaining",
+        "ceiling: budget — would exceed remaining",
+        "loop: budget — would exceed remaining",
+        "long_output: budget — would exceed remaining",
+        *_BUDGET_MODE_FACTS,
+    ]
+    # Nothing was started that could not finish: the spend is the
+    # declared cost of the families that ran, to the call.
+    assert profile.provenance["spent"]["calls"] == _WORKED_EXAMPLE_CALLS
+    assert backend.calls == _WORKED_EXAMPLE_CALLS
+
+    verdicts = {name: entry["verdict"]
+                for name, entry in profile.verdicts.items()}
+    assert verdicts["structured_extraction"] == "ready"
+    assert verdicts["chat_speed"] == "ready"
+    assert verdicts["agent_speed"] == "ready"
+    for unmeasured in ("patch_editing", "long_context", "loop_discipline",
+                       "long_output", "tool_calling"):
+        assert verdicts[unmeasured] == "unmeasured", unmeasured
+
+    # The budget-mode document survives its own serialization contract.
+    assert Profile.from_json(json.loads(profile.to_json())) == profile
+
+
+def test_one_call_short_of_the_worked_example_drops_the_json_half_whole():
+    # The preflight is a REFUSAL, not a truncation: a budget one call
+    # short of the json half buys none of it, rather than 29 probes and a
+    # matrix nobody can read a verdict off.
+    backend = ScriptedBackend()
+    profile = _budget_probe(_WORKED_EXAMPLE_CALLS - 1,
+                            _backend_override=backend)
+
+    assert profile.codecs is None
+    dropped = profile.provenance["dropped"]
+    assert "codecs-json: budget — would exceed remaining" in dropped
+    assert "codecs-patch: budget — would exceed remaining" in dropped
+    # `codecs` is a v1 family: None here has to be named under its own
+    # name too, or the schema guard would refuse the document.
+    assert any(entry.startswith("codecs:") for entry in dropped)
+    assert profile.verdicts["structured_extraction"]["verdict"] == "unmeasured"
+    # The 29 calls the json half could not use are not lost: every
+    # cheaper family below it in the priority that still fits runs —
+    # tools (10), the ceiling with its bisection reserve (9, spending 5
+    # on a clean ladder), and the long-output rungs (4). Only the loop
+    # (15) is out of reach.
+    assert profile.tools is not None
+    assert profile.ceiling is not None
+    assert profile.long_output is not None
+    assert profile.loop is None
+    assert "loop: budget — would exceed remaining" in dropped
+    assert backend.calls == (_BUDGET_CALIBRATION + _BUDGET_ENVELOPE
+                             + _BUDGET_SPEED + _BUDGET_TOOLS
+                             + _BUDGET_CEILING_LADDER + _BUDGET_LONG_OUTPUT)
+
+
+def test_the_priority_is_an_order_not_a_cliff():
+    # The spec's original worked-example budget. Both codec halves are
+    # unaffordable at 25, and the mode does NOT stop there: tools is
+    # further down the priority and cheaper, so it still measures. A
+    # first-refusal-ends-the-run reading would leave 11 calls unspent and
+    # a consumer with less profile than their budget paid for.
+    backend = ScriptedBackend()
+    profile = _budget_probe(25, _backend_override=backend)
+
+    assert profile.codecs is None
+    assert profile.tools is not None and profile.tools.supported is True
+    assert profile.verdicts["tool_calling"]["verdict"] == "ready"
+    dropped = profile.provenance["dropped"]
+    assert "codecs-json: budget — would exceed remaining" in dropped
+    assert "codecs-patch: budget — would exceed remaining" in dropped
+    assert backend.calls == (_BUDGET_CALIBRATION + _BUDGET_ENVELOPE
+                             + _BUDGET_SPEED + _BUDGET_TOOLS)
+
+
+def test_a_fat_budget_measures_every_family_in_the_priority():
+    backend = ScriptedBackend()
+    profile = _budget_probe(200, _backend_override=backend)
+
+    for family in ("geometry", "envelope", "speed", "codecs", "tools",
+                   "ceiling", "loop", "long_output"):
+        assert getattr(profile, family) is not None, family
+    # The two families outside the priority, named as mode facts — and
+    # nothing else: no budget line at all on a run that could pay.
+    assert profile.provenance["dropped"] == _BUDGET_MODE_FACTS
+    assert profile.ceiling_shapes is None and profile.parallel is None
+    # Quick's whole bill minus the two families budget mode does not run.
+    assert backend.calls == _QUICK_CALLS_TOTAL - 9  # the nine shape probes
+
+
+def test_the_ceiling_preflight_reserves_the_bisection_tail():
+    # What starts, finishes — and a FAILING ladder does not stop at the
+    # last rung, it bisects. The preflight reserves both, so a budget
+    # with room for the five ladder calls and not for the bisection they
+    # can force drops the family by name rather than dying inside it.
+    room_for_the_ladder_only = _WORKED_EXAMPLE_CALLS + _BUDGET_CEILING_LADDER
+    profile = _budget_probe(room_for_the_ladder_only,
+                            _backend_override=ScriptedBackend())
+    assert profile.ceiling is None
+    assert ("ceiling: budget — would exceed remaining"
+            in profile.provenance["dropped"])
+
+    # Four calls more — the declared bisection worst case — and the same
+    # ladder is affordable. This endpoint is clean, so it spends five.
+    backend = ScriptedBackend()
+    profile = _budget_probe(
+        room_for_the_ladder_only + _BUDGET_CEILING_BISECTION,
+        _backend_override=backend)
+    assert profile.ceiling is not None
+    assert profile.ceiling.max_verified == 16384
+    assert profile.verdicts["long_context"]["verdict"] == "ready"
+
+
+def test_the_ceiling_preflight_prices_the_cap_the_run_will_use():
+    # The cost table prices the MODE cap (16384 here); the run's ladder
+    # is bounded by the effective cap — the user's --window-cap or the
+    # model's training_ctx, whichever is tighter. Reserving the mode
+    # cap's price on a run that will never send those rungs over-reserves
+    # by half and drops a family the budget could afford.
+    room_for_the_ladder_only = _WORKED_EXAMPLE_CALLS + _BUDGET_CEILING_LADDER
+    backend = ScriptedBackend()
+    profile = _budget_probe(room_for_the_ladder_only, window_cap=2048,
+                            _backend_override=backend)
+
+    # Same budget as the drop above — capped at 2048 the ladder is two
+    # rungs and its bisection two more, so the family fits and measures.
+    assert profile.ceiling is not None
+    assert profile.ceiling.max_verified == 2048
+    assert not any(entry.startswith("ceiling:")
+                   for entry in profile.provenance["dropped"])
+
+
+def test_the_clock_never_cuts_a_family_in_half():
+    # The seconds ceiling is checked at family boundaries and between
+    # calls, never mid-call: the family that was running when the clock
+    # ran out finishes, and every family after it is dropped by name with
+    # the limit that stopped it.
+    backend = ScriptedBackend()
+    seconds_per_call = 1.0
+    # Two calibration calls plus ten envelope probes = 12 calls, and the
+    # meter's last admitted charge lands at 11 seconds.
+    profile = _budget_probe(
+        200,
+        budget_kwargs={"max_seconds": 11.5},
+        _backend_override=backend,
+        _clock=lambda: backend.calls * seconds_per_call,
+    )
+
+    assert profile.geometry is not None
+    # COMPLETE, not partial: ten of ten envelope probes.
+    assert profile.envelope is not None and profile.envelope.n == 10
+    assert profile.speed is None
+    assert backend.calls == _BUDGET_CALIBRATION + _BUDGET_ENVELOPE
+
+    dropped = profile.provenance["dropped"]
+    for family in ("speed", "codecs-json", "codecs-patch", "tools",
+                   "ceiling", "loop", "long_output"):
+        assert f"{family}: budget — seconds" in dropped, family
+    # The granted ceiling and what the clock read travel together.
+    assert profile.provenance["budget"]["max_seconds"] == 11.5
+    assert profile.provenance["spent"]["seconds"] == 11.0
+
+
+def test_a_budget_too_small_for_calibration_still_reports_geometry():
+    # Calibration is the run's entry fee (two calls). Below it nothing
+    # generative can run — but geometry asks the model nothing, so it is
+    # a measurement the meter has no business refusing.
+    backend = ScriptedBackend()
+    profile = _budget_probe(1, _backend_override=backend)
+
+    assert backend.calls == 0
+    assert profile.geometry is not None
+    assert profile.geometry.usable_window > 0
+    dropped = profile.provenance["dropped"]
+    assert "calibration: budget — would exceed remaining" in dropped
+    assert "envelope: budget — would exceed remaining" in dropped
+    assert profile.provenance["calibration"] is None
+
+
+def test_a_budget_that_measured_nothing_at_all_raises():
+    # No metadata (geometry unmeasurable) and no room for calibration:
+    # the run measured NOTHING, and a document full of Nones must not be
+    # handed back as a result (the CLI maps this to exit 2).
+    with pytest.raises(BudgetExhausted):
+        _budget_probe(1, _backend_override=MetadataFreeBackend())
+
+
+def test_an_unknown_mode_still_names_the_modes_that_exist():
+    with pytest.raises(ValueError, match="budget"):
+        probe(_URL, "fake-model",
+              budget=Budget(max_calls=10, max_prompt_tokens=10**6),
+              mode="nonsense", _backend_override=ScriptedBackend())

@@ -11,10 +11,19 @@ family hitting BudgetExhausted stops the remaining families; every
 unfinished family is None and named in ``provenance.dropped`` — never
 partial-pretending-complete. If the budget dies before ANY family
 completed, BudgetExhausted propagates (the CLI maps it to exit 2).
+
+BUDGET MODE (v1.7, ``mode="budget"`` -> ``_probe_budget``) keeps every
+one of those rules and changes the order: families run in the
+pre-registered ``PRIORITY``, each one preflighted against its declared
+worst case (``worst_case_calls``) and against the wall clock, and a
+family that does not fit is dropped BY NAME instead of being started
+and truncated. The two orchestrators share the profile-assembly tail
+(``_finish_profile``), so a document says the same things whichever
+one measured it.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,9 +34,9 @@ from assay.backends.ollama import OllamaNative
 from assay.backends.openai_compat import OpenAICompat
 from assay.budget import Budget, BudgetMeter
 from assay.ceiling import (CALIBRATION_CALLS, Calibration, Ceiling,
-                           ShapeCeiling, calibrate, ladder_steps,
-                           probe_ceiling, probe_fixed_shapes,
-                           shape_probe_sizes)
+                           ShapeCeiling, bisection_worst_case_steps,
+                           calibrate, ladder_steps, probe_ceiling,
+                           probe_fixed_shapes, shape_probe_sizes)
 from assay.codecs import (CodecDirectives, DEFAULT_PRESENTATION, GRADES_FOR,
                           JSON_CODECS, Landing, PATCH_CODECS, cell_attempts,
                           probe_codecs, stopped_on_rule)
@@ -107,6 +116,15 @@ MODE_PARAMS = {
                            speed_decode_calls=3),
 }
 
+# budget (v1.7) runs QUICK's numbers under a consumer's own ceiling. The
+# families are the same shape they are in quick — fixed n, no look
+# schedules — because the mode's scarce resource is coverage, not depth:
+# a sequential codec schedule would spend a whole consumer budget
+# deciding one cell to n=35 while the ceiling, the loop and the tools
+# families went unmeasured. What differs is the ORDER and the preflight
+# (``PRIORITY``, ``_probe_budget``), not the sampling.
+MODE_PARAMS["budget"] = MODE_PARAMS["quick"]
+
 
 def ceiling_cap_for(
     mode: str, training_ctx: int | None, window_cap: int | None
@@ -155,7 +173,10 @@ def _codec_half_calls(codecs: tuple[str, ...], params: ModeParams) -> int:
 #: the budget block above ``cli.DEFAULT_BUDGETS`` quotes THEM (552 + 8 of
 #: 610 full, 117 + 4 of 130 quick), and tests/test_run.py sums this table
 #: against the metered runs.
-_WORST_CASE = {
+#: PUBLIC because budget mode preflights BY these names (v1.7): the
+#: keys are the interface between a family and a consumer deciding
+#: whether it can afford to start it.
+WORST_CASE = {
     # Geometry is arithmetic over model_info plus a VRAM reading: it asks
     # the model nothing, and 0 is a measurement, not a placeholder.
     "geometry": lambda p: 0,
@@ -191,7 +212,32 @@ def worst_case_calls(family: str, params: ModeParams) -> int:
     An unknown family raises ``KeyError``. There is no default cost: a
     guessed number is how a run starts something it cannot pay for.
     """
-    return _WORST_CASE[family](params)
+    return WORST_CASE[family](params)
+
+
+#: Budget mode's PRE-REGISTERED family order (spec §4): cheapest and
+#: most load-bearing first, so that a consumer's N calls buy the most
+#: profile N calls can buy. Registered as DATA because it decides what
+#: an application learns about its endpoint before it commits to one —
+#: geometry (free) and the envelope come before the codec matrix, the
+#: codec halves come before the families whose verdicts an application
+#: can work around, and the ladder — the priciest thing here once its
+#: bisection tail is reserved — comes after them.
+#:
+#: Two families are deliberately absent. ``ceiling_shapes`` is not in
+#: the priority (nine calls to pin request shapes is a capacity-planning
+#: question, not a settings-time one), and ``parallel`` is a full-mode
+#: measurement that needs six lanes and a single-lane baseline. Both are
+#: NAMED in a budget-mode profile's ``dropped`` as mode facts, so an
+#: absent family never reads as a silent gap.
+PRIORITY = ("geometry", "envelope", "speed", "codecs-json", "codecs-patch",
+            "tools", "ceiling", "loop", "long_output")
+
+#: The two lines above, as a budget-mode run writes them.
+_BUDGET_MODE_FACTS = (
+    "ceiling_shapes: budget mode — not in the registered priority",
+    "parallel: budget mode — full mode measures concurrency",
+)
 
 
 def _utc_now() -> str:
@@ -442,10 +488,14 @@ def probe(
     ``directives`` substitutes the consumer's own codec presentation for
     the built-in one; the profile's provenance and verdict lenses record
     which was used (landing is a property of the instrument, v1.1).
+    ``mode="budget"`` runs the families in the registered ``PRIORITY``
+    under the budget's ceilings instead of running all of them in
+    measurement order (spec §4, ``_probe_budget``).
     """
     if mode not in MODE_PARAMS:
         raise ValueError(
-            f"unknown mode: {mode!r} (expected 'quick', 'full', or 'thorough')")
+            f"unknown mode: {mode!r} "
+            f"(expected one of: {', '.join(sorted(MODE_PARAMS))})")
     if tier is not None and emulated is None:
         # The marking rule (ruled 2026-08-13): a tier-labelled profile
         # must say whether the hardware was emulated. No default — an
@@ -468,10 +518,21 @@ def probe(
     # would be pinned by a sleeping suite, which is no pin at all.
     meter = (BudgetMeter(budget) if _clock is None
              else BudgetMeter(budget, clock=_clock))
-    dropped: list[str] = []
 
     info = active.model_info()  # InfrastructureError propagates (spec §3)
 
+    if mode == "budget":
+        # Same wiring, a different order and a preflight before every
+        # family: the consumer probe (spec §4).
+        return _probe_budget(
+            base_url=base_url, kind=kind, autodetected=autodetected,
+            active=active, info=info, mode=mode, params=params,
+            budget=budget, meter=meter, started=started,
+            window_cap=window_cap, directives=directives, tier=tier,
+            emulated=emulated,
+        )
+
+    dropped: list[str] = []
     calibration: Calibration | None = None
     ceiling: Ceiling | None = None
     envelope = None
@@ -683,6 +744,324 @@ def probe(
         long_output=long_output,
         tools=tools,
         parallel=parallel,
+        dropped=dropped,
+        budget_death=budget_death,
+    )
+
+
+def _budget_preflight_calls(
+    family: str, params: ModeParams, ceiling_cap: int
+) -> int:
+    """What the run must have in hand before ``family`` may start.
+
+    The declared worst case (``worst_case_calls``), with the two
+    refinements a params-only table cannot make:
+
+    * The CEILING reserves its bisection tail as well as its ladder.
+      "What starts, finishes" includes the bisection a FAILING ladder
+      needs: the ladder stops early in that case and never pays for both
+      in full, but a run that reserved only the ladder would die inside
+      the bisection with a ceiling half-located. The run-level headroom
+      the default budgets carry is not available here — a consumer's
+      ceiling IS the budget.
+    * The ceiling is priced at the EFFECTIVE cap — the mode cap after
+      the model's training_ctx and the user's ``--window-cap`` have
+      narrowed it (``ceiling_cap_for``) — rather than at the mode cap the
+      table prices from the params alone. On a small-context model the
+      mode cap over-reserves by roughly half the family, and an
+      over-reserving preflight drops a family the budget could buy. The
+      TABLE stays params-only (it prices modes, not runs); this is the
+      orchestrator refining it with what this run knows.
+    """
+    if family != "ceiling":
+        return worst_case_calls(family, params)
+    priced = replace(params, ceiling_cap=ceiling_cap)
+    return (worst_case_calls("ceiling", priced)
+            + bisection_worst_case_steps(ceiling_cap) * len(params.seeds))
+
+
+def _budget_refusal(family: str, cost: int, meter: BudgetMeter) -> str | None:
+    """The line naming why ``family`` may not start, or None if it may.
+
+    Two ceilings, two findings, two lines: a consumer that ran out of
+    CALLS can buy the family with a bigger budget, and one that ran out
+    of SECONDS cannot. Folding them into one message would tell the
+    first consumer to wait and the second to spend.
+
+    A family costing no model calls is never refused. Geometry is
+    arithmetic over metadata plus a VRAM reading — it asks the model
+    nothing, it is first in the priority BECAUSE it is free, and a
+    ceiling on model spend has no claim on it.
+
+    Only the call meter is preflighted: the cost table declares calls,
+    and there is no per-family token declaration to reserve. A family
+    can still die on the token meter mid-run, which is the existing
+    honest-partial path — it keeps what it measured and stops the ones
+    after it.
+    """
+    if cost == 0:
+        return None
+    if meter.out_of_time():
+        return f"{family}: budget — seconds"
+    if meter.would_exceed_n(cost, 0):
+        return f"{family}: budget — would exceed remaining"
+    return None
+
+
+def _budget_codec_half(
+    family: str,
+    active: Backend,
+    meter: BudgetMeter,
+    params: ModeParams,
+    directives: CodecDirectives | None,
+    matrix: dict[str, dict[str, Landing]] | None,
+    dropped: list[str],
+) -> tuple[dict[str, dict[str, Landing]] | None, bool]:
+    """Measure one half of the codec matrix and merge it into the other.
+
+    A consumer under a call ceiling buys `structured_extraction` and
+    `patch_editing` separately, so budget mode measures them separately
+    (``probe_codecs(only=...)``) and merges: the half that runs second
+    overwrites the ``n == 0`` placeholders the first half's full-matrix
+    return left behind, and never overwrites a measured cell.
+
+    Returns the merged matrix and whether the METER ended this half. A
+    half that measured nothing at all leaves the matrix as it found it —
+    an all-placeholder matrix is indistinguishable from a budget death
+    and must not be handed to a verdict.
+    """
+    only = JSON_CODECS if family == "codecs-json" else PATCH_CODECS
+    half = probe_codecs(active, meter,
+                        n_per_cell=params.codecs_n_per_cell,
+                        directives=directives,
+                        look_schedule=params.codec_look_schedule,
+                        only=only)
+    measured = {codec: half[codec] for codec in only}
+    cells = [(codec, grade, cell)
+             for codec, grades in measured.items()
+             for grade, cell in grades.items()]
+    if all(cell.n == 0 for _, _, cell in cells):
+        dropped.append(f"{family}: budget exhausted before any probe completed")
+        return matrix, True
+    for codec, grade, cell in cells:
+        if cell.n == 0:
+            # Spec §8: every unmeasured cell is named, or a Landing(None,
+            # 0) in a matrix that otherwise measured would read as a
+            # graded zero.
+            dropped.append(f"codecs: {codec}.{grade} budget exhausted "
+                           "before any probe completed")
+    base = matrix if matrix is not None else half
+    merged = {codec: dict(grades) for codec, grades in base.items()}
+    for codec in only:
+        merged[codec] = dict(half[codec])
+    return merged, _codecs_were_cut_off(measured, params)
+
+
+def _probe_budget(
+    *,
+    base_url: str,
+    kind: str,
+    autodetected: bool,
+    active: Backend,
+    info,
+    mode: str,
+    params: ModeParams,
+    budget: Budget,
+    meter: BudgetMeter,
+    started: str,
+    window_cap: int | None,
+    directives: CodecDirectives | None,
+    tier: str | None,
+    emulated: bool | None,
+) -> Profile:
+    """The consumer probe (spec §4): the most profile N calls can buy.
+
+    Two rules hold it up, and they are the same rule seen twice.
+
+    **Drop, never truncate.** Before a family starts, its declared worst
+    case is checked against what is left (``_budget_refusal``). A family
+    that does not fit is named and NOT STARTED — a truncated family
+    spends a consumer's calls on a number no verdict can be read off,
+    which is worse than not having asked. What starts, finishes.
+
+    **A refusal is not the end of the run.** The order is a priority,
+    not a cliff: a cheaper family further down may still fit, and it
+    runs. A first-refusal-stops-everything reading would leave calls
+    unspent and hand the consumer less profile than they paid for.
+
+    A family that dies INSIDE itself — on the token meter, or on the
+    clock between its own calls — keeps its honest partial and stops the
+    families after it, which is ``probe``'s existing behaviour and the
+    reason the preflight is a bound rather than a promise.
+    """
+    dropped: list[str] = []
+    calibration: Calibration | None = None
+    geometry = None
+    ceiling: Ceiling | None = None
+    envelope = None
+    codecs: dict[str, dict[str, Landing]] | None = None
+    speed: Speed | None = None
+    loop: Loop | None = None
+    long_output: LongOutput | None = None
+    tools: Tools | None = None
+    budget_death: BudgetExhausted | None = None
+
+    # Calibration is the run's entry fee, not a family: every generative
+    # family sizes its prompts from it. Below its two calls nothing
+    # generative can run — but geometry still can, so the run continues
+    # rather than raising here.
+    refusal = _budget_refusal(
+        "calibration", worst_case_calls("calibration", params), meter)
+    if refusal is not None:
+        dropped.append(refusal)
+        budget_death = BudgetExhausted(
+            "budget exhausted: no room for calibration, so no family that "
+            "sizes its prompts from it may start")
+    else:
+        try:
+            calibration = calibrate(active, meter, seed=params.seeds[0])
+        except BudgetExhausted as exc:
+            budget_death = exc
+
+    # The ladder's real cap decides the ladder's real price (see
+    # _budget_preflight_calls); it is known before any family runs.
+    ceiling_cap = ceiling_cap_for(mode, info.training_ctx, window_cap)
+
+    for family in PRIORITY:
+        # Two gates, in order of how actionable the answer is. The
+        # ceilings come first because they say what a consumer could
+        # change ("this needs more calls than you granted"); an earlier
+        # family's death comes second, and applies to families the
+        # ceilings would have admitted — the meter is dry, so nothing
+        # that spends may start, whatever the preflight arithmetic says.
+        cost = _budget_preflight_calls(family, params, ceiling_cap)
+        refusal = _budget_refusal(family, cost, meter)
+        if refusal is not None:
+            dropped.append(refusal)
+            continue
+        if budget_death is not None and cost > 0:
+            dropped.append(f"{family}: skipped, budget exhausted earlier")
+            continue
+
+        if family == "geometry":
+            geometry = _read_geometry(
+                active, info, calibration, window_cap, dropped)
+        elif family == "envelope":
+            envelope = probe_envelope(active, meter, n=params.envelope_n)
+            if envelope.n < params.envelope_n:
+                budget_death = BudgetExhausted(
+                    "budget exhausted during envelope probes")
+            if envelope.n == 0:
+                envelope = None
+                dropped.append(
+                    "envelope: budget exhausted before any probe completed")
+        elif family == "speed":
+            speed = probe_speed(active, meter, calibration=calibration,
+                                decode_calls=params.speed_decode_calls)
+            if speed.n_decode == 0 and speed.n_prefill == 0:
+                speed = None
+                dropped.append(
+                    "speed: budget exhausted before any probe completed")
+        elif family in ("codecs-json", "codecs-patch"):
+            codecs, cut_off = _budget_codec_half(
+                family, active, meter, params, directives, codecs, dropped)
+            if cut_off:
+                budget_death = BudgetExhausted(
+                    "budget exhausted during codec probes")
+        elif family == "tools":
+            tools = probe_tools(active, meter,
+                                look_schedule=params.tools_look_schedule)
+            if tools.supported is None:
+                tools = None
+                dropped.append(
+                    "tools: budget exhausted before any turn completed")
+        elif family == "ceiling":
+            try:
+                ceiling = probe_ceiling(active, meter, cap_tokens=ceiling_cap,
+                                        seeds=params.seeds,
+                                        calibration=calibration)
+            except BudgetExhausted as exc:
+                budget_death = exc
+                dropped.append(
+                    "ceiling: budget exhausted before any ladder call")
+            if ceiling is not None and any(entry.signal == "budget"
+                                           for entry in ceiling.evidence):
+                # The partial ceiling reports what it verified; the meter
+                # is dry, so no further family may start.
+                budget_death = BudgetExhausted(
+                    "budget exhausted during the ceiling ladder")
+            if ceiling is not None and not active.caps.per_request_ctx:
+                # Weaker evidence class, stated (spec §5/§11).
+                dropped.append(
+                    "ceiling: per_request_ctx unavailable — ladder measured "
+                    "the server's configured context window")
+        elif family == "loop":
+            loop = probe_loop(active, meter, runs=params.loop_runs)
+            if loop.n_turns == 0:
+                loop = None
+                dropped.append(
+                    "loop: budget exhausted before any turn completed")
+        else:  # long_output — last, and after the ceiling that bounds it
+            long_output = probe_long_output(
+                active, meter,
+                ceiling_max=ceiling.max_verified if ceiling else None)
+            if not long_output.rungs:
+                reason = "; ".join(long_output.skipped) or "no rung was attempted"
+                long_output = None
+                dropped.append(f"long_output: no rung ran ({reason})")
+            elif all(rung.degenerate is None for rung in long_output.rungs):
+                dropped.append(
+                    "long_output: rungs ran but no reply was scorable — "
+                    "the ladder measured nothing")
+
+    if codecs is None and not any(
+        entry.startswith("codecs:") for entry in dropped
+    ):
+        # `codecs` is a v1 family and must be named under its OWN name:
+        # the two halves are named above by their priority names, which
+        # the schema guard (and a consumer grepping for a family) cannot
+        # be expected to read as this one.
+        dropped.append("codecs: budget — neither half of the matrix was "
+                       "measured (see the codecs-json / codecs-patch lines)")
+    dropped.extend(_BUDGET_MODE_FACTS)
+
+    if budget_death is None and all(
+        value is None
+        for value in (geometry, ceiling, envelope, codecs, speed, loop,
+                      long_output, tools)
+    ):
+        # Every family was refused before it started, so nothing raised —
+        # but a document with no measurement in it is not a result, and
+        # _finish_profile's guard needs a death to refuse it with.
+        budget_death = BudgetExhausted(
+            f"budget mode: no family fit the budget (max_calls="
+            f"{budget.max_calls}, max_seconds={budget.max_seconds})")
+
+    return _finish_profile(
+        base_url=base_url,
+        kind=kind,
+        autodetected=autodetected,
+        info=info,
+        mode=mode,
+        params=params,
+        budget=budget,
+        meter=meter,
+        started=started,
+        directives=directives,
+        tier=tier,
+        emulated=emulated,
+        calibration=calibration,
+        geometry=geometry,
+        ceiling=ceiling,
+        # Neither family is in the priority; both are named above.
+        ceiling_shapes=None,
+        envelope=envelope,
+        codecs=codecs,
+        speed=speed,
+        loop=loop,
+        long_output=long_output,
+        tools=tools,
+        parallel=None,
         dropped=dropped,
         budget_death=budget_death,
     )
