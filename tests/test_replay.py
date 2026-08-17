@@ -1,16 +1,33 @@
 """Record/replay transcripts (plan Task 3, spec §10).
 
 CallRecorder wraps a live backend and writes one JSONL row per call
-keyed on (model, prompt, seed). CallReplayer is STRICT: a key the
-transcript lacks — or asked for more times than recorded — raises
-TranscriptMiss, never falls through to live or to a canned value.
+keyed on (model, prompt, seed) — on (model, canonical messages+tools,
+seed) for tool calls. CallReplayer is STRICT: a key the transcript
+lacks — or asked for more times than recorded — raises TranscriptMiss,
+never falls through to live or to a canned value.
 """
+
+import json
+import pathlib
 
 import pytest
 
-from assay.backends.base import Backend, BackendCaps, ModelInfo, Reply
+from assay.backends.base import (
+    BackendCaps,
+    ModelInfo,
+    Reply,
+    ToolCall,
+    ToolReply,
+    ToolsUnsupported,
+)
 from assay.errors import ContractViolation
-from assay.replay import CallRecorder, CallReplayer, TranscriptMiss
+from assay.replay import (
+    CallRecorder,
+    CallReplayer,
+    TranscriptMiss,
+    key_for,
+    tools_key_material,
+)
 
 CAPS = BackendCaps(
     reports_counts=True,
@@ -35,6 +52,14 @@ class ScriptedBackend:
         self._script = list(script)
 
     def generate(self, prompt, *, seed, max_tokens, num_ctx=None):
+        outcome = self._script.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    def chat_tools(self, messages, tools, *, seed, max_tokens):
+        # Same script, same rule: entries are consumed in call order, so a
+        # test that mixes generate and chat_tools still reads top to bottom.
         outcome = self._script.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -126,3 +151,243 @@ def test_recorded_contract_violation_replays_as_contract_violation(tmp_path):
     replayer = CallReplayer(path, model=MODEL, caps=CAPS)
     with pytest.raises(ContractViolation):
         replayer.generate("bug prompt", seed=3, max_tokens=32)
+
+
+# --- v1.6: the tool surface -------------------------------------------------
+#
+# A tool call is not a prompt: its identity is the whole (messages, tools)
+# payload. Rows carry `kind` so a transcript can hold both call shapes and
+# neither can answer for the other.
+
+MESSAGES = [
+    {"role": "system", "content": "You are a tool-using assistant."},
+    {"role": "user", "content": "Open the file `config.yaml`."},
+]
+TOOLSET = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read one file and return its contents.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+    }
+]
+
+
+def make_tool_reply(calls=(), text="", **overrides) -> ToolReply:
+    fields = {
+        "text": text,
+        "tool_calls": tuple(calls),
+        "tokens_in": 40,
+        "tokens_out": 9,
+        "stop_reason": "stop",
+        "raw": {"done": True},
+    }
+    fields.update(overrides)
+    return ToolReply(**fields)
+
+
+def read_rows(path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def test_recorded_tool_replies_replay_verbatim_in_order(tmp_path):
+    # Same (messages, tools, seed) twice, two different outcomes: the
+    # transcript replays them in recording order, calls and all.
+    path = tmp_path / "tools.jsonl"
+    first = make_tool_reply([ToolCall("read_file", {"path": "config.yaml"})])
+    second = make_tool_reply(
+        [ToolCall("read_file", None), ToolCall("run_tests", {})],
+        text="on it",
+        tokens_in=41,
+        tokens_out=12,
+        stop_reason="length",
+    )
+    recorder = CallRecorder(ScriptedBackend([first, second]), path)
+    assert recorder.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256) == first
+    assert recorder.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256) == second
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    one = replayer.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+    two = replayer.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+
+    assert one.tool_calls == (ToolCall("read_file", {"path": "config.yaml"}),)
+    assert (one.text, one.tokens_in, one.tokens_out, one.stop_reason) == (
+        "", 40, 9, "stop")
+    # None arguments (unreadable on the wire) survive the round trip as
+    # None — never as {}, which would read as "called with no arguments".
+    assert two.tool_calls == (ToolCall("read_file", None), ToolCall("run_tests", {}))
+    assert two.tool_calls[0].arguments is None
+    assert two.tool_calls[1].arguments == {}
+    assert (two.text, two.tokens_in, two.tokens_out, two.stop_reason) == (
+        "on it", 41, 12, "length")
+    assert one.raw["replayed"] is True
+
+
+def test_a_tool_call_miss_raises_transcript_miss(tmp_path):
+    path = tmp_path / "tools.jsonl"
+    recorder = CallRecorder(ScriptedBackend([make_tool_reply()]), path)
+    recorder.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    other = [{"role": "user", "content": "something else entirely"}]
+    with pytest.raises(TranscriptMiss):
+        replayer.chat_tools(other, TOOLSET, seed=5, max_tokens=256)
+    # A different toolset is a different call, even with the same messages.
+    with pytest.raises(TranscriptMiss):
+        replayer.chat_tools(MESSAGES, [], seed=5, max_tokens=256)
+    # Recorded once, asked twice: the second ask is a miss.
+    replayer.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+    with pytest.raises(TranscriptMiss):
+        replayer.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+
+
+def test_key_material_ignores_dict_key_order(tmp_path):
+    # The identity of a call is its CONTENT, not the order a caller happened
+    # to build its dicts in. Recording and replaying the same payload with
+    # the keys written in a different order must hit the same row.
+    path = tmp_path / "tools.jsonl"
+    recorder = CallRecorder(ScriptedBackend([make_tool_reply(text="hit")]), path)
+    recorder.chat_tools(
+        [{"role": "user", "content": "ping"}],
+        [{"type": "function", "function": {"name": "run_tests"}}],
+        seed=2,
+        max_tokens=64,
+    )
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    reply = replayer.chat_tools(
+        [{"content": "ping", "role": "user"}],
+        [{"function": {"name": "run_tests"}, "type": "function"}],
+        seed=2,
+        max_tokens=64,
+    )
+    assert reply.text == "hit"
+
+
+def test_recorded_tools_unsupported_replays_as_tools_unsupported(tmp_path):
+    # An endpoint refusing the tools parameter is a capability FACT, so it
+    # has to survive a transcript: the replay raises the same type, which
+    # is deliberately not an AssayError.
+    path = tmp_path / "tools.jsonl"
+    recorder = CallRecorder(ScriptedBackend([ToolsUnsupported("no tools here")]), path)
+    with pytest.raises(ToolsUnsupported):
+        recorder.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+
+    row = read_rows(path)[0]
+    assert (row["kind"], row["outcome"], row["error_type"]) == (
+        "chat_tools", "error", "ToolsUnsupported")
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    with pytest.raises(ToolsUnsupported) as caught:
+        replayer.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+    assert type(caught.value) is ToolsUnsupported
+
+
+def test_recorded_contract_violation_on_a_tool_call_replays_as_itself(tmp_path):
+    path = tmp_path / "tools.jsonl"
+    recorder = CallRecorder(ScriptedBackend([ContractViolation("stats-free 200")]), path)
+    with pytest.raises(ContractViolation):
+        recorder.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    with pytest.raises(ContractViolation):
+        replayer.chat_tools(MESSAGES, TOOLSET, seed=5, max_tokens=256)
+
+
+def test_rows_are_tagged_with_the_call_shape_that_made_them(tmp_path):
+    path = tmp_path / "mixed.jsonl"
+    recorder = CallRecorder(
+        ScriptedBackend(
+            [
+                make_reply("prose"),
+                make_tool_reply([ToolCall("read_file", {"path": "a.txt"})]),
+            ]
+        ),
+        path,
+    )
+    recorder.generate("a prompt", seed=1, max_tokens=32)
+    recorder.chat_tools(MESSAGES, TOOLSET, seed=1, max_tokens=32)
+
+    generate_row, tools_row = read_rows(path)
+    assert generate_row["kind"] == "generate"
+    assert "tool_calls" not in generate_row  # a generate row has no calls to carry
+    assert tools_row["kind"] == "chat_tools"
+    assert tools_row["tool_calls"] == [{"name": "read_file",
+                                        "arguments": {"path": "a.txt"}}]
+    assert tools_row["key"] == key_for(
+        MODEL, tools_key_material(MESSAGES, TOOLSET), 1)
+
+
+def test_neither_call_shape_can_be_answered_by_the_other(tmp_path):
+    # The adversarial case: a generate call whose prompt IS the canonical
+    # tool payload collides on the key by construction. `kind` is what
+    # keeps a tool row from answering it — and the row stays unconsumed.
+    path = tmp_path / "mixed.jsonl"
+    canonical = tools_key_material(MESSAGES, TOOLSET)
+    recorder = CallRecorder(
+        ScriptedBackend([make_tool_reply(text="tool row"), make_reply("plain row")]),
+        path,
+    )
+    recorder.chat_tools(MESSAGES, TOOLSET, seed=4, max_tokens=32)
+    recorder.generate(canonical, seed=6, max_tokens=32)
+
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    # A generate call landing on the tool row's key.
+    with pytest.raises(TranscriptMiss):
+        replayer.generate(canonical, seed=4, max_tokens=32)
+    # And a tool call landing on the generate row's key.
+    with pytest.raises(TranscriptMiss):
+        replayer.chat_tools(MESSAGES, TOOLSET, seed=6, max_tokens=32)
+    # Neither miss consumed the row it refused to answer with.
+    assert replayer.chat_tools(MESSAGES, TOOLSET, seed=4, max_tokens=32).text == (
+        "tool row")
+    assert replayer.generate(canonical, seed=6, max_tokens=32).text == "plain row"
+
+
+def test_a_row_without_a_kind_replays_as_generate(tmp_path):
+    # v1.5 wrote rows with no `kind` at all. Missing means "generate", so
+    # transcripts recorded before the tool surface existed still replay.
+    path = tmp_path / "v15.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "model": MODEL,
+                "key": key_for(MODEL, "old prompt", 9),
+                "seed": 9,
+                "outcome": "reply",
+                "text": "an answer from v1.5",
+                "tokens_in": 5,
+                "tokens_out": 4,
+                "stop_reason": "stop",
+                "error_type": None,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    replayer = CallReplayer(path, model=MODEL, caps=CAPS)
+    assert replayer.generate("old prompt", seed=9, max_tokens=32).text == (
+        "an answer from v1.5")
+
+
+def test_the_committed_v15_anchor_transcript_still_replays():
+    # Pinned against real committed evidence, not a fixture: the degeneracy
+    # anchor was captured under v1.5 and its rows carry no `kind`. If the
+    # tool surface ever made `kind` mandatory, this fails.
+    from assay.long_output import _PROMPT  # the prompt that recorded them
+
+    anchor = pathlib.Path(__file__).resolve().parents[1] / (
+        "docs/superpowers/evidence/degenerate-anchor/gemma2-9b-longoutput.jsonl")
+    rows = read_rows(anchor)
+    assert rows and all("kind" not in row for row in rows)
+
+    replayer = CallReplayer(anchor, model=rows[0]["model"], caps=CAPS)
+    for row in rows:
+        replayed = replayer.generate(_PROMPT, seed=row["seed"], max_tokens=4096)
+        assert replayed.text == row["text"]
