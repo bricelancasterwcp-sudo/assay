@@ -933,3 +933,180 @@ def test_a_supported_endpoint_that_never_calls_is_not_an_unsupported_one():
         assert row["tool_calls"] == []
         written = json.loads(row["text"])
         assert written["name"] in registered
+
+
+# --- the scripted-tools-v2 live anchor (plan Task 13) -----------------------
+#
+# Captured 2026-08-17 by the tier re-profile campaign
+# (`scripts/campaign-2026-08.sh`) against ollama 0.32.13 on this box.
+# Unlike the v1 anchor this was never a bespoke capture: the rows are the
+# `chat_tools` slice of llama3.1:8b's FULL-MODE probe, lifted verbatim out
+# of the campaign transcript. That provenance is what buys the extra test
+# the v1 anchor cannot have — the anchor's recorded values must equal the
+# committed profile's `tools` block, because they are the same run.
+#
+# The schedule matters and is pinned: the campaign ran `--full`, so the
+# probe walked the pool under TOOLS_LOOK_SCHEDULE. Replaying these rows
+# at v1's fixed-n would consume the first ten and score a different
+# instrument off the same bytes.
+
+ANCHOR_V2 = pathlib.Path(__file__).resolve().parents[1] / (
+    "docs/superpowers/evidence/tools-anchor-v2")
+
+CAMPAIGN = pathlib.Path(__file__).resolve().parents[1] / (
+    "docs/superpowers/evidence/tier-enthusiast-2026-08")
+
+
+def anchor_v2_results() -> dict:
+    return json.loads((ANCHOR_V2 / "results.json").read_text())
+
+
+def anchor_v2_rows(name: str) -> list[dict]:
+    lines = (ANCHOR_V2 / name).read_text().splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def anchor_v2_replayer(capture: dict) -> CallReplayer:
+    """The transcript, replayed under the caps that RECORDED it."""
+    return CallReplayer(
+        ANCHOR_V2 / capture["transcript"],
+        model=capture["model"],
+        caps=OllamaNative.caps,
+    )
+
+
+def anchor_v2_replay(capture: dict) -> Tools:
+    """Replay under the recorded budget, which is deliberately slack.
+
+    A budget sized to the transcript would turn "the probe asked for a
+    41st call" into a tidy `stopping_rule: "budget"` instead of the
+    `TranscriptMiss` it should be. The meter must never be what stops
+    this replay — the look schedule must.
+    """
+    budget = anchor_v2_results()["tools"]["replay_budget"]
+    return probe_tools(
+        anchor_v2_replayer(capture),
+        BudgetMeter(Budget(max_calls=budget["max_calls"],
+                           max_prompt_tokens=budget["max_prompt_tokens"])),
+        look_schedule=TOOLS_LOOK_SCHEDULE,
+    )
+
+
+def anchor_v2_captures() -> list[dict]:
+    return anchor_v2_results()["tools"]["captures"]
+
+
+def test_the_tools_v2_anchor_capture_is_committed_whole():
+    results = anchor_v2_results()
+    assert results["daemon"]["version"] == "0.32.13"
+    # v2 is the LIVE instrument, so unlike the frozen v1 capture both
+    # halves are checked against the running constants: a pool edit or a
+    # schedule change must invalidate this anchor rather than be
+    # re-described by it.
+    assert results["tools"]["instrument"] == TOOLS_INSTRUMENT
+    assert results["tools"]["toolset"] == TOOLSET_NAME
+    assert tuple(results["tools"]["look_schedule"]) == TOOLS_LOOK_SCHEDULE
+
+    for capture in anchor_v2_captures():
+        rows = anchor_v2_rows(capture["transcript"])
+        assert len(rows) == capture["rows"]
+        assert all(row["model"] == capture["model"] for row in rows)
+        assert all(row["kind"] == "chat_tools" for row in rows)
+
+
+@pytest.mark.parametrize(
+    "capture", anchor_v2_captures(), ids=lambda c: c["model"]
+)
+def test_every_committed_v2_capture_replays_to_its_recorded_values(capture):
+    """The acceptance test the v2 anchor exists to pass.
+
+    Recorded rates are re-DERIVED by running the unmodified probe over
+    the transcript under the schedule that recorded it, never read out
+    of results.json — so a scoring change that would have moved a live
+    number fails here instead of silently re-describing evidence
+    measured under the old rules.
+    """
+    replayed = anchor_v2_replay(capture)
+
+    # Every field of the measurement, not the subset someone chose to
+    # write down.
+    assert set(capture["result"]) == {f.name for f in fields(Tools)}
+    for field, recorded in capture["result"].items():
+        assert getattr(replayed, field) == recorded, field
+
+
+@pytest.mark.parametrize(
+    "capture", anchor_v2_captures(), ids=lambda c: c["model"]
+)
+def test_the_v2_anchor_and_its_campaign_profile_cannot_drift_apart(capture):
+    """The anchor is a SLICE of a committed profile, not a sibling of one.
+
+    Both were written by the same probe run, so the replayed values and
+    the profile's `tools` block are the same measurement reached by two
+    roads. Pinning them to each other means neither file can be edited
+    or re-derived alone: a change to one that the other does not share
+    stops being a quiet inconsistency and becomes a failure here.
+    """
+    profile = json.loads((CAMPAIGN / capture["profile"]).read_text())
+
+    assert profile["model"]["name"] == capture["model"]
+    assert profile["probe_version"] == anchor_v2_results()["probe_version"]
+    assert profile["provenance"]["started"] == capture["profile_started"]
+
+    replayed = anchor_v2_replay(capture)
+    for field, in_profile in profile["tools"].items():
+        assert getattr(replayed, field) == in_profile, field
+    # ...and no field of the profile block went unchecked.
+    assert set(profile["tools"]) == {f.name for f in fields(Tools)}
+
+
+def test_the_v2_anchor_rows_are_the_campaign_transcript_verbatim():
+    """The word "extracted", held to the bytes.
+
+    The anchor's claim is that these rows ARE the campaign's, not a
+    re-recording or a tidied copy. Held here by comparing the committed
+    anchor lines to the `chat_tools` lines of the committed campaign
+    transcript, in file order — the one check that distinguishes an
+    extraction from a plausible-looking rewrite.
+    """
+    for capture in anchor_v2_captures():
+        source = (CAMPAIGN / capture["source_transcript"]).read_text()
+        expected = [
+            line for line in source.splitlines()
+            if line.strip() and json.loads(line)["kind"] == "chat_tools"
+        ]
+        committed = [
+            line for line in
+            (ANCHOR_V2 / capture["transcript"]).read_text().splitlines()
+            if line.strip()
+        ]
+        assert committed == expected
+
+
+def test_the_same_bytes_under_v1s_rule_are_a_different_measurement():
+    """Why the anchor records the schedule instead of assuming it.
+
+    These forty rows are a v2 run, but the first ten of them are also a
+    valid v1 run — the pools share tasks 0–4 verbatim. Replayed with no
+    schedule the probe stops at five tasks and reports a DIFFERENT
+    reading (`fixed-n`, n_tasks 5, and `n_truncated` 0 because the one
+    truncated reply is in the tail it never reaches). So "which schedule
+    replayed this" is not a formality that could be defaulted: it
+    decides the numbers, and `results.json` therefore carries it.
+    """
+    capture = anchor_v2_captures()[0]
+    budget = anchor_v2_results()["tools"]["replay_budget"]
+
+    as_v1 = probe_tools(
+        anchor_v2_replayer(capture),
+        BudgetMeter(Budget(max_calls=budget["max_calls"],
+                           max_prompt_tokens=budget["max_prompt_tokens"])),
+    )
+
+    assert as_v1.stopping_rule == "fixed-n"
+    assert (as_v1.n_tasks, as_v1.n_turns) == (5, 10)
+    assert as_v1.n_truncated == 0
+    recorded = capture["result"]
+    assert recorded["stopping_rule"] == "wilson95-looks-5-10-20"
+    assert (recorded["n_tasks"], recorded["n_turns"]) == (20, 40)
+    assert recorded["n_truncated"] == 1

@@ -1,0 +1,65 @@
+{
+  "captured": "2026-08-17",
+  "probe_version": "0.9.0",
+  "source": {
+    "campaign": "docs/superpowers/evidence/tier-enthusiast-2026-08",
+    "wrapper": "scripts/campaign-2026-08.sh",
+    "assay_commit": "d9b979211f30f5ffb3f7dfb6df02c42ff5555c65",
+    "note": "Derived, never hand-written: the transcript is the campaign transcript's chat_tools lines verbatim, and every value under `result` is the unmodified probe replayed over those lines."
+  },
+  "daemon": {
+    "kind": "ollama",
+    "version": "0.32.13",
+    "base_url": "http://127.0.0.1:11434",
+    "version_source": "the campaign README's header; kind and base_url are the profile's own endpoint block"
+  },
+  "host": {
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "vram_free_mib_at_probe": 10228,
+    "tier": "enthusiast-16gb",
+    "emulated": false,
+    "source": "GPU name from the campaign README; the free-VRAM reading is the profile's own geometry.vram_free_mib"
+  },
+  "tools": {
+    "instrument": "scripted-tools-v2",
+    "toolset": "toolset-v1",
+    "look_schedule": [
+      5,
+      10,
+      20
+    ],
+    "seed_base": 1400,
+    "t2_seed_offset": 100,
+    "temperature": 0.2,
+    "max_tokens": 256,
+    "replay_budget": {
+      "max_calls": 100,
+      "max_prompt_tokens": 200000
+    },
+    "captures": [
+      {
+        "model": "llama3.1:8b",
+        "source_transcript": "llama3.1-8b-transcript.jsonl",
+        "profile": "llama3.1-8b.json",
+        "profile_started": "2026-08-17T13:45:52Z",
+        "transcript": "tools-llama3.1-8b.jsonl",
+        "rows": 40,
+        "calls_charged": 40,
+        "prompt_tokens_charged": 10619,
+        "result": {
+          "supported": true,
+          "call_rate": 1.0,
+          "right_tool_rate": 1.0,
+          "args_valid_rate": 1.0,
+          "result_use_rate": 0.4,
+          "composite": 1.0,
+          "n_tasks": 20,
+          "n_turns": 40,
+          "n_truncated": 1,
+          "n_stop_unreported": 0,
+          "stopping_rule": "wilson95-looks-5-10-20"
+        }
+      }
+    ]
+  }
+}
