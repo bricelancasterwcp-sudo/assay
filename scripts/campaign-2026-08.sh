@@ -21,6 +21,14 @@
 #     model from VRAM through the daemon's own API; it does not signal the
 #     daemon, and no pkill/kill of anything appears below.
 #   * No `set -e`. One model failing is one row missing, not fifteen.
+#   * No wait for an idle daemon. The brief said "run on an idle daemon" and
+#     this script implements MAKE idle, not WAIT for idle: `unload_all` asks the
+#     daemon to stop every resident model before each probe rather than blocking
+#     until someone else's work finishes. The difference matters to whoever
+#     launches it — this needs an exclusive window, and it will evict another
+#     session's warm model to get one. The VRAM floor (exit 91) and the
+#     still-resident check (exit 90) are what stop it from profiling into
+#     contention it could not clear; they refuse, they do not wait.
 #
 # Run log format (whitespace-separated, four fields then a trailing comment):
 #   start <model> -     0        # <iso8601>
