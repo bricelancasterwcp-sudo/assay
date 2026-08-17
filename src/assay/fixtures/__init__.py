@@ -1,4 +1,4 @@
-"""Graded codec fixtures, set ``codec-fixtures-v2`` (v1.3).
+"""Graded codec fixtures, set ``codec-fixtures-v3`` (v1.7).
 
 The v1 set had ONE task per grade — a single dropped-return defect —
 so a cell's "landing rate" measured sampler variance on one prompt,
@@ -17,6 +17,15 @@ module (context correlation is declared, not hidden; module diversity
 is a future set). The set NAME travels in the codec lens and in
 provenance: the fixture set is part of the instrument.
 
+v3 (v1.7) adds nothing here and changes nothing here: the bases, the
+defects and their instructions are v2's, byte for byte (pinned as
+literal data in ``tests/test_codecs.py``). The SET NAME moves because
+the json side of the same instrument gained three deeper grades —
+``nested``, ``tabular``, ``constrained`` (``codecs.JSON_DEEP_GRADES``) —
+and this name is what travels in every profile's codec lens. A profile
+measured under v3 is not comparable, cell for cell, with one measured
+under v2 unless the reader knows which grades each carried.
+
 Each ``EXPECTED`` entry is ``(grade, defect_class, filename,
 instruction, original, expected)``: ``expected`` is the clean base,
 ``original`` is the base with exactly one line swapped. The instruction
@@ -30,7 +39,7 @@ from pathlib import Path
 
 _DIR = Path(__file__).resolve().parent
 
-FIXTURE_SET = "codec-fixtures-v2"
+FIXTURE_SET = "codec-fixtures-v3"
 
 GRADES = ("tiny", "small", "medium")
 DEFECT_CLASSES = (

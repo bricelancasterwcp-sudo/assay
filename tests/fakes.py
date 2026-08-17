@@ -14,7 +14,12 @@ from assay.backends.base import (
     ToolReply,
     ToolsUnsupported,
 )
-from assay.codecs import JSON_DIRECTIVE
+from assay.codecs import (
+    CONSTRAINED_DIRECTIVE,
+    JSON_DIRECTIVE,
+    NESTED_DIRECTIVE,
+    TABULAR_DIRECTIVE,
+)
 from assay.errors import InfrastructureError
 from assay.tools import TASKS as _TOOL_TASKS
 
@@ -52,6 +57,28 @@ _FULL_CAPS = BackendCaps(
     truncate_control=True,
     metadata_access=True,
 )
+
+
+# The deep json grades (v1.7): one valid reply per grade's contract,
+# keyed by the directive that asks for it. A well-behaved endpoint lands
+# every shape it is asked for.
+_DEEP_JSON_REPLIES = (
+    (NESTED_DIRECTIVE,
+     '{"name": "corner bakery", "location": {"city": "Lisbon", '
+     '"coordinates": {"lat": 38.72, "lon": -9.14}}, "tags": ["bread"]}'),
+    (TABULAR_DIRECTIVE,
+     '[{"id": 1, "label": "tyre lever"}, {"id": 2, "label": "patch kit"}, '
+     '{"id": 3, "label": "pump"}]'),
+    (CONSTRAINED_DIRECTIVE, '{"status": "open", "priority": 3}'),
+)
+
+
+def _deep_json_reply(prompt: str) -> str | None:
+    """The valid reply for a deep json prompt; None when it is not one."""
+    for directive, reply in _DEEP_JSON_REPLIES:
+        if prompt.startswith(directive):
+            return reply
+    return None
 
 
 def _search_replace_block(original: str, expected: str) -> str:
@@ -192,6 +219,9 @@ class ScriptedBackend:
             return f"ASSAY-{seed} acknowledged."
         if prompt.startswith(JSON_DIRECTIVE):
             return '{"name": "apples", "count": 3, "tags": ["fruit"]}'
+        deep = _deep_json_reply(prompt)
+        if deep is not None:
+            return deep
         if "VERB must be one of" in prompt:
             verb = prompt.rsplit("Verb to use: ", 1)[1].strip()
             number = prompt.split("ARG must be the number ", 1)[1].split(".", 1)[0]
@@ -218,7 +248,7 @@ class CodecFailingBackend(ScriptedBackend):
     def _reply_text(self, prompt: str, seed: int) -> str:
         if prompt.startswith("You are repairing one bug"):
             return super()._reply_text(prompt, seed)  # the loop family
-        if prompt.startswith(JSON_DIRECTIVE):
+        if prompt.startswith(JSON_DIRECTIVE) or _deep_json_reply(prompt):
             return "sorry, I would rather describe it in prose."
         for _, _, _, _, original, _expected in fixtures.EXPECTED:
             if original in prompt:

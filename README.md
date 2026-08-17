@@ -641,16 +641,22 @@ operator reaches for when they are in a hurry. 130 restores the headroom
 the 110 was chosen for, and the token ceiling rises with it so the two
 stay proportionate; a call budget that outruns its token budget just
 moves the death to the other meter. Measured on the scripted suite, a
-clean quick run spends 102 calls and 78,832 of the 220,000 tokens.
+clean quick run spends 117 calls and 79,420 of the 220,000 tokens — up
+from 102 in v1.6 because `json_object` gained three deeper grades, which
+takes the codec family from 45 calls to 60 and quick's worst case to
+**124 of 130**.
 
-Full and thorough stay at **500 calls / 1M tokens**. Full is sequential,
-so its worst case is the old thorough worst case — no codec cell decides
-early and every one runs to the 35-sample cap. A clean full run on the
-scripted suite measures 441 calls and 226,009 tokens — the tools family
-samples sequentially too since v1.7, so its share is 20 tasks × 2 turns
-(the cap a pool that never decides runs to) rather than a fixed ten —
-and the worst case (a failing ceiling ladder adds its bisection calls on
-top) stays inside 500 / 1M. Still comfortable, so it does not move.
+Full and thorough are **500 calls / 1M tokens**, and that call ceiling
+is now too low. Full is sequential, so its worst case is the old
+thorough worst case — no codec cell decides early and every one runs to
+the 35-sample cap — which the deep json grades take from 315 codec calls
+to 420. A clean full run on the scripted suite measures **546 calls** and
+230,125 tokens; under the 500 default it exhausts after the codec matrix
+and reports the long-output ladder and the whole tools family as
+`dropped`. The token side is untouched (230k of 1M). Raising the call
+ceiling is a deliberate budget decision rather than a side effect of
+adding grades, so it is tracked with the v1.7 budget work; until then
+run full mode with `--max-calls 600` or higher to get every family.
 
 The long-output ladder is the one family whose charge is dominated by
 **generation** rather than prompt: a 4096-token rung shares the context

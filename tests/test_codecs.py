@@ -1,5 +1,6 @@
 """Tests for codec fixtures, appliers, and probes (plan Task 9, spec §7)."""
 
+import hashlib
 from collections import Counter
 
 import pytest
@@ -10,7 +11,10 @@ from assay.codecs import (
     apply_search_replace,
     apply_whole_file,
     landing_equal,
+    validate_json_constrained,
+    validate_json_nested,
     validate_json_object,
+    validate_json_tabular,
 )
 
 ORIGINAL = (
@@ -143,13 +147,275 @@ def test_json_required_keys_and_types(reply, valid):
     assert validate_json_object(reply) is valid
 
 
+# --- the deep json grades (v1.7): nested / tabular / constrained ----------
+#
+# The validator IS the grade's contract. Each truth table below carries
+# one passing reply, the same reply fenced, and one failing reply per
+# rule — a grade whose validator accepts a shape the directive never
+# asked for measures the validator's slack, not the model.
+
+_NESTED_OK = ('{"name": "corner bakery", "location": {"city": "Lisbon", '
+              '"coordinates": {"lat": 38.72, "lon": -9.14}}, '
+              '"tags": ["bread", "cafe"]}')
+
+
+@pytest.mark.parametrize(
+    ("reply", "valid"),
+    [
+        (_NESTED_OK, True),
+        (f"```json\n{_NESTED_OK}\n```", True),  # fenced and bare both land
+        # extra top-level keys are allowed (only `constrained` forbids them)
+        ('{"name": "b", "location": {"city": "L", "coordinates": '
+         '{"lat": 1, "lon": 2}}, "tags": [], "rating": 4}', True),
+        # ...and integer coordinates are numbers, as are negatives
+        ('{"name": "b", "location": {"city": "L", "coordinates": '
+         '{"lat": -38, "lon": 9}}, "tags": ["x"]}', True),
+        # missing / mistyped name
+        ('{"location": {"city": "L", "coordinates": {"lat": 1, "lon": 2}}, '
+         '"tags": []}', False),
+        ('{"name": 7, "location": {"city": "L", "coordinates": '
+         '{"lat": 1, "lon": 2}}, "tags": []}', False),
+        # missing location, and location flattened to a string: the
+        # nesting IS the grade
+        ('{"name": "b", "tags": []}', False),
+        ('{"name": "b", "location": "Lisbon", "tags": []}', False),
+        # location without city, city mistyped
+        ('{"name": "b", "location": {"coordinates": {"lat": 1, "lon": 2}}, '
+         '"tags": []}', False),
+        ('{"name": "b", "location": {"city": 9, "coordinates": '
+         '{"lat": 1, "lon": 2}}, "tags": []}', False),
+        # the second nesting level dropped, or flattened to an array
+        ('{"name": "b", "location": {"city": "L"}, "tags": []}', False),
+        ('{"name": "b", "location": {"city": "L", "coordinates": [1, 2]}, '
+         '"tags": []}', False),
+        # coordinates missing a component, or carrying a non-number
+        ('{"name": "b", "location": {"city": "L", "coordinates": '
+         '{"lat": 1}}, "tags": []}', False),
+        ('{"name": "b", "location": {"city": "L", "coordinates": '
+         '{"lat": "1", "lon": 2}}, "tags": []}', False),
+        ('{"name": "b", "location": {"city": "L", "coordinates": '
+         '{"lat": true, "lon": 2}}, "tags": []}', False),
+        # missing / mistyped tags, and a non-string inside them
+        ('{"name": "b", "location": {"city": "L", "coordinates": '
+         '{"lat": 1, "lon": 2}}}', False),
+        ('{"name": "b", "location": {"city": "L", "coordinates": '
+         '{"lat": 1, "lon": 2}}, "tags": "bread"}', False),
+        ('{"name": "b", "location": {"city": "L", "coordinates": '
+         '{"lat": 1, "lon": 2}}, "tags": ["bread", 7]}', False),
+        ("[1, 2, 3]", False),  # not an object at all
+        ("I would rather describe the bakery in prose.", False),
+    ],
+)
+def test_json_nested_truth_table(reply, valid):
+    assert validate_json_nested(reply) is valid
+
+
+_TABULAR_OK = ('[{"id": 1, "label": "tyre lever"}, '
+               '{"id": 2, "label": "patch kit"}, {"id": 3, "label": "pump"}]')
+
+
+@pytest.mark.parametrize(
+    ("reply", "valid"),
+    [
+        (_TABULAR_OK, True),
+        (f"```json\n{_TABULAR_OK}\n```", True),
+        # extra keys per object are allowed; the row shape is a floor
+        ('[{"id": 1, "label": "a", "note": "x"}, {"id": 2, "label": "b"}, '
+         '{"id": 3, "label": "c"}]', True),
+        # wrong length, either way — three is exact, not a minimum
+        ('[{"id": 1, "label": "a"}, {"id": 2, "label": "b"}]', False),
+        ('[{"id": 1, "label": "a"}, {"id": 2, "label": "b"}, '
+         '{"id": 3, "label": "c"}, {"id": 4, "label": "d"}]', False),
+        ("[]", False),
+        # an object wrapping the rows is not the array that was asked for
+        ('{"rows": [{"id": 1, "label": "a"}, {"id": 2, "label": "b"}, '
+         '{"id": 3, "label": "c"}]}', False),
+        # a row missing a key, or carrying the wrong type for one
+        ('[{"id": 1}, {"id": 2, "label": "b"}, {"id": 3, "label": "c"}]',
+         False),
+        ('[{"label": "a"}, {"id": 2, "label": "b"}, {"id": 3, "label": "c"}]',
+         False),
+        ('[{"id": "1", "label": "a"}, {"id": 2, "label": "b"}, '
+         '{"id": 3, "label": "c"}]', False),
+        ('[{"id": 1.5, "label": "a"}, {"id": 2, "label": "b"}, '
+         '{"id": 3, "label": "c"}]', False),
+        ('[{"id": true, "label": "a"}, {"id": 2, "label": "b"}, '
+         '{"id": 3, "label": "c"}]', False),
+        ('[{"id": 1, "label": 7}, {"id": 2, "label": "b"}, '
+         '{"id": 3, "label": "c"}]', False),
+        # heterogeneous rows: a bare string is not a row
+        ('["a", {"id": 2, "label": "b"}, {"id": 3, "label": "c"}]', False),
+        ("Here are three tools: a tyre lever, a patch kit and a pump.", False),
+    ],
+)
+def test_json_tabular_truth_table(reply, valid):
+    assert validate_json_tabular(reply) is valid
+
+
+_CONSTRAINED_OK = '{"status": "open", "priority": 3}'
+
+
+@pytest.mark.parametrize(
+    ("reply", "valid"),
+    [
+        (_CONSTRAINED_OK, True),
+        (f"```json\n{_CONSTRAINED_OK}\n```", True),
+        # `note` is optional, and the whole enum is legal
+        ('{"status": "pending", "priority": 5, "note": "waiting on parts"}',
+         True),
+        ('{"status": "closed", "priority": 1}', True),
+        # off the enum, missing, or the right word in the wrong type
+        ('{"status": "urgent", "priority": 3}', False),
+        ('{"status": "Open", "priority": 3}', False),
+        ('{"priority": 3}', False),
+        ('{"status": true, "priority": 3}', False),
+        # priority outside 1..5 (inclusive), or not an integer
+        ('{"status": "open", "priority": 0}', False),
+        ('{"status": "open", "priority": 6}', False),
+        ('{"status": "open", "priority": "3"}', False),
+        ('{"status": "open", "priority": 2.5}', False),
+        ('{"status": "open", "priority": true}', False),
+        ('{"status": "open"}', False),
+        # note present but mistyped
+        ('{"status": "open", "priority": 3, "note": 7}', False),
+        # THE grade's point: any key beyond the three FAILS here
+        ('{"status": "open", "priority": 3, "owner": "sam"}', False),
+        ('{"status": "open", "priority": 3, "note": "x", "id": 1}', False),
+        ('["open", 3]', False),
+        ("The door ticket is open at priority three.", False),
+    ],
+)
+def test_json_constrained_truth_table(reply, valid):
+    assert validate_json_constrained(reply) is valid
+
+
+def test_the_deep_validators_never_raise_on_hostile_replies():
+    """A bad reply is DATA — every validator answers False, never throws."""
+    hostile = ["", "   ", "null", "true", "3", '"a string"', "{", "[]",
+               "```\n```", "```json\nnot json\n```", "\x00"]
+    for reply in hostile:
+        for validate in (validate_json_nested, validate_json_tabular,
+                         validate_json_constrained):
+            assert validate(reply) is False, (validate.__name__, reply)
+
+
+def test_grades_for_gives_only_json_the_deep_grades():
+    from assay.codecs import CODECS, GRADES, GRADES_FOR, JSON_DEEP_GRADES
+
+    assert GRADES == ("tiny", "small", "medium")  # unchanged: v2's grades
+    assert JSON_DEEP_GRADES == ("nested", "tabular", "constrained")
+    assert set(GRADES_FOR) == set(CODECS)
+    assert GRADES_FOR["search_replace"] == GRADES
+    assert GRADES_FOR["whole_file"] == GRADES
+    assert GRADES_FOR["json_object"] == GRADES + JSON_DEEP_GRADES
+
+
+def test_each_deep_grade_has_five_tasks_and_its_own_directive():
+    from assay.codecs import (CONSTRAINED_DIRECTIVE, CONSTRAINED_TASKS,
+                              JSON_DIRECTIVE, JSON_TASKS, NESTED_DIRECTIVE,
+                              NESTED_TASKS, TABULAR_DIRECTIVE, TABULAR_TASKS)
+
+    directives = [JSON_DIRECTIVE, NESTED_DIRECTIVE, TABULAR_DIRECTIVE,
+                  CONSTRAINED_DIRECTIVE]
+    assert len(set(directives)) == 4
+    # No directive may PREFIX another: prompts are routed by their
+    # directive (here, in the fakes, and in any consumer reading a
+    # transcript), and a prefix would silently route one grade's replies
+    # into another grade's cell.
+    for one in directives:
+        for other in directives:
+            assert one is other or not other.startswith(one)
+    for tasks in (NESTED_TASKS, TABULAR_TASKS, CONSTRAINED_TASKS):
+        assert len(tasks) == len(JSON_TASKS) == 5
+        assert len(set(tasks)) == 5
+        assert all(task and task == task.strip() for task in tasks)
+
+
+def test_each_deep_directive_states_the_contract_its_validator_enforces():
+    """The words the model is shown and the rule its reply is judged by
+    must not drift apart: a directive that asks for something the
+    validator does not enforce (or the reverse) measures the gap between
+    them rather than the model."""
+    from assay.codecs import (_CONSTRAINED_KEYS, _CONSTRAINED_STATUSES,
+                              _PRIORITY_RANGE, _TABULAR_ROWS,
+                              CONSTRAINED_DIRECTIVE, NESTED_DIRECTIVE,
+                              TABULAR_DIRECTIVE)
+
+    # nested: both levels below the root are named in the words
+    for key in ("`name`", "`location`", "`city`", "`coordinates`", "`lat`",
+                "`lon`", "`tags`"):
+        assert key in NESTED_DIRECTIVE, key
+    # tabular: the exact row count, spelled
+    assert _TABULAR_ROWS == 3
+    assert "exactly three objects" in TABULAR_DIRECTIVE
+    # constrained: the enum, the range and the closed key set
+    for status in _CONSTRAINED_STATUSES:
+        assert f'"{status}"' in CONSTRAINED_DIRECTIVE, status
+    low, high = _PRIORITY_RANGE
+    assert f"an integer from {low} to {high}" in CONSTRAINED_DIRECTIVE
+    for key in _CONSTRAINED_KEYS:
+        assert f"`{key}`" in CONSTRAINED_DIRECTIVE, key
+    assert "no other keys" in CONSTRAINED_DIRECTIVE
+
+
+# --- v2 surfaces are frozen ----------------------------------------------
+
+
+def test_v2_surfaces_are_byte_frozen():
+    """The v2 measuring surfaces, pinned as DATA rather than imported.
+
+    Every committed profile's codec numbers were produced by these exact
+    bytes. v3 ADDS grades; it does not edit the ones the archive was
+    measured under, and a pin that imported the constant it guards would
+    move with the edit it exists to catch.
+    """
+    from assay.codecs import JSON_DIRECTIVE, JSON_TASKS
+    from assay.fixtures import _DEFECTS, _DIR
+
+    assert JSON_DIRECTIVE == (
+        "Return a JSON object with keys `name` (string), `count` "
+        "(integer), and `tags` (array of strings) describing:"
+    )
+    assert JSON_TASKS == (
+        "three apples",
+        "two rusty bicycles leaning on a fence",
+        "five copper coins from an old purse",
+        "one chess board mid-game",
+        "four rain boots by the door",
+    )
+    assert len(_DEFECTS) == 15
+    assert _DEFECTS[0] == (
+        "tiny", "dropped_return",
+        "    return subtotal * 1.08",
+        "    subtotal * 1.08",
+        "In tiny.py, total([10]) returns None; it should return 10.8. "
+        "Fix the single defective line.",
+    )
+    # The three base modules, byte for byte.
+    assert {
+        name: hashlib.sha256(
+            (_DIR / f"{name}.py.txt").read_bytes()).hexdigest()
+        for name in ("tiny", "small", "medium")
+    } == {
+        "tiny": "0290a4a3361a3ff906182568051e31bb"
+                "0a422692dd15c181aee6bb407caf9d27",
+        "small": "2491a3b0e7564d9b59af9a8fb0869f05"
+                 "4c73f02899315bd56871a13c4fe2864c",
+        "medium": "c07513c190975db6eb86e1606557e49c"
+                  "27b295721a43e6b8be125b23b2a5ae6b",
+    }
+
+
 # --- fixtures -------------------------------------------------------------
 
 
-def test_fixture_set_v2_integrity():
+def test_fixture_set_integrity():
     from assay import fixtures
 
-    assert fixtures.FIXTURE_SET == "codec-fixtures-v2"
+    # v3 (v1.7): the patch fixtures are v2's, byte for byte (pinned
+    # above); the set NAME moves because the json side gained three
+    # grades, and the name is what travels in every profile's lens.
+    assert fixtures.FIXTURE_SET == "codec-fixtures-v3"
     per_grade = {}
     bounds = {"tiny": (1, 250), "small": (400, 700), "medium": (1100, 2200)}
     for grade, dclass, filename, instruction, original, expected in fixtures.EXPECTED:
@@ -214,14 +480,39 @@ def make_meter(max_calls=10_000, max_prompt_tokens=10_000_000):
     return BudgetMeter(Budget(max_calls=max_calls, max_prompt_tokens=max_prompt_tokens))
 
 
+_FLAT_JSON_REPLY = '{"name": "x", "count": 3, "tags": ["t"]}'
+_NESTED_REPLY = ('{"name": "x", "location": {"city": "L", "coordinates": '
+                 '{"lat": 1.5, "lon": -2.5}}, "tags": ["t"]}')
+_TABULAR_REPLY = ('[{"id": 1, "label": "a"}, {"id": 2, "label": "b"}, '
+                  '{"id": 3, "label": "c"}]')
+_CONSTRAINED_REPLY = '{"status": "open", "priority": 2}'
+
+
+def deep_json_reply(prompt):
+    """The valid reply for a deep json prompt, or None when it is not one."""
+    from assay.codecs import (CONSTRAINED_DIRECTIVE, NESTED_DIRECTIVE,
+                              TABULAR_DIRECTIVE)
+
+    for directive, reply in ((NESTED_DIRECTIVE, _NESTED_REPLY),
+                             (TABULAR_DIRECTIVE, _TABULAR_REPLY),
+                             (CONSTRAINED_DIRECTIVE, _CONSTRAINED_REPLY)):
+        if prompt.startswith(directive):
+            return reply
+    return None
+
+
 def grade_matrix_script(prompt):
     """Lands json everywhere, whole_file everywhere, search_replace on
-    tiny only — flubs small and medium. Routes every v2 fixture task."""
+    tiny only — flubs small and medium. Routes every v2 fixture task and
+    every deep json grade."""
     from assay import fixtures
     from assay.codecs import JSON_DIRECTIVE
 
+    deep = deep_json_reply(prompt)
+    if deep is not None:
+        return deep
     if prompt.startswith(JSON_DIRECTIVE):
-        return '{"name": "x", "count": 3, "tags": ["t"]}'
+        return _FLAT_JSON_REPLY
     for grade, _, _, _, original, expected in fixtures.EXPECTED:
         if original in prompt:
             if "SEARCH" in prompt:
@@ -250,6 +541,136 @@ def test_landing_by_grade_matrix():
     for grade in ("tiny", "small", "medium"):
         assert result["whole_file"][grade] == Landing(lands=1.0, lands_applies=1.0, n=5)
         assert result["json_object"][grade] == Landing(lands=1.0, lands_applies=1.0, n=5)
+
+
+def test_probe_codecs_measures_the_deep_grades():
+    """The json codec carries six cells; the patch codecs still carry three."""
+    from assay.codecs import GRADES, GRADES_FOR, JSON_DEEP_GRADES, Landing, probe_codecs
+
+    backend = ScriptedBackend(grade_matrix_script)
+    result = probe_codecs(backend, make_meter(), n_per_cell=5)
+
+    assert tuple(result["json_object"]) == GRADES_FOR["json_object"]
+    for grade in JSON_DEEP_GRADES:
+        assert result["json_object"][grade] == Landing(lands=1.0,
+                                                       lands_applies=1.0, n=5)
+    for codec in ("search_replace", "whole_file"):
+        assert tuple(result[codec]) == GRADES
+    # ...and each deep cell spread its five attempts over five DIFFERENT
+    # tasks, the v1.3 rule, not five draws of one prompt.
+    for grade in JSON_DEEP_GRADES:
+        prompts = [call["prompt"] for call in backend.calls
+                   if call["prompt"].startswith(_directive_for(grade))]
+        assert len(prompts) == 5 and len(set(prompts)) == 5, grade
+
+
+def _directive_for(grade):
+    from assay.codecs import (CONSTRAINED_DIRECTIVE, NESTED_DIRECTIVE,
+                              TABULAR_DIRECTIVE)
+
+    return {"nested": NESTED_DIRECTIVE, "tabular": TABULAR_DIRECTIVE,
+            "constrained": CONSTRAINED_DIRECTIVE}[grade]
+
+
+def _is_deep_prompt(prompt):
+    from assay.codecs import JSON_DEEP_GRADES
+
+    return any(prompt.startswith(_directive_for(grade))
+               for grade in JSON_DEEP_GRADES)
+
+
+def test_each_deep_grade_is_scored_by_its_own_validator():
+    """A reply that satisfies the FLAT contract lands the flat grades and
+    nothing else: each deep cell is judged by its own validator, so a
+    model that only ever emits `{name, count, tags}` is measured as
+    failing every deeper shape."""
+    from assay.codecs import GRADES, JSON_DEEP_GRADES, probe_codecs
+
+    backend = ScriptedBackend(lambda prompt: _FLAT_JSON_REPLY)
+    result = probe_codecs(backend, make_meter(), n_per_cell=5)
+
+    for grade in GRADES:
+        assert result["json_object"][grade].lands == 1.0, grade
+    for grade in JSON_DEEP_GRADES:
+        cell = result["json_object"][grade]
+        assert cell.lands == 0.0, grade
+        assert cell.lands_applies == 0.0, grade  # json's lenses coincide
+        assert cell.n == 5
+
+
+def test_deep_cells_are_given_more_room_than_the_flat_json_cells():
+    """nested and tabular replies do not fit in the flat grade's 128
+    tokens; the flat cells keep 128 because every committed profile's
+    json numbers were measured under it."""
+    from assay.codecs import JSON_DEEP_GRADES, JSON_DIRECTIVE, probe_codecs
+
+    backend = ScriptedBackend(grade_matrix_script)
+    probe_codecs(backend, make_meter(), n_per_cell=1)
+
+    flat = [c for c in backend.calls if c["prompt"].startswith(JSON_DIRECTIVE)]
+    assert flat and {c["kwargs"]["max_tokens"] for c in flat} == {128}
+    for grade in JSON_DEEP_GRADES:
+        deep = [c for c in backend.calls
+                if c["prompt"].startswith(_directive_for(grade))]
+        assert deep and {c["kwargs"]["max_tokens"] for c in deep} == {256}, grade
+
+
+def test_deep_grades_keep_their_built_in_directive_under_consumer_ones():
+    """CodecDirectives substitutes the consumer's presentation for the
+    three codecs it names. A deep grade's directive is not presentation
+    — it STATES the contract its validator enforces — so it is always
+    the built-in one, and the flat json grade is what a consumer's
+    `json_object` directive replaces."""
+    from assay.codecs import (JSON_DEEP_GRADES, JSON_DIRECTIVE, probe_codecs)
+
+    marker = "REPLY-IN-THE-STYLE-OF-THE-CONSUMER-APP"
+    custom = CodecDirectives(search_replace=f"{marker} sr",
+                             whole_file=f"{marker} wf",
+                             json_object=f"{marker} jo")
+    backend = ScriptedBackend(lambda prompt: "not a valid reply")
+    probe_codecs(backend, make_meter(), n_per_cell=1, directives=custom)
+
+    prompts = [c["prompt"] for c in backend.calls]
+    assert not any(p.startswith(JSON_DIRECTIVE) for p in prompts)
+    for grade in JSON_DEEP_GRADES:
+        deep = [p for p in prompts if p.startswith(_directive_for(grade))]
+        assert len(deep) == 5, grade
+        assert not any(marker in p for p in deep), grade
+
+
+def test_the_verdict_cell_is_pinned():
+    """structured_extraction still reads `json_object.small`.
+
+    The deep grades are new COLUMNS, not a new verdict: moving the
+    graded cell would silently re-scale every published verdict against
+    the archive. Pinned through the lens a consumer actually reads.
+    """
+    from assay.codecs import GRADES_FOR, Landing
+    from assay.profile import compute_verdicts
+    from assay.stats import wilson95
+
+    def cell(rate, n):
+        return Landing(lands=rate, lands_applies=rate, n=n)
+
+    # Distinctive small cell: 2/5 lands where every other grade is 35/35.
+    codecs = {
+        "json_object": {grade: (cell(0.4, 5) if grade == "small"
+                                else cell(1.0, 35))
+                        for grade in GRADES_FOR["json_object"]},
+        "search_replace": {grade: cell(1.0, 35) for grade in ("tiny", "small",
+                                                              "medium")},
+        "whole_file": {grade: cell(1.0, 35) for grade in ("tiny", "small",
+                                                          "medium")},
+    }
+    verdicts = compute_verdicts(None, None, None, codecs)
+    lo, hi = wilson95(2, 5)
+    assert verdicts["structured_extraction"]["interval95"] == [round(lo, 3),
+                                                               round(hi, 3)]
+    assert verdicts["structured_extraction"]["verdict"] == "unusable"
+    # ...and that is NOT the answer any deep cell would have given.
+    other_lo, other_hi = wilson95(35, 35)
+    assert [round(other_lo, 3), round(other_hi, 3)] != [round(lo, 3),
+                                                        round(hi, 3)]
 
 
 def test_zero_cell_is_none_not_zero():
@@ -306,7 +727,8 @@ def test_probe_seeds_are_distinct_and_derived_from_seed_base():
     probe_codecs(backend, make_meter(), n_per_cell=2, seed_base=500)
 
     seeds = [call["kwargs"]["seed"] for call in backend.calls]
-    assert seeds == list(range(500, 500 + 45))  # 3 codecs x 3 grades x 5 tasks
+    # 12 cells (3 + 3 + 6 grades) x 5 tasks — v1.7 gave json three more.
+    assert seeds == list(range(500, 500 + 60))
 
 
 def test_probe_charges_the_meter_per_call():
@@ -316,7 +738,7 @@ def test_probe_charges_the_meter_per_call():
     meter = make_meter()
     probe_codecs(backend, meter, n_per_cell=1)
 
-    assert meter.spent.calls == len(backend.calls) == 45  # 9 cells x 5 tasks
+    assert meter.spent.calls == len(backend.calls) == 60  # 12 cells x 5 tasks
     assert meter.spent.prompt_tokens > 0
 
 
@@ -352,7 +774,11 @@ def test_custom_directives_reach_the_wire_verbatim():
     meter = BudgetMeter(Budget(max_calls=999, max_prompt_tokens=10**9))
     probe_codecs(backend, meter, n_per_cell=1, directives=custom)
     prompts = [c["prompt"] for c in backend.calls]
-    assert all(marker in p for p in prompts), "custom directive missing"
+    # The three SUBSTITUTABLE codec presentations — the deep json grades
+    # ask in their own words by design, and have their own test.
+    substitutable = [p for p in prompts if not _is_deep_prompt(p)]
+    assert len(substitutable) == 45, "a substitutable cell went missing"
+    assert all(marker in p for p in substitutable), "custom directive missing"
     # And the built-in texts must NOT appear anywhere.
     assert not any("character for character" in p for p in prompts)
 
@@ -371,7 +797,8 @@ def json_four_of_five_script(prompt):
     """Lands four of the json cell's five tasks: 0.8 straddles risky and
     ready at every look (4/5, 8/10, 16/20 all span the 0.9 threshold),
     so a json cell must run to the schedule's cap. Patch codecs never
-    land, so their cells decide at the first look."""
+    land, so their cells decide at the first look — and neither do the
+    deep json grades, whose shapes this flat reply does not satisfy."""
     from assay.codecs import JSON_DIRECTIVE, JSON_TASKS
 
     if prompt.startswith(JSON_DIRECTIVE):
@@ -401,7 +828,7 @@ def applies_but_not_equal_script(prompt):
     two lenses disagree about whether the cell is decided."""
     from assay.codecs import JSON_DIRECTIVE
 
-    if prompt.startswith(JSON_DIRECTIVE):
+    if prompt.startswith(JSON_DIRECTIVE) or _is_deep_prompt(prompt):
         return "sorry, no json today"
     for _, _, _, _, original, expected in fixtures.EXPECTED:
         if original in prompt:
@@ -418,7 +845,7 @@ def applies_but_not_equal_script(prompt):
 def test_sequential_stops_decided_cell_at_first_look():
     """0/5 decides `unusable` — both Wilson endpoints ladder to the same
     rung — so every cell stops at the first look: 5 calls, never 35."""
-    from assay.codecs import CODECS, GRADES, Landing, probe_codecs
+    from assay.codecs import CODECS, GRADES_FOR, Landing, probe_codecs
     from assay.stats import LOOK_SCHEDULE
 
     backend = ScriptedBackend(never_lands_script)
@@ -427,16 +854,16 @@ def test_sequential_stops_decided_cell_at_first_look():
 
     assert result["json_object"]["small"].n == 5
     for codec in CODECS:
-        for grade in GRADES:
+        for grade in GRADES_FOR[codec]:
             assert result[codec][grade] == Landing(lands=0.0,
                                                    lands_applies=0.0, n=5)
-    assert len(backend.calls) == 9 * 5  # 9 cells, one look each
+    assert len(backend.calls) == 12 * 5  # 12 cells, one look each
 
 
 def test_sequential_runs_undecided_cell_to_cap():
     """A cell landing 4 of every 5 straddles risky/ready at 5, 10 and 20:
     it must spend the whole schedule and report n == 35."""
-    from assay.codecs import GRADES, probe_codecs
+    from assay.codecs import GRADES, JSON_DEEP_GRADES, probe_codecs
     from assay.stats import LOOK_SCHEDULE
 
     backend = ScriptedBackend(json_four_of_five_script)
@@ -447,11 +874,14 @@ def test_sequential_runs_undecided_cell_to_cap():
         cell = result["json_object"][grade]
         assert cell.n == 35
         assert cell.lands == 28 / 35  # 7 rounds x 4 landing tasks
-    # ...while the never-landing patch cells stop at the first look.
+    # ...while the never-landing patch cells stop at the first look, as
+    # do the three deep json cells this script cannot satisfy.
     for codec in ("search_replace", "whole_file"):
         for grade in GRADES:
             assert result[codec][grade].n == 5
-    assert len(backend.calls) == 3 * 35 + 6 * 5
+    for grade in JSON_DEEP_GRADES:
+        assert result["json_object"][grade].n == 5
+    assert len(backend.calls) == 3 * 35 + 9 * 5
 
 
 def test_sequential_stops_at_an_intermediate_look():
@@ -472,7 +902,9 @@ def test_sequential_stops_at_an_intermediate_look():
         assert cell.n == 10, "a look after the first one never fired"
         assert cell.n not in (LOOK_SCHEDULE[0], LOOK_SCHEDULE[-1])
         assert cell.lands == 2 / 10  # one landing task x two rounds
-    assert len(backend.calls) == 3 * 10 + 6 * 5
+    # 3 flat json cells to look 10; the 6 patch and 3 deep cells decide
+    # at the first look.
+    assert len(backend.calls) == 3 * 10 + 9 * 5
 
 
 def test_no_schedule_is_exactly_the_old_behavior():
@@ -496,7 +928,10 @@ def test_no_schedule_is_exactly_the_old_behavior():
                                                      lands_applies=1.0, n=5)
         assert fixed["json_object"][grade] == Landing(lands=1.0,
                                                       lands_applies=1.0, n=5)
-    assert len(backend.calls) == 45
+    for grade in ("nested", "tabular", "constrained"):
+        assert fixed["json_object"][grade] == Landing(lands=1.0,
+                                                      lands_applies=1.0, n=5)
+    assert len(backend.calls) == 60
 
 
 def test_no_schedule_never_stops_early():
@@ -504,15 +939,15 @@ def test_no_schedule_never_stops_early():
     schedule would decide at 5 still spends every fixed rep. The v1.4
     attempt order (reps of one task consecutively) is preserved too, so
     replay transcripts of quick/family runs do not shift."""
-    from assay.codecs import CODECS, GRADES, probe_codecs
+    from assay.codecs import CODECS, GRADES_FOR, probe_codecs
 
     backend = ScriptedBackend(never_lands_script)
     result = probe_codecs(backend, make_meter(), n_per_cell=35)
 
     for codec in CODECS:
-        for grade in GRADES:
+        for grade in GRADES_FOR[codec]:
             assert result[codec][grade].n == 35
-    assert len(backend.calls) == 9 * 35
+    assert len(backend.calls) == 12 * 35
     first_cell = [call["prompt"] for call in backend.calls[:35]]
     assert len(set(first_cell)) == 5              # five heterogeneous tasks
     assert len(set(first_cell[:7])) == 1          # 35 // 5 reps, task-major
@@ -523,7 +958,7 @@ def test_stop_test_uses_applies_lens_for_patch_codecs():
     whole_file are judged applies-and-parses: 5/5 applies is undecided,
     so the cell continues — while the byte-equality count (0/5) would
     have decided it unusable at the first look."""
-    from assay.codecs import GRADES, probe_codecs
+    from assay.codecs import GRADES_FOR, probe_codecs
     from assay.stats import LOOK_SCHEDULE
 
     backend = ScriptedBackend(applies_but_not_equal_script)
@@ -531,12 +966,13 @@ def test_stop_test_uses_applies_lens_for_patch_codecs():
                           look_schedule=LOOK_SCHEDULE)
 
     for codec in ("search_replace", "whole_file"):
-        for grade in GRADES:
+        for grade in GRADES_FOR[codec]:
             cell = result[codec][grade]
             assert cell.lands == 0.0
             assert cell.lands_applies == 1.0
             assert cell.n == 35, "the byte-equality lens stopped this cell"
-    for grade in GRADES:  # json's lens is byte-equality; 0/5 decides
+    # json's lens is byte-equality; 0/5 decides — every grade of it.
+    for grade in GRADES_FOR["json_object"]:
         assert result["json_object"][grade].n == 5
 
 
@@ -550,7 +986,7 @@ def test_look_points_come_from_the_given_schedule():
                           look_schedule=(10, 20))
 
     assert result["json_object"]["small"].n == 10
-    assert len(backend.calls) == 9 * 10
+    assert len(backend.calls) == 12 * 10
 
 
 def test_last_schedule_entry_is_the_cap_and_n_per_cell_is_ignored():
@@ -625,7 +1061,7 @@ def test_schedule_seeds_increment_once_per_attempt():
                  look_schedule=LOOK_SCHEDULE)
 
     seeds = [call["kwargs"]["seed"] for call in backend.calls]
-    assert len(seeds) == 3 * 35 + 6 * 5
+    assert len(seeds) == 3 * 35 + 9 * 5  # 3 flat json cells to the cap
     assert seeds == list(range(500, 500 + len(seeds)))
 
 

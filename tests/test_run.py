@@ -14,15 +14,24 @@ _VRAM_MIB = 14558
 
 # Quick mode against ScriptedBackend, call by call: 2 calibration,
 # 5 ladder sizes (1024..16384, one seed, no bisection when clean),
-# 10 envelope, 3 codecs x 3 grades x 5 = 45 codec probes.
+# 10 envelope, 60 codec probes (search_replace and whole_file at 3
+# grades each, json_object at 6 since v1.7, x 5 tasks per cell).
 # +shapes +loop (v1.4), +4 long-output rungs (v1.5), +10 tools (v1.6).
 # The loop term is 15, not 9, BY DESIGN (v1.6): scripted-loop-v2 plays a
 # 2-turn error script alongside each of the 3 golden 3-turn runs.
 _QUICK_CALLS_LONG_OUTPUT = 4
 _QUICK_CALLS_TOOLS = 10  # 5 scripted tasks x 2 turns
-_QUICK_CALLS_TOTAL = (2 + 5 + 9 + 10 + 45 + 15 + 2
+_QUICK_CALLS_CODECS = 60  # 12 cells x 5: json gained three deep grades
+_QUICK_CALLS_TOTAL = (2 + 5 + 9 + 10 + _QUICK_CALLS_CODECS + 15 + 2
                       + _QUICK_CALLS_LONG_OUTPUT + _QUICK_CALLS_TOOLS)
 _CALLS_THROUGH_CEILING = 2 + 5
+
+# Headroom for a CLEAN full run against these fakes, which is 546 calls
+# in v1.7 (12 codec cells to the 35-sample cap + 40 tools turns + the
+# rest). This is test headroom, deliberately above the shipped default
+# in cli.DEFAULT_BUDGETS — these tests are about the mode table and the
+# families, not about what the default budget covers.
+_CLEAN_FULL_RUN_HEADROOM = 700
 
 
 @pytest.fixture(autouse=True)
@@ -64,8 +73,9 @@ def test_full_pipeline_produces_complete_profile():
     assert profile.envelope.fidelity == 1.0
     assert profile.envelope.n == 10
     assert profile.codecs is not None
+    from assay.codecs import GRADES_FOR
     for codec in ("search_replace", "whole_file", "json_object"):
-        for grade in ("tiny", "small", "medium"):
+        for grade in GRADES_FOR[codec]:
             cell = profile.codecs[codec][grade]
             assert cell.lands == 1.0, (codec, grade)
             assert cell.n == 5
@@ -306,7 +316,8 @@ def test_full_mode_verdicts_carry_sequential_lens():
     # lens tells them apart.
     profile = probe(
         _URL, "fake-model",
-        budget=Budget(max_calls=500, max_prompt_tokens=2_000_000),
+        budget=Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
+                      max_prompt_tokens=2_000_000),
         mode="full", _backend_override=ScriptedBackend(),
     )
     for name in ("structured_extraction", "patch_editing"):
@@ -356,7 +367,8 @@ def test_sequential_early_stop_is_not_read_as_budget_death():
     backend = CodecFailingBackend()
     profile = probe(
         _URL, "fake-model",
-        budget=Budget(max_calls=500, max_prompt_tokens=2_000_000),
+        budget=Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
+                      max_prompt_tokens=2_000_000),
         mode="full", _backend_override=backend,
     )
     assert profile.codecs is not None
@@ -422,8 +434,10 @@ def test_n_used_names_the_cell_each_verdict_was_actually_graded_on():
     # call in quick (cheap, mean of one, spread unknowable) and three in
     # full/thorough (the smallest count whose samples show a spread).
     ("quick", Budget(max_calls=200, max_prompt_tokens=200_000), 1),
-    ("full", Budget(max_calls=500, max_prompt_tokens=2_000_000), 3),
-    ("thorough", Budget(max_calls=500, max_prompt_tokens=2_000_000), 3),
+    ("full", Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
+                    max_prompt_tokens=2_000_000), 3),
+    ("thorough", Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
+                        max_prompt_tokens=2_000_000), 3),
 ])
 def test_speed_decode_calls_follow_the_mode(mode, budget, expected):
     # The mode table owns how many decode calls are affordable, and the
@@ -637,7 +651,8 @@ def test_the_tools_stopping_rule_travels_with_the_mode():
 
     profile = probe(
         _URL, "fake-model",
-        budget=Budget(max_calls=500, max_prompt_tokens=2_000_000),
+        budget=Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
+                      max_prompt_tokens=2_000_000),
         mode="full", _backend_override=ScriptedBackend(),
     )
     # A perfect run cannot decide below 35 tasks, so it runs to the cap:
@@ -692,7 +707,8 @@ def test_thorough_mode_buys_a_decidable_ready():
 
     profile = probe(
         _URL, "fake-model",
-        budget=Budget(max_calls=500, max_prompt_tokens=2_000_000),
+        budget=Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
+                      max_prompt_tokens=2_000_000),
         mode="thorough", _backend_override=ScriptedBackend(),
     )
     entry = profile.verdicts["structured_extraction"]

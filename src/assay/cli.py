@@ -56,35 +56,44 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 # default below the suite's own call count exhausts mid-family on every
 # run (this bit once at 60 and nearly again at 80).
 #
-# Quick (v1.6): 2 calibration + 5 ladder + ~7 bisection + 9 shape probes
-# + 10 envelope + 45 codecs + 15 loop + 2 speed + 4 long-output rungs +
-# 10 tools ≈ 109. THE QUICK CALL BUDGET IS RAISED 110 -> 130 HERE, and
-# the reason is exactly the failure this comment block exists to
+# Quick (v1.7): 2 calibration + 5 ladder + ~7 bisection + 9 shape probes
+# + 10 envelope + 60 codecs + 15 loop + 2 speed + 4 long-output rungs +
+# 10 tools ≈ 124. THE QUICK CALL BUDGET WAS RAISED 110 -> 130 in v1.6,
+# and the reason is exactly the failure this comment block exists to
 # prevent: v1.6 added the loop's error script (+2 per run, so 9 -> 15)
 # and the tools family (+10), which put the worst case at 109 of 110 —
 # one call from a mid-family death, on the mode an operator reaches for
-# when they are in a hurry. 130 restores the headroom the 110 was chosen
-# for. Full is sequential, so its worst case IS thorough's old worst
-# case (no cell decides early and every one runs to the 35-sample cap):
-# 2 calibration + ~12 ladder + 9 shapes + 30 envelope + up to 315 codec
-# + 25 loop + 4 speed + 4 long-output rungs + 40 tools ≈ 441 of 500 —
-# still comfortable, so it does not move. The tools term is 40 rather
-# than v1.6's 10 because full now samples that family sequentially too
-# (v1.7): 20 tasks x 2 turns is the cap a pool that never decides runs
-# to. A typical run stops well short of either: the budget covers the
-# case where nothing decides.
+# when they are in a hurry. v1.7's three deeper json grades take the
+# codec term 45 -> 60, so quick's worst case is now 124 of 130: inside,
+# but with six calls of headroom rather than twenty-one.
+#
+# Full is sequential, so its worst case IS thorough's old worst case (no
+# cell decides early and every one runs to the 35-sample cap):
+# 2 calibration + ~12 ladder + 9 shapes + 30 envelope + up to 420 codec
+# + 25 loop + 4 speed + 4 long-output rungs + 40 tools ≈ 546. THE 500
+# DEFAULT NO LONGER COVERS THAT. The codec term is 420 rather than
+# v1.6's 315 because json_object gained nested/tabular/constrained
+# (codecs.GRADES_FOR), and the tools term is 40 rather than 10 because
+# full samples that family sequentially too since v1.7: 20 tasks x 2
+# turns is the cap a pool that never decides runs to. Measured, not
+# estimated (scripted suite, 2026-08-17): a clean full run spends 546
+# calls, and under the 500 default it dies with the long-output ladder
+# and the whole tools family named in `dropped`. Raising the default is
+# a deliberate decision that belongs with the v1.7 budget work, not a
+# side effect of adding grades; this comment records the measurement so
+# the gap cannot go unnoticed in the meantime.
 #
 # Token side: the long-output ladder is the one family whose charge is
 # dominated by GENERATION, not prompt — 4 rungs at 512/1024/2048/4096
 # charge 7,832 tokens, because a 4096-token generation shares the window
 # with its prompt and must not be priced like a 512-token one. Measured
-# on the scripted suite (re-measured v1.7), a clean quick run spends 102
-# calls and 78,832 of 220,000 prompt tokens, and a clean full run 441
-# calls and 226,009 of 1,000,000; the worst case (a failing ceiling adds
-# its bisection calls) stays inside both. Quick's token ceiling rises
-# 200k -> 220k with its call ceiling so the two stay proportionate — a
-# call budget that outruns its token budget just moves the mid-family
-# death to the other meter.
+# on the scripted suite (re-measured v1.7), a clean quick run spends 117
+# calls and 79,420 of 220,000 prompt tokens, and a clean full run 546
+# calls and 230,125 of 1,000,000; the token side of both stays
+# comfortable even where the call side does not. Quick's token ceiling
+# rose 200k -> 220k with its call ceiling so the two stay proportionate
+# — a call budget that outruns its token budget just moves the
+# mid-family death to the other meter.
 DEFAULT_BUDGETS = {
     "quick": Budget(max_calls=130, max_prompt_tokens=220_000),
     "full": Budget(max_calls=500, max_prompt_tokens=1_000_000),

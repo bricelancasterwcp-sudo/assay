@@ -1356,7 +1356,7 @@ def test_codec_lens_declares_the_fixture_set():
     from assay.fixtures import FIXTURE_SET
     verdicts = compute_verdicts(None, None, None, None)
     assert verdicts["patch_editing"]["lens"]["fixtures"] == FIXTURE_SET
-    assert FIXTURE_SET == "codec-fixtures-v2"
+    assert FIXTURE_SET == "codec-fixtures-v3"
 
 
 def test_codec_lens_names_its_stopping_rule_and_n_used():

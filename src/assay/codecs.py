@@ -10,6 +10,14 @@ and nothing else.
 No grammar/JSON forcing anywhere: probes measure unforced behavior.
 Unmeasured cells are ``Landing(lands=None, n=0)`` — never a zero that
 was not measured.
+
+Grades are per codec (``GRADES_FOR``): the patch codecs are graded by
+fixture size, and ``json_object`` by size AND by shape — v1.7 added
+``nested``/``tabular``/``constrained`` beside the flat tiny/small/medium
+cells, because "emits valid JSON" and "emits the JSON you described"
+turned out to be different capabilities. The verdict cell did not move
+with them (``profile._GRADE_FOR_VERDICTS``): the deep grades are new
+columns, not a re-scaled ``structured_extraction``.
 """
 
 import json
@@ -26,6 +34,23 @@ _REPLACE_MARKER = ">>>>>>> REPLACE"
 CODECS = ("search_replace", "whole_file", "json_object")
 GRADES = ("tiny", "small", "medium")
 
+#: The json codec's DEEP grades (v1.7). ``tiny``/``small``/``medium``
+#: grade the same flat object against three prompt sizes; these three
+#: grade three different SHAPES — a second level of nesting, a
+#: fixed-length homogeneous array, and an enum-plus-range object that
+#: forbids stray keys. A model that emits `{name, count, tags}` and
+#: nothing deeper is exactly what the flat grades cannot tell apart.
+JSON_DEEP_GRADES = ("nested", "tabular", "constrained")
+
+#: Which grades each codec is measured at. The patch codecs are graded
+#: by fixture SIZE (the fixture set supplies tiny/small/medium bases);
+#: json is graded by size and then by shape.
+GRADES_FOR: dict[str, tuple[str, ...]] = {
+    "search_replace": GRADES,
+    "whole_file": GRADES,
+    "json_object": GRADES + JSON_DEEP_GRADES,
+}
+
 # The extraction directive + five task variants (v1.3: one prompt was
 # sampler variance, not capability). No format forcing, ever.
 JSON_DIRECTIVE = (
@@ -41,8 +66,70 @@ JSON_TASKS = (
 )
 JSON_PROMPT = f"{JSON_DIRECTIVE} {JSON_TASKS[0]}"  # kept for fakes/back-compat
 
+# Each deep grade states its shape IN WORDS and validates exactly that
+# shape — no grammar, no response_format, no forcing (spec §7). The
+# tasks stay in JSON_TASKS' register: short concrete noun phrases with
+# nothing to reason about, so the cell measures format-following and
+# not world knowledge.
+NESTED_DIRECTIVE = (
+    "Return a JSON object with keys `name` (string), `location` (an "
+    "object with `city` (string) and `coordinates` (an object with "
+    "`lat` and `lon` numbers)), and `tags` (array of strings) "
+    "describing:"
+)
+NESTED_TASKS = (
+    "a corner bakery in Lisbon",
+    "a lighthouse north of Reykjavik",
+    "a night market stall in Taipei",
+    "a public library branch in Cork",
+    "a rooftop observatory above Santiago",
+)
+
+#: The row count the ``tabular`` directive asks for in words. Exact, not
+#: a floor: "exactly three" is the instruction being measured.
+_TABULAR_ROWS = 3
+TABULAR_DIRECTIVE = (
+    "Return a JSON array of exactly three objects, each with keys `id` "
+    "(integer) and `label` (string), listing:"
+)
+TABULAR_TASKS = (
+    "three tools from a bicycle repair kit",
+    "three ferry stops along a river",
+    "three seats in a small theatre",
+    "three crates in a warehouse aisle",
+    "three sensors on a weather mast",
+)
+
+#: The ``constrained`` contract's three literals: the enum, the
+#: inclusive priority range, and the CLOSED key set. The directive
+#: states all three in words; a test pins that the words and these
+#: values still agree.
+_CONSTRAINED_STATUSES = ("open", "closed", "pending")
+_PRIORITY_RANGE = (1, 5)
+_CONSTRAINED_KEYS = frozenset({"status", "priority", "note"})
+CONSTRAINED_DIRECTIVE = (
+    'Return a JSON object with keys `status` (exactly one of "open", '
+    '"closed" or "pending"), `priority` (an integer from 1 to 5) and, '
+    "optionally, `note` (string). Use no other keys. Describe:"
+)
+CONSTRAINED_TASKS = (
+    "a maintenance ticket for a jammed loading door",
+    "a support request about a misprinted receipt",
+    "a work order for a leaking radiator valve",
+    "a request to replace a burnt-out stairwell light",
+    "a report of a wobbling cafe table",
+)
+
 _CHARS_PER_TOKEN = 5  # sizing proxy for the budget charge (plan Task 9)
 _MAX_TOKENS = {"search_replace": 256, "whole_file": 768, "json_object": 128}
+#: Per-(codec, grade) overrides of the codec's own ceiling. The deep
+#: json grades need more room than the flat 128 — a nested object or a
+#: three-row array truncated mid-reply is a measurement of the ceiling,
+#: not of the model — and the flat grades keep 128 because every
+#: committed profile's json numbers were measured under it.
+_DEEP_MAX_TOKENS = 256
+_MAX_TOKENS_BY_GRADE = {("json_object", grade): _DEEP_MAX_TOKENS
+                        for grade in JSON_DEEP_GRADES}
 
 _SEARCH_REPLACE_DIRECTIVE = (
     "Respond with exactly one SEARCH/REPLACE block in this exact format:\n"
@@ -168,6 +255,36 @@ def apply_whole_file(reply: str) -> str | None:
     return interior if interior is not None else reply
 
 
+_UNPARSED = object()  # distinct from every JSON value, `null` included
+
+
+def _payload(reply: str):
+    """The reply's JSON value, one outermost fence stripped, or
+    ``_UNPARSED`` when it is not JSON. Never raises: a bad reply is
+    data (a non-landing), never an exception."""
+    interior = _strip_one_fence(reply)
+    text = interior if interior is not None else reply
+    try:
+        return json.loads(text)
+    except ValueError:
+        return _UNPARSED
+
+
+def _is_int(value) -> bool:
+    """A JSON integer. ``True`` is an int in Python and is not one here."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_number(value) -> bool:
+    """A JSON number (integer or float), booleans excluded as above."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _is_str_list(value) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str)
+                                           for item in value)
+
+
 def validate_json_object(reply: str) -> bool:
     """Unforced JSON landing for the fixed extraction prompt.
 
@@ -175,24 +292,87 @@ def validate_json_object(reply: str) -> bool:
     `name` (string), `count` (integer), `tags` (array of strings).
     Extra keys are allowed. Never raises: a bad reply is data.
     """
-    interior = _strip_one_fence(reply)
-    text = interior if interior is not None else reply
-    try:
-        payload = json.loads(text)
-    except ValueError:
-        return False
+    payload = _payload(reply)
     if not isinstance(payload, dict):
         return False
-    name = payload.get("name")
-    count = payload.get("count")
-    tags = payload.get("tags")
-    if "name" not in payload or not isinstance(name, str):
+    if not isinstance(payload.get("name"), str):
         return False
-    if "count" not in payload or not isinstance(count, int) or isinstance(count, bool):
+    if not _is_int(payload.get("count")):
         return False
-    if "tags" not in payload or not isinstance(tags, list):
+    return _is_str_list(payload.get("tags"))
+
+
+def validate_json_nested(reply: str) -> bool:
+    """The ``nested`` grade's contract: TWO levels below the root.
+
+    A dict with `name` (string), `location` (a dict with `city` (string)
+    and `coordinates`, itself a dict with `lat`/`lon` numbers) and
+    `tags` (array of strings). Extra keys allowed, as in the flat grade
+    — what this grade measures is whether the nesting survives, not
+    whether the model was terse.
+    """
+    payload = _payload(reply)
+    if not isinstance(payload, dict):
         return False
-    return all(isinstance(tag, str) for tag in tags)
+    if not isinstance(payload.get("name"), str):
+        return False
+    location = payload.get("location")
+    if not isinstance(location, dict) or not isinstance(location.get("city"),
+                                                        str):
+        return False
+    coordinates = location.get("coordinates")
+    if not isinstance(coordinates, dict):
+        return False
+    if not _is_number(coordinates.get("lat")):
+        return False
+    if not _is_number(coordinates.get("lon")):
+        return False
+    return _is_str_list(payload.get("tags"))
+
+
+def validate_json_tabular(reply: str) -> bool:
+    """The ``tabular`` grade's contract: a homogeneous, fixed-length array.
+
+    A JSON ARRAY of exactly ``_TABULAR_ROWS`` objects, each with `id`
+    (integer) and `label` (string). Extra keys per object are allowed;
+    the row COUNT is exact, because "exactly three" is the instruction
+    being measured.
+    """
+    payload = _payload(reply)
+    if not isinstance(payload, list) or len(payload) != _TABULAR_ROWS:
+        return False
+    for row in payload:
+        if not isinstance(row, dict):
+            return False
+        if not _is_int(row.get("id")):
+            return False
+        if not isinstance(row.get("label"), str):
+            return False
+    return True
+
+
+def validate_json_constrained(reply: str) -> bool:
+    """The ``constrained`` grade's contract: an enum, a range, and a CLOSED
+    key set.
+
+    A dict with `status` (one of ``_CONSTRAINED_STATUSES``), `priority`
+    (an integer in ``_PRIORITY_RANGE``, inclusive) and at most an
+    optional `note` (string). This is the one validator where an EXTRA
+    key fails: "use no other keys" is half of what the grade asks, so a
+    reply that volunteers an `owner` did not follow the instruction.
+    """
+    payload = _payload(reply)
+    if not isinstance(payload, dict):
+        return False
+    if set(payload) - _CONSTRAINED_KEYS:
+        return False
+    if payload.get("status") not in _CONSTRAINED_STATUSES:
+        return False
+    priority = payload.get("priority")
+    low, high = _PRIORITY_RANGE
+    if not _is_int(priority) or not low <= priority <= high:
+        return False
+    return "note" not in payload or isinstance(payload["note"], str)
 
 
 DEFAULT_DIRECTIVES = CodecDirectives(
@@ -202,14 +382,36 @@ DEFAULT_DIRECTIVES = CodecDirectives(
 )
 DEFAULT_PRESENTATION = "default-v1"
 
+#: Each deep json grade's own (directive, tasks, validator). A deep
+#: grade's directive is NOT presentation the way ``CodecDirectives`` is
+#: — it states the shape its validator enforces, so the two cannot be
+#: substituted apart. A consumer's ``json_object`` directive therefore
+#: replaces the FLAT grades' presentation only; the deep grades always
+#: ask in the built-in words (and the profile's lens still records the
+#: presentation, which is what the consumer changed).
+_DEEP_GRADES = {
+    "nested": (NESTED_DIRECTIVE, NESTED_TASKS, validate_json_nested),
+    "tabular": (TABULAR_DIRECTIVE, TABULAR_TASKS, validate_json_tabular),
+    "constrained": (CONSTRAINED_DIRECTIVE, CONSTRAINED_TASKS,
+                    validate_json_constrained),
+}
 
-def _build_prompt(codec: str, filename: str, instruction: str,
+
+def _build_prompt(codec: str, grade: str, filename: str, instruction: str,
                   original: str, directives: CodecDirectives) -> str:
     if codec == "json_object":
         # instruction carries the task description for the json codec
-        return f"{directives.json_object} {instruction}"
+        deep = _DEEP_GRADES.get(grade)
+        directive = deep[0] if deep is not None else directives.json_object
+        return f"{directive} {instruction}"
     directive = getattr(directives, codec)
     return f"{instruction}\n\n{directive}\n\nHere is `{filename}`:\n{original}"
+
+
+def _max_tokens(codec: str, grade: str) -> int:
+    """The reply ceiling for one cell: the codec's, unless the grade
+    overrides it (the deep json grades do — see ``_MAX_TOKENS_BY_GRADE``)."""
+    return _MAX_TOKENS_BY_GRADE.get((codec, grade), _MAX_TOKENS[codec])
 
 
 def _parses_as_python(text: str) -> bool:
@@ -220,11 +422,15 @@ def _parses_as_python(text: str) -> bool:
     return True
 
 
-def _score(codec: str, reply_text: str, original: str,
+def _score(codec: str, grade: str, reply_text: str, original: str,
            expected: str) -> tuple[bool, bool]:
     """(byte_equality_landed, applies_and_parses_landed) for one reply."""
     if codec == "json_object":
-        ok = validate_json_object(reply_text)
+        # Every json grade's two lenses coincide: validation IS the
+        # application there, deep grades included.
+        deep = _DEEP_GRADES.get(grade)
+        validate = deep[2] if deep is not None else validate_json_object
+        ok = validate(reply_text)
         return ok, ok
     if codec == "search_replace":
         applied = apply_search_replace(original, reply_text)
@@ -310,7 +516,11 @@ def probe_codecs(
     directives: CodecDirectives | None = None,
     look_schedule: tuple[int, ...] | None = None,
 ) -> dict[str, dict[str, Landing]]:
-    """Landing rates per codec x size grade (spec §7), both lenses.
+    """Landing rates per codec x grade (spec §7), both lenses.
+
+    Which grades a codec is measured at comes from ``GRADES_FOR``, so
+    ``json_object`` carries its three deep shape grades alongside the
+    three size ones and the patch codecs carry three each.
 
     Without ``look_schedule`` every cell is measured with `n_per_cell`
     seeded probes at fixed n. With one (``assay.stats.LOOK_SCHEDULE`` is
@@ -344,7 +554,7 @@ def probe_codecs(
         by_grade[entry[0]].append(entry)
     results: dict[str, dict[str, Landing]] = {
         codec: {grade: Landing(lands=None, lands_applies=None, n=0)
-                for grade in GRADES}
+                for grade in GRADES_FOR[codec]}
         for codec in CODECS
     }
     seed = seed_base
@@ -352,7 +562,7 @@ def probe_codecs(
     for codec in CODECS:
         if exhausted:
             break
-        for grade in GRADES:
+        for grade in GRADES_FOR[codec]:
             if exhausted:
                 break
             # v1.3: a cell's attempts spread across HETEROGENEOUS tasks
@@ -360,11 +570,13 @@ def probe_codecs(
             # variants for json), not repeated draws of one prompt — the
             # v1/v2 sets measured sampler variance on a single fixture.
             if codec == "json_object":
-                cell_tasks = [(None, task, None, None) for task in JSON_TASKS]
+                deep = _DEEP_GRADES.get(grade)
+                tasks = deep[1] if deep is not None else JSON_TASKS
+                cell_tasks = [(None, task, None, None) for task in tasks]
             else:
                 cell_tasks = [(entry[2], entry[3], entry[4], entry[5])
                               for entry in by_grade[grade]]
-            prompts = [_build_prompt(codec, filename, instruction,
+            prompts = [_build_prompt(codec, grade, filename, instruction,
                                      original, directives)
                        for filename, instruction, original, _ in cell_tasks]
             order = _attempt_order(len(cell_tasks), n_per_cell, look_schedule)
@@ -381,11 +593,12 @@ def probe_codecs(
                     exhausted = True
                     break
                 reply = backend.generate(
-                    prompt, seed=seed, max_tokens=_MAX_TOKENS[codec]
+                    prompt, seed=seed, max_tokens=_max_tokens(codec, grade)
                 )
                 seed += 1
                 attempted += 1
-                exact, applies = _score(codec, reply.text, original, expected)
+                exact, applies = _score(codec, grade, reply.text, original,
+                                        expected)
                 landed += int(exact)
                 landed_applies += int(applies)
                 # Looked at ONLY at the pre-registered points: peeking

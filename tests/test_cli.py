@@ -67,17 +67,20 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
         "max_prompt_tokens": 220_000,
     }
     # ...and it COVERS the whole quick suite (2 calibration + 5 ladder +
-    # 9 shapes + 10 envelope + 45 codecs + 15 loop + 2 speed + 4
-    # long-output rungs + 10 tools = 102): the run must never exhaust the
+    # 9 shapes + 10 envelope + 60 codecs + 15 loop + 2 speed + 4
+    # long-output rungs + 10 tools = 117): the run must never exhaust the
     # default budget on a well-behaved endpoint (spec §12 criterion 1).
     # The loop family went 9 -> 15 BY DESIGN in v1.6 (scripted-loop-v2
     # plays a two-turn error script alongside each three-turn golden run)
-    # and the tools family is new in v1.6.
-    assert payload["provenance"]["spent"]["calls"] == 102
+    # and the tools family is new in v1.6. Codecs went 45 -> 60 in v1.7:
+    # json_object now carries three deeper grades (nested, tabular,
+    # constrained) on top of tiny/small/medium.
+    assert payload["provenance"]["spent"]["calls"] == 117
     assert (payload["provenance"]["spent"]["prompt_tokens"]
             < payload["provenance"]["budget"]["max_prompt_tokens"])
+    from assay.codecs import GRADES_FOR
     for codec in ("search_replace", "whole_file", "json_object"):
-        for grade in ("tiny", "small", "medium"):
+        for grade in GRADES_FOR[codec]:
             assert payload["codecs"][codec][grade]["n"] == 5, (codec, grade)
     assert payload["provenance"]["dropped"] == []
 
@@ -99,7 +102,7 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
     # Human table on stdout; recording actually wrote a transcript.
     assert "assay profile" in capsys.readouterr().out
     rows = record.read_text(encoding="utf-8").strip().splitlines()
-    assert len(rows) == 102  # one recorded call per spent call
+    assert len(rows) == 117  # one recorded call per spent call
     assert json.loads(rows[0])["outcome"] == "reply"
     # ...and the tool turns are recorded as tool turns, not as generates.
     assert sum(json.loads(row).get("kind") == "chat_tools" for row in rows) == 10
@@ -153,12 +156,16 @@ def test_cli_default_mode_is_full():
 
 
 def test_default_budget_for_the_default_mode_covers_the_worst_case():
-    # The default mode's worst case is now thorough's old worst case
-    # (a codec matrix that never decides early runs to the 315-call
-    # cap); the default budget must cover it, not the old full suite.
-    # Full's worst case is 441 of 500 in v1.7 (the tools family samples
-    # sequentially too now: 40 calls where v1.6 spent 10), so it still
-    # has headroom and does not move.
+    # THIS TEST'S NAME IS A CLAIM v1.7 BROKE, and it is left standing so
+    # the gap is visible rather than tidied away. The default mode's
+    # worst case is thorough's old worst case (a codec matrix that never
+    # decides early runs to its cap), and the deep json grades took that
+    # cap from 315 codec calls to 420: a clean full run now MEASURES 546
+    # calls against this 500 ceiling (scripted suite, 2026-08-17), and
+    # loses the long-output ladder and the tools family to `dropped`.
+    # The values below are pinned at what ships today; raising them is a
+    # budget decision that belongs with the v1.7 budget work, not with
+    # the task that added the grades.
     assert cli.DEFAULT_BUDGETS["full"].max_calls == 500
     assert cli.DEFAULT_BUDGETS["full"].max_prompt_tokens == 1_000_000
     assert cli.DEFAULT_BUDGETS["full"] == cli.DEFAULT_BUDGETS["thorough"]
@@ -180,7 +187,7 @@ def test_codecs_subcommand_stops_sequentially_like_the_probe_command(
 ):
     # The family subcommand shares the mode table, so it must share the
     # stopping rule too: without the schedule this default-mode run
-    # would spend 315 fixed calls on cells decided at n=5.
+    # would spend 420 fixed calls on cells decided at n=5.
     backend = CodecFailingBackend()
     _use_backend(monkeypatch, backend)
 
@@ -191,7 +198,7 @@ def test_codecs_subcommand_stops_sequentially_like_the_probe_command(
     for codec, grades in payload.items():
         for grade, cell in grades.items():
             assert cell["n"] == 5, (codec, grade)
-    assert backend.calls == 45
+    assert backend.calls == 60  # 12 cells x one look of 5
 
 
 # --- diff subcommand -------------------------------------------------
