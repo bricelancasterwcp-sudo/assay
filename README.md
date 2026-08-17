@@ -47,6 +47,13 @@ same block. v1.6 measures both (package 0.7.0, schema v6).
   `assay diff --gate` fails on and `unsupported → ready` is an
   improvement it does not. The refusal is a measurement, so it ranks
   rather than dropping.
+- **A live anchor for all three** — a real refusal (gemma2:9b), a real
+  doom loop (3 of 3), a model that speaks tools and never calls one, and
+  the MoE metadata read off the daemon, captured 2026-08-16 and committed
+  under `docs/superpowers/evidence/tools-anchor/` with the acceptance
+  tests that replay it offline. The `head_dim` fix turned out to be an
+  erratum against two committed v1.4 profiles; the anchor quantifies it.
+  See [The live anchor](#the-live-anchor).
 
 One schema irregularity is recorded rather than tidied away, on the same
 principle as v1.5's verdict amendment:
@@ -333,6 +340,24 @@ where 2048 ÷ 32 derives 64 — and a `head_dim` off by 2x silently halves
 every kv number the window law rests on. Neither reported → `None`, and
 the geometry is unmeasurable rather than guessed.
 
+**That fix is an erratum against the committed v1.4 profiles**, and the
+live anchor measured the size of it. Both
+`docs/superpowers/evidence/tier-enthusiast/` profiles checked report
+`kv_kib_per_token: 216` — which is the signature of the derivation, not
+a property of the models. Read from the stated `key_length` instead,
+`deepseek-coder-v2:16b-lite-q5_K_M` costs **324** KiB/token (head_dim
+192, not 128) and `qwen3.8:27b` costs **260** (head_dim 256, not 213);
+under each profile's own VRAM reading the planned window falls from 8092
+to 5394 and from 4922 to 4096. **The v1.4 numbers were optimistic by 33%
+and 20%.** They are left as committed — evidence is not rewritten to
+suit a later fix — and a test reproduces each old figure from the
+derived `head_dim` so the discrepancy stays explained rather than
+tidied. The same capture also corrected an assumption about which model
+was the MoE: `qwen3.8:27b` (architecture `qwen35`) reports **no**
+`expert_*` keys at all and correctly reads `None`/`None`, while
+`deepseek-coder-v2:16b-lite` (`deepseek2`) reports **64 experts, 6
+routed** — the numbers the renderer prints as `MoE 6-of-64`.
+
 ## Sequential testing
 
 A landing rate of 5/5 spans a Wilson-95 interval of roughly [0.57, 1.0]:
@@ -532,6 +557,52 @@ with a **measured** recovery rate below 0.5 becomes `risky` too. The
 recovery guard tests `is not None`, not truthiness: `0.0` is a model
 that was asked and never recovered and must demote, while `None` is an
 error script that never ran and must demote nothing.
+
+## The live anchor
+
+Both v1.6 instruments and the MoE reading are pinned to a live capture,
+not to fakes: `docs/superpowers/evidence/tools-anchor/` holds the
+transcripts, the verbatim `/api/show` bodies and the values they
+measured (`results.json`), taken 2026-08-16 against **ollama 0.32.13**
+with the probes' own prompts, toolset, seeds and scripts — one run per
+model, nothing tuned. The acceptance tests replay those committed files
+through the strict `CallReplayer` and re-derive every number, so the
+suite stays offline while the claims stay measured.
+
+| model | supported | call | right tool | args | result use | composite |
+|---|---|---|---|---|---|---|
+| gemma2:9b | **false** | — | — | — | — | — |
+| llama3.1:8b | true | 1.00 | 1.00 | 1.00 | 0.40 | 1.00 |
+| mistral-nemo:latest | true | 1.00 | 1.00 | 1.00 | 0.00 | 1.00 |
+| qwen2.5-coder:7b-instruct-q8_0 | true | **0.00** | — | — | 0.80 | **0.00** |
+
+Three things the capture settled:
+
+- **The refusal is real.** gemma2:9b answered `HTTP 400 {"error":
+  "registry.ollama.ai/library/gemma2:9b does not support tools"}` — the
+  classifier's behavior-class rule (4xx whose text names tools, rather
+  than Ollama's exact wording) read it correctly on first contact, one
+  call spent instead of ten, and the body travels in `error_raw`.
+- **`supported` and `call_rate` are genuinely different facts.**
+  qwen2.5-coder:7b took the `tools` parameter and then wrote the correct
+  call as **plain text** five times out of five, emitting no native call
+  at all — while reading a supplied tool result perfectly well (0.80).
+  An instrument that scored what models write would have given it full
+  marks; a harness gets nothing from it. That the two rates over the
+  calls that happened stay `None` rather than `0.0` is the same capture:
+  there was no tool name and no argument to judge.
+- **The doom loop is measured, not assumed.** Shown its patch rejected
+  with "SEARCH text not found" and the file unchanged, qwen2.5-coder:7b
+  re-emitted the identical failing block on **3 of 3** error runs —
+  `recovery_rate` 0.00, `doom_loop_rate` 1.00, beside `action_fidelity`
+  1.00 and `finish_rate` 1.00 from the same 15 calls. The demotion the
+  guard exists for fires on real data.
+
+Also captured, and worth its own line: `result_use_rate` orders these
+three models the opposite way round from `call_rate` (0.80 / 0.40 /
+0.00), with mistral-nemo answering the tool turn from an entirely
+invented file. No single number ranks them, which is why the family
+reports five.
 
 ## Long-output integrity
 

@@ -154,6 +154,14 @@
         "head_dim_if_derived": 128,
         "kv_bytes_per_token": 331776,
         "kv_kib_per_token": 324,
+        "quant": "Q5_K_M",
+        "training_ctx": 163840,
+        "tags_entry": {
+          "name": "deepseek-coder-v2:16b-lite-instruct-q5_K_M",
+          "model": "deepseek-coder-v2:16b-lite-instruct-q5_K_M",
+          "size": 11851329771,
+          "digest": "6065d4880bf9c5b9c9ca71cac371c9b1ca6683c02888f6228c40e8d9501e7189"
+        },
         "measured_geometry": {
           "loaded": true,
           "vram_free_mib": 1220,
@@ -188,6 +196,14 @@
         "head_dim_if_derived": 213,
         "kv_bytes_per_token": 266240,
         "kv_kib_per_token": 260,
+        "quant": "Q4_K_M",
+        "training_ctx": 262144,
+        "tags_entry": {
+          "name": "qwen3.8:27b",
+          "model": "qwen3.8:27b",
+          "size": 17741872154,
+          "digest": "22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643"
+        },
         "measured_geometry": {
           "loaded": false,
           "vram_free_mib": 13962,

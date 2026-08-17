@@ -1,14 +1,17 @@
 """Native tool-calling probe (v1.6): the scripted-tools-v1 instrument."""
 
+import json
+import pathlib
 from typing import NamedTuple
 
 import pytest
 from fakes import ScriptedToolsBackend, ToolsUnsupportedBackend
 
 from assay.backends.base import ToolCall, ToolReply, ToolsUnsupported
+from assay.backends.ollama import OllamaNative
 from assay.budget import Budget, BudgetMeter
 from assay.errors import InfrastructureError
-from assay.replay import tools_key_material
+from assay.replay import CallReplayer, tools_key_material
 from assay.tools import (
     TASKS,
     TOOLS_INSTRUMENT,
@@ -515,3 +518,156 @@ def test_the_meter_is_charged_on_the_replay_key_material():
     )
     assert m.spent.prompt_tokens == expected
     assert m.spent.calls == 10
+
+
+# --- the live anchor (plan Task 10) ----------------------------------------
+#
+# Captured 2026-08-16 against ollama 0.32.13 on this box: four models, the
+# probe's own prompts and seeds, one run each, committed under
+# docs/superpowers/evidence/tools-anchor/ with the values they measured in
+# results.json. These tests read the COMMITTED transcripts through the
+# STRICT replayer — no daemon, no GPU, no network — and hold the probe to
+# what the live endpoints actually did.
+
+ANCHOR = pathlib.Path(__file__).resolve().parents[1] / (
+    "docs/superpowers/evidence/tools-anchor")
+
+
+def anchor_results() -> dict:
+    return json.loads((ANCHOR / "results.json").read_text())
+
+
+def anchor_rows(name: str) -> list[dict]:
+    lines = (ANCHOR / name).read_text().splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def anchor_replayer(capture: dict) -> CallReplayer:
+    """The transcript, replayed under the caps that RECORDED it.
+
+    Not a convenient stand-in: these rows came off `OllamaNative`, so its
+    caps are the ones the run was made under, and a replay that quietly
+    relaxed them would be measuring a different endpoint.
+    """
+    return CallReplayer(
+        ANCHOR / capture["transcript"],
+        model=capture["model"],
+        caps=OllamaNative.caps,
+    )
+
+
+def anchor_captures() -> list[dict]:
+    return anchor_results()["tools"]["captures"]
+
+
+def test_the_anchor_capture_is_committed_whole():
+    results = anchor_results()
+    assert results["daemon"]["version"] == "0.32.13"
+    assert results["tools"]["instrument"] == TOOLS_INSTRUMENT
+    assert results["tools"]["toolset"] == TOOLSET_NAME
+
+    captures = anchor_captures()
+    assert len(captures) == 4
+    # One refusal and three endpoints that took the parameter — the
+    # anchor is worthless if it only ever saw one outcome.
+    supported = [c["result"]["supported"] for c in captures]
+    assert supported.count(False) == 1 and supported.count(True) == 3
+    for capture in captures:
+        rows = anchor_rows(capture["transcript"])
+        assert len(rows) == capture["rows"]
+        assert all(row["model"] == capture["model"] for row in rows)
+        assert all(row["kind"] == "chat_tools" for row in rows)
+
+
+@pytest.mark.parametrize(
+    "capture", anchor_captures(), ids=lambda c: c["model"]
+)
+def test_every_committed_capture_replays_to_its_recorded_values(capture):
+    """The acceptance test the anchor exists to pass.
+
+    Recorded rates are re-DERIVED by running the unmodified probe over
+    the transcript, never read out of results.json — so a scoring change
+    that would have moved a live number fails here instead of silently
+    re-describing evidence that was measured under the old rules.
+    """
+    replayed = probe_tools(
+        anchor_replayer(capture),
+        BudgetMeter(Budget(max_calls=20, max_prompt_tokens=200_000)),
+    )
+
+    for field, recorded in capture["result"].items():
+        assert getattr(replayed, field) == recorded, field
+
+
+def test_the_committed_refusal_replays_as_a_capability_fact():
+    """gemma2:9b: `supported=False`, and the endpoint's own words with it.
+
+    The refusal body is the PRIMARY SOURCE behind the classification. A
+    replay that restored the verdict but dropped the body would leave
+    assay asserting a capability with the evidence discarded.
+    """
+    capture = next(c for c in anchor_captures() if c["model"] == "gemma2:9b")
+    replayer = anchor_replayer(capture)
+
+    with pytest.raises(ToolsUnsupported) as raised:
+        replayer.chat_tools(
+            t1_messages(0), TOOLSET, seed=1400, max_tokens=256
+        )
+
+    assert raised.value.raw == capture["error_raw"]
+    body = raised.value.raw["error"]
+    assert "does not support tools" in body
+    # The classifier's live bet, restated over the real body: the rule is
+    # "4xx and the complaint names tools", not Ollama's exact phrasing.
+    assert "tool" in body.lower()
+
+
+def test_the_refusal_transcript_holds_one_row_and_no_reply():
+    # The "stop on the first refusal" rule, pinned to the bytes: nine
+    # further refusals would have measured nothing new, and a reply row
+    # would mean the model was scored after being declared unsupported.
+    rows = anchor_rows("tools-gemma2-9b.jsonl")
+
+    assert len(rows) == 1
+    assert rows[0]["outcome"] == "error"
+    assert rows[0]["error_type"] == "ToolsUnsupported"
+    assert rows[0]["error_raw"]
+    assert rows[0]["text"] is None and rows[0]["tool_calls"] is None
+
+
+def test_a_supported_endpoint_that_never_calls_is_not_an_unsupported_one():
+    """The measured case the family was built to separate.
+
+    qwen2.5-coder:7b took the `tools` parameter and then WROTE the right
+    call as plain text five times over, emitting no native call at all.
+    `supported` is about the endpoint, `call_rate` about the model, and
+    this capture is the live proof they are different facts.
+    """
+    capture = next(
+        c for c in anchor_captures()
+        if c["model"] == "qwen2.5-coder:7b-instruct-q8_0"
+    )
+    replayed = probe_tools(
+        anchor_replayer(capture),
+        BudgetMeter(Budget(max_calls=20, max_prompt_tokens=200_000)),
+    )
+
+    assert replayed.supported is True
+    assert replayed.call_rate == 0.0 and replayed.composite == 0.0
+    # Nothing called at all => nothing to judge. None, never 0.0, or the
+    # miss call_rate already carries would be counted twice.
+    assert replayed.right_tool_rate is None
+    assert replayed.args_valid_rate is None
+    # ...and it reads a tool result perfectly well. The failure is the
+    # protocol, not comprehension.
+    assert replayed.result_use_rate == 0.8
+
+    # The bytes behind the claim: every T1 row carries no tool call and a
+    # text body that is itself a well-formed call to a registered tool.
+    registered = {tool["function"]["name"] for tool in TOOLSET}
+    t1_rows = anchor_rows(capture["transcript"])[0::2]
+    assert len(t1_rows) == 5
+    for row in t1_rows:
+        assert row["tool_calls"] == []
+        written = json.loads(row["text"])
+        assert written["name"] in registered

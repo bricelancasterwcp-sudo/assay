@@ -51,7 +51,10 @@ daemon and does speak the parameter) is reported exactly as it measured.
 
 Machine-readable values: `results.json`. Transcripts: `tools-*.jsonl`,
 `loop-*.jsonl`, one JSONL row per call in `CallRecorder` format, replayable
-through `CallReplayer`. Verbatim `/api/show` bodies: `show-*.json`.
+through `CallReplayer`. `/api/show` bodies: `show-*.json` — everything assay
+reads (`model_info`, `details`, `capabilities`) exactly as the daemon sent
+it, with the `license` text and the `tensors` inventory dropped and declared
+under `_elided`; the untrimmed bodies are in git at commit `910607d`.
 
 ## Tools capture
 

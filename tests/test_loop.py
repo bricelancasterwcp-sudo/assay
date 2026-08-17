@@ -5,11 +5,16 @@ script — the model is shown its own patch failing to apply and scored on
 what it does next (recover, or re-emit the same broken block).
 """
 
+import json
+import pathlib
+
 from assay.backends.base import Reply
+from assay.backends.ollama import OllamaNative
 from assay.budget import Budget, BudgetMeter
 from assay.codecs import _parse_blocks, apply_search_replace
 from assay.loop import (LOOP_INSTRUMENT, Loop, broken_patch,
                         error_turn_prompts, probe_loop, turn_prompts)
+from assay.replay import CallReplayer
 
 
 def meter():
@@ -383,3 +388,77 @@ def test_budget_death_mid_error_script_reports_the_runs_that_finished():
     assert loop.doom_loop_rate == 1.0   # 1 of 1 COMPLETED error run
     assert loop.recovery_rate == 0.0
     assert loop.n_turns == 9            # the ninth reply is still scored
+
+
+# --- the live anchor (plan Task 10) ----------------------------------------
+#
+# Captured 2026-08-16 against ollama 0.32.13: one probe_loop(runs=3) run —
+# both scripts, 15 calls — against qwen2.5-coder:7b-instruct-q8_0, committed
+# under docs/superpowers/evidence/tools-anchor/. This test reads the
+# COMMITTED transcript through the STRICT replayer: no daemon, no GPU, no
+# network.
+
+ANCHOR = pathlib.Path(__file__).resolve().parents[1] / (
+    "docs/superpowers/evidence/tools-anchor")
+
+
+def anchor_capture() -> dict:
+    results = json.loads((ANCHOR / "results.json").read_text())
+    assert results["loop"]["instrument"] == LOOP_INSTRUMENT
+    return results["loop"]["captures"][0]
+
+
+def anchor_rows(name: str) -> list[dict]:
+    lines = (ANCHOR / name).read_text().splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def test_the_committed_loop_transcript_replays_to_its_recorded_values():
+    capture = anchor_capture()
+    rows = anchor_rows(capture["transcript"])
+    assert len(rows) == capture["rows"] == 15
+    assert all(row["kind"] == "generate" for row in rows)
+
+    replayed = probe_loop(
+        CallReplayer(
+            ANCHOR / capture["transcript"],
+            model=capture["model"],
+            caps=OllamaNative.caps,
+        ),
+        BudgetMeter(Budget(max_calls=30, max_prompt_tokens=200_000)),
+        runs=3,
+    )
+
+    # Re-derived by the unmodified probe, never read out of results.json.
+    for field, recorded in capture["result"].items():
+        assert getattr(replayed, field) == recorded, field
+
+
+def test_the_anchor_measured_a_real_doom_loop():
+    """The failure the error script was written for, off a live endpoint.
+
+    Shown its patch rejected with "SEARCH text not found" and the file
+    unchanged, the model re-emitted the identical failing block on all
+    three error runs. The rates are asserted through the probe above;
+    this pins the BYTES they were derived from, so a transcript edited
+    out from under the claim fails rather than quietly re-describing it.
+    """
+    capture = anchor_capture()
+    assert capture["result"]["doom_loop_rate"] == 1.0
+    assert capture["result"]["recovery_rate"] == 0.0
+    assert capture["result"]["n_error_runs"] == 3
+
+    # The error script's six rows are the last six: seeds 850-852, two
+    # turns each. The second turn of each is the scored reply.
+    error_rows = anchor_rows(capture["transcript"])[9:]
+    assert [row["seed"] for row in error_rows] == [850, 850, 851, 851, 852, 852]
+    replies = [row["text"] for row in error_rows[1::2]]
+
+    canned = _parse_blocks(broken_patch())[0][0]
+    for reply in replies:
+        blocks = _parse_blocks(reply)
+        assert len(blocks) == 1
+        assert blocks[0][0] == canned          # the same SEARCH, verbatim
+        # ...and it still does not apply, which is why it is a doom loop
+        # and not a fix that happens to look like the block it followed.
+        assert apply_search_replace(original_source(), reply) is None
