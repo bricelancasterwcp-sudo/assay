@@ -26,7 +26,12 @@
 #   start <model> -     0        # <iso8601>
 #   done  <model> <rc>  <secs>   # <iso8601>
 #   skip  <model> <rc>  <secs>   # <iso8601>
-# `awk '{print $1,$2,$3,$4}'` reads it. Non-probe exit codes are ours:
+# `awk '{print $1,$2,$3,$4}'` reads it. The run opens with full-line '#'
+# comments pinning assay_bin / assay_version / assay_commit — the instrument is
+# an EDITABLE install, so the durable timing record must name the commit that
+# produced it, not just a version string. Those lines never begin with
+# start/done/skip, so a parser selecting on field 1 ignores them.
+# Non-probe exit codes are ours:
 #   90 = models still resident after the unload wait (someone else holds the GPU)
 #   91 = VRAM below the floor at preflight
 #   92 = probe exited 0 but the written profile names a different model
@@ -35,7 +40,12 @@
 set -u
 
 REPO=/home/brice/workspace/assay/.worktrees/v17
-ASSAY=/tmp/claude-1000/-home-brice/611a2bcd-4387-4f48-863a-b55015758633/scratchpad/assay-v17-venv/bin/assay
+# The repo's own venv, not a session scratch dir: /tmp is wiped on reboot and
+# belongs to whichever session created it, so a campaign launched days from now
+# must not depend on one. This is an EDITABLE install pointing at $REPO/src, so
+# the bytes that run are the worktree's — which is exactly why the run log
+# pins both the version and the commit below.
+ASSAY="$REPO/.venv/bin/assay"
 VENV_PY="${ASSAY%/assay}/python"
 OLLAMA_URL=http://127.0.0.1:11434
 EVDIR="$REPO/docs/superpowers/evidence/tier-enthusiast-2026-08"
@@ -86,6 +96,10 @@ say() { printf '%s  %s\n' "$(date '+%F %T')" "$*"; }
 runlog() {
   printf '%s %s %s %s  # %s\n' "$1" "$2" "$3" "$4" "$(date -Is)" >> "$RUNLOG"
 }
+
+# A full-line '#' comment. Never starts with start/done/skip, so a parser
+# selecting on field 1 skips it without needing to know it exists.
+runlog_note() { printf '# %s\n' "$*" >> "$RUNLOG"; }
 
 # The E1-sweep slug rule: ':' and '/' become '-', everything else is kept.
 slug_of() { printf '%s' "$1" | tr ':/' '--'; }
@@ -213,8 +227,21 @@ mkdir -p "$EVDIR"
 rm -f "$EVDIR/.DONE"
 echo $$ > "$PIDFILE"
 
+ASSAY_VERSION=$("$VENV_PY" -c 'import assay; print(assay.__version__)' 2>&1)
+ASSAY_COMMIT=$(git -C "$REPO" rev-parse HEAD 2>&1)
+
 say "=== tier re-profile campaign 2026-08 START (pid $$, ${#MODELS[@]} models) ==="
-say "assay: $ASSAY (version $("$VENV_PY" -c 'import assay; print(assay.__version__)' 2>&1))"
+say "assay: $ASSAY (version $ASSAY_VERSION, commit $ASSAY_COMMIT)"
+
+# The same provenance into the RUN LOG, not just stdout. The run log is the
+# durable timing record the estimate and any later re-analysis are read from,
+# and an editable install means a version string alone does not identify the
+# code that ran — the commit does.
+runlog_note "campaign 2026-08 start $(date -Is)"
+runlog_note "assay_bin=$ASSAY"
+runlog_note "assay_version=$ASSAY_VERSION"
+runlog_note "assay_commit=$ASSAY_COMMIT"
+runlog_note "tier=$TIER mode=full vram_floor_mib=$FLOOR_MIB models=${#MODELS[@]}"
 
 for m in "${MODELS[@]}"; do
   run_model "$m"

@@ -64,7 +64,8 @@ text left as filed.*
 
 ### The sweep (2026-08-17)
 
-Every committed profile in the repository — this directory plus `live/`
+~~Every committed profile in the repository~~ *(scope bounded 2026-08-17 —
+see below)* — this directory plus `live/`
 and `live-run2/` — was classified under a pre-registered protocol
 ([`../e1-sweep/PROTOCOL.md`](../e1-sweep/PROTOCOL.md)): metadata
 captured verbatim from the daemon (ollama 0.32.13), extraction and
@@ -101,6 +102,31 @@ The `live/` and `live-run2/` codegemma profiles are also AFFECTED
 (336 → 448 KiB/token); their errata are filed beside them
 ([`../live/ERRATA.md`](../live/ERRATA.md),
 [`../live-run2/ERRATA.md`](../live-run2/ERRATA.md)).
+
+### Scope bound (amended 2026-08-17)
+
+The sweep sentence above read *"every committed profile in the
+repository"*. That was true the day it was filed and stopped being true
+the moment a new profile landed — so the claim is bounded here rather
+than left to rot. The sweep's 23 rows are every committed profile **in
+E1's blast radius**.
+
+E1 was **fixed in probe 0.7.0**. A profile written by 0.7.0 or later
+reads the stated `attention.key_length` instead of deriving it, so it
+cannot carry this defect, and it joins the tree **unswept by
+construction rather than by oversight**. The first such profile is
+[`../tier-enthusiast-2026-08/qwen2.5-coder-1.5b-instruct-q8_0.json`](../tier-enthusiast-2026-08/qwen2.5-coder-1.5b-instruct-q8_0.json)
+(probe 0.9.0), which brings the repository to 24 profiles, 23 swept.
+
+The bound is **enforced, not asserted**: `tests/test_e1_sweep.py`
+recomputes the swept set from the tree by `probe_version` and fails if a
+profile written *before* 0.7.0 is ever added without re-running the
+sweep. A companion test requires every unswept profile to justify itself
+with `probe_version >= 0.7.0`, so a profile with an older version — or
+none at all — breaks one test or the other rather than slipping between
+them. Original sweep text left as filed;
+[`../e1-sweep/PROTOCOL.md`](../e1-sweep/PROTOCOL.md) is pre-registered
+and stands untouched.
 
 ### What is NOT wrong
 
