@@ -51,15 +51,56 @@ identically the third.
 | deepseek-coder-v2:16b-lite-q5_K_M | **33.3%** | 50.0% | **50.0%** |
 | qwen3.8:27b | **16.8%** | 20.2% | **20.2%** |
 
-### Not checked
+### Not checked ~~(superseded — see the sweep below)~~
 
 Every other profile in this directory was written by the same 0.5.0 code
 path and may carry the same overstatement. **Only the two above were
 re-measured.** A profile is affected exactly when its architecture states
 an `attention.key_length` that differs from `embedding_length ÷
 attention.head_count`; dense architectures where those agree are
-unaffected. Re-profiling the directory under 0.7.0 would settle it and
-has not been done.
+unaffected. ~~Re-profiling the directory under 0.7.0 would settle it and
+has not been done.~~ *Settled 2026-08-17 by the E1 sweep below; original
+text left as filed.*
+
+### The sweep (2026-08-17)
+
+Every committed profile in the repository — this directory plus `live/`
+and `live-run2/` — was classified under a pre-registered protocol
+([`../e1-sweep/PROTOCOL.md`](../e1-sweep/PROTOCOL.md)): metadata
+captured verbatim from the daemon (ollama 0.32.13), extraction and
+window law run through probe 0.7.0 itself, and every verdict earned
+through an identity gate (today's blob size equals the committed
+`weights_bytes` AND replaying the derived `head_dim` reproduces the
+committed geometry exactly). Full table:
+[`../e1-sweep/results.json`](../e1-sweep/results.json).
+
+Two more profiles in this directory are AFFECTED:
+
+| profile | `head_dim` derived / stated | `kv_kib_per_token` as written → correct | `usable_window` as written → correct |
+|---|---|---|---|
+| [`gemma2-9b.json`](gemma2-9b.json) | 224 / **256** (`gemma2.attention.key_length`) | 294 → **336** | 8192 → **8192** (unchanged — `training_ctx` binds under both readings; the kv figure was wrong, the promise held) |
+| [`mistral-nemo-latest.json`](mistral-nemo-latest.json) | 160 / **128** (`llama.attention.key_length`) | 200 → **160** | 32711 → **40889** (the profile **under**-promised by 20.0% of the true window) |
+
+mistral-nemo is the sign E1's headline hides: the stated `key_length`
+can also be *smaller* than the derivation, in which case every kv
+number was too large and the window too conservative. Wrong either
+way; over-promise is just the dangerous direction.
+
+The remaining fifteen profiles in this directory settle clean:
+`qwen3-14b`, `qwen3-8b`, and the Hermes-4-14B profile are UNAFFECTED
+(stated `key_length` equals the derivation); the rest are
+UNAFFECTED-BY-CONSTRUCTION (their metadata states no `key_length`, so
+0.7.0's fallback reproduces the committed numbers — unchanged under
+0.7.0, which is not the same claim as hardware-verified).
+[`gemma-4-12b-it-qat-q4_0-latest.json`](gemma-4-12b-it-qat-q4_0-latest.json)
+committed `geometry: null`, so it has no kv number to correct — worth
+recording anyway: its metadata states `key_length` 512 against a
+derivation of 240, the largest gap the sweep found (2.1×).
+
+The `live/` and `live-run2/` codegemma profiles are also AFFECTED
+(336 → 448 KiB/token); their errata are filed beside them
+([`../live/ERRATA.md`](../live/ERRATA.md),
+[`../live-run2/ERRATA.md`](../live-run2/ERRATA.md)).
 
 ### What is NOT wrong
 

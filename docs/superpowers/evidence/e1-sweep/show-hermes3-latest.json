@@ -1,0 +1,2330 @@
+{
+ "license": "META LLAMA 3 COMMUNITY LICENSE AGREEMENT\nMeta Llama 3 Version Release Date: April 18, 2024\n\n\u201cAgreement\u201d means the terms and conditions for use, reproduction, distribution and modification of the\nLlama Materials set forth herein.\n\n\u201cDocumentation\u201d means the specifications, manuals and documentation accompanying Meta Llama 3\ndistributed by Meta at https://llama.meta.com/get-started/.\n\n\u201cLicensee\u201d or \u201cyou\u201d means you, or your employer or any other person or entity (if you are entering into\nthis Agreement on such person or entity\u2019s behalf), of the age required under applicable laws, rules or\nregulations to provide legal consent and that has legal authority to bind your employer or such other\nperson or entity if you are entering in this Agreement on their behalf.\n\n\u201cMeta Llama 3\u201d means the foundational large language models and software and algorithms, including\nmachine-learning model code, trained model weights, inference-enabling code, training-enabling code,\nfine-tuning enabling code and other elements of the foregoing distributed by Meta at\nhttps://llama.meta.com/llama-downloads.\n\n\u201cLlama Materials\u201d means, collectively, Meta\u2019s proprietary Meta Llama 3 and Documentation (and any\nportion thereof) made available under this Agreement.\n\n\u201cMeta\u201d or \u201cwe\u201d means Meta Platforms Ireland Limited (if you are located in or, if you are an entity, your\nprincipal place of business is in the EEA or Switzerland) and Meta Platforms, Inc. (if you are located\noutside of the EEA or Switzerland).\n\nBy clicking \u201cI Accept\u201d below or by using or distributing any portion or element of the Llama Materials,\nyou agree to be bound by this Agreement.\n\n1. License Rights and Redistribution.\n\n  a. Grant of Rights. You are granted a non-exclusive, worldwide, non-transferable and royalty-free\nlimited license under Meta\u2019s intellectual property or other rights owned by Meta embodied in the Llama\nMaterials to use, reproduce, distribute, copy, create derivative works of, and make modifications to the\nLlama Materials.\n\n  b. Redistribution and Use.\n\n      i. If you distribute or make available the Llama Materials (or any derivative works\nthereof), or a product or service that uses any of them, including another AI model, you shall (A) provide\na copy of this Agreement with any such Llama Materials; and (B) prominently display \u201cBuilt with Meta\nLlama 3\u201d on a related website, user interface, blogpost, about page, or product documentation. If you\nuse the Llama Materials to create, train, fine tune, or otherwise improve an AI model, which is\ndistributed or made available, you shall also include \u201cLlama 3\u201d at the beginning of any such AI model\nname.\n\n      ii. If you receive Llama Materials, or any derivative works thereof, from a Licensee as part \nof an integrated end user product, then Section 2 of this Agreement will not apply to you.\n\n      iii. You must retain in all copies of the Llama Materials that you distribute the following\nattribution notice within a \u201cNotice\u201d text file distributed as a part of such copies: \u201cMeta Llama 3 is\nlicensed under the Meta Llama 3 Community License, Copyright \u00a9 Meta Platforms, Inc. All Rights\nReserved.\u201d\n\n      iv. Your use of the Llama Materials must comply with applicable laws and regulations\n(including trade compliance laws and regulations) and adhere to the Acceptable Use Policy for the Llama\nMaterials (available at https://llama.meta.com/llama3/use-policy), which is hereby incorporated by\nreference into this Agreement.\n\n      v. You will not use the Llama Materials or any output or results of the Llama Materials to\nimprove any other large language model (excluding Meta Llama 3 or derivative works thereof).\n\n2. Additional Commercial Terms. If, on the Meta Llama 3 version release date, the monthly active users\nof the products or services made available by or for Licensee, or Licensee\u2019s affiliates, is greater than 700\nmillion monthly active users in the preceding calendar month, you must request a license from Meta,\nwhich Meta may grant to you in its sole discretion, and you are not authorized to exercise any of the\nrights under this Agreement unless or until Meta otherwise expressly grants you such rights.\n\n3. Disclaimer of Warranty. UNLESS REQUIRED BY APPLICABLE LAW, THE LLAMA MATERIALS AND ANY\nOUTPUT AND RESULTS THEREFROM ARE PROVIDED ON AN \u201cAS IS\u201d BASIS, WITHOUT WARRANTIES OF\nANY KIND, AND META DISCLAIMS ALL WARRANTIES OF ANY KIND, BOTH EXPRESS AND IMPLIED,\nINCLUDING, WITHOUT LIMITATION, ANY WARRANTIES OF TITLE, NON-INFRINGEMENT,\nMERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE. YOU ARE SOLELY RESPONSIBLE FOR\nDETERMINING THE APPROPRIATENESS OF USING OR REDISTRIBUTING THE LLAMA MATERIALS AND\nASSUME ANY RISKS ASSOCIATED WITH YOUR USE OF THE LLAMA MATERIALS AND ANY OUTPUT AND\nRESULTS.\n\n4. Limitation of Liability. IN NO EVENT WILL META OR ITS AFFILIATES BE LIABLE UNDER ANY THEORY OF\nLIABILITY, WHETHER IN CONTRACT, TORT, NEGLIGENCE, PRODUCTS LIABILITY, OR OTHERWISE, ARISING\nOUT OF THIS AGREEMENT, FOR ANY LOST PROFITS OR ANY INDIRECT, SPECIAL, CONSEQUENTIAL,\nINCIDENTAL, EXEMPLARY OR PUNITIVE DAMAGES, EVEN IF META OR ITS AFFILIATES HAVE BEEN ADVISED\nOF THE POSSIBILITY OF ANY OF THE FOREGOING.\n\n5. Intellectual Property.\n\n  a. No trademark licenses are granted under this Agreement, and in connection with the Llama\nMaterials, neither Meta nor Licensee may use any name or mark owned by or associated with the other\nor any of its affiliates, except as required for reasonable and customary use in describing and\nredistributing the Llama Materials or as set forth in this Section 5(a). Meta hereby grants you a license to\nuse \u201cLlama 3\u201d (the \u201cMark\u201d) solely as required to comply with the last sentence of Section 1.b.i. You will\ncomply with Meta\u2019s brand guidelines (currently accessible at\nhttps://about.meta.com/brand/resources/meta/company-brand/ ). All goodwill arising out of your use\nof the Mark will inure to the benefit of Meta.\n\n  b. Subject to Meta\u2019s ownership of Llama Materials and derivatives made by or for Meta, with\nrespect to any derivative works and modifications of the Llama Materials that are made by you, as\nbetween you and Meta, you are and will be the owner of such derivative works and modifications.\n\n  c. If you institute litigation or other proceedings against Meta or any entity (including a\ncross-claim or counterclaim in a lawsuit) alleging that the Llama Materials or Meta Llama 3 outputs or\nresults, or any portion of any of the foregoing, constitutes infringement of intellectual property or other\nrights owned or licensable by you, then any licenses granted to you under this Agreement shall\nterminate as of the date such litigation or claim is filed or instituted. You will indemnify and hold\nharmless Meta from and against any claim by any third party arising out of or related to your use or\ndistribution of the Llama Materials.\n\n6. Term and Termination. The term of this Agreement will commence upon your acceptance of this\nAgreement or access to the Llama Materials and will continue in full force and effect until terminated in\naccordance with the terms and conditions herein. Meta may terminate this Agreement if you are in\nbreach of any term or condition of this Agreement. Upon termination of this Agreement, you shall delete\nand cease use of the Llama Materials. Sections 3, 4 and 7 shall survive the termination of this\nAgreement.\n\n7. Governing Law and Jurisdiction. This Agreement will be governed and construed under the laws of\nthe State of California without regard to choice of law principles, and the UN Convention on Contracts\nfor the International Sale of Goods does not apply to this Agreement. The courts of California shall have\nexclusive jurisdiction of any dispute arising out of this Agreement.",
+ "modelfile": "# Modelfile generated by \"ollama show\"\n# To build a new Modelfile based on this, replace FROM with:\n# FROM hermes3:latest\n\nFROM /mnt/extra/ollama-models/blobs/sha256-c8985d236593f7a17da2a3da49588aa951a9b1e57ce97753364fbf59e63af84a\nTEMPLATE \"\"\"{{- if .Messages }}\n{{- if or .System .Tools }}<|im_start|>system\n{{- if .Tools }}\nYou are a function calling AI model. You are provided with function signatures within <tools></tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions. Here are the available tools: <tools>\n{{- range .Tools }}\n{\"type\": \"function\", \"function\": {{ .Function }}}\n{{- end }}  </tools> Use the following pydantic model json schema for each tool call you will make: {\"properties\": {\"arguments\": {\"title\": \"Arguments\", \"type\": \"object\"}, \"name\": {\"title\": \"Name\", \"type\": \"string\"}}, \"required\": [\"arguments\", \"name\"], \"title\": \"FunctionCall\", \"type\": \"object\"} For each function call return a json object with function name and arguments within <tool_call></tool_call> XML tags as follows:\n<tool_call>\n{\"arguments\": <args-dict>, \"name\": <function-name>}\n</tool_call>\n{{- else if .System }}\n{{ .System }}\n{{- end }}<|im_end|>\n{{ end }}\n{{- range $i, $_ := .Messages }}\n{{- $last := eq (len (slice $.Messages $i)) 1 -}}\n{{- if eq .Role \"user\" }}<|im_start|>user\n{{ .Content }}<|im_end|>\n{{ else if eq .Role \"assistant\" }}<|im_start|>assistant\n{{ if .Content }}{{ .Content }}\n{{- else if .ToolCalls }}<tool_call>\n{{ range .ToolCalls }}{\"name\": \"{{ .Function.Name }}\", \"arguments\": {{ .Function.Arguments }}}\n{{ end }}</tool_call>\n{{- end }}{{ if not $last }}<|im_end|>\n{{ end }}\n{{- else if eq .Role \"tool\" }}<|im_start|>user\n<tool_response>\n{{ .Content }}\n</tool_response><|im_end|>\n{{ end }}\n{{- if and (ne .Role \"assistant\") $last }}<|im_start|>assistant\n{{ end }}\n{{- end }}\n{{- else }}\n{{- if .System }}<|im_start|>system\n{{ .System }}<|im_end|>\n{{ end }}{{ if .Prompt }}<|im_start|>user\n{{ .Prompt }}<|im_end|>\n{{ end }}<|im_start|>assistant\n{{ end }}{{ .Response }}{{ if .Response }}<|im_end|>{{ end }}\"\"\"\nPARAMETER stop <|im_start|>\nPARAMETER stop <|im_end|>\nLICENSE \"META LLAMA 3 COMMUNITY LICENSE AGREEMENT\nMeta Llama 3 Version Release Date: April 18, 2024\n\n\u201cAgreement\u201d means the terms and conditions for use, reproduction, distribution and modification of the\nLlama Materials set forth herein.\n\n\u201cDocumentation\u201d means the specifications, manuals and documentation accompanying Meta Llama 3\ndistributed by Meta at https://llama.meta.com/get-started/.\n\n\u201cLicensee\u201d or \u201cyou\u201d means you, or your employer or any other person or entity (if you are entering into\nthis Agreement on such person or entity\u2019s behalf), of the age required under applicable laws, rules or\nregulations to provide legal consent and that has legal authority to bind your employer or such other\nperson or entity if you are entering in this Agreement on their behalf.\n\n\u201cMeta Llama 3\u201d means the foundational large language models and software and algorithms, including\nmachine-learning model code, trained model weights, inference-enabling code, training-enabling code,\nfine-tuning enabling code and other elements of the foregoing distributed by Meta at\nhttps://llama.meta.com/llama-downloads.\n\n\u201cLlama Materials\u201d means, collectively, Meta\u2019s proprietary Meta Llama 3 and Documentation (and any\nportion thereof) made available under this Agreement.\n\n\u201cMeta\u201d or \u201cwe\u201d means Meta Platforms Ireland Limited (if you are located in or, if you are an entity, your\nprincipal place of business is in the EEA or Switzerland) and Meta Platforms, Inc. (if you are located\noutside of the EEA or Switzerland).\n\nBy clicking \u201cI Accept\u201d below or by using or distributing any portion or element of the Llama Materials,\nyou agree to be bound by this Agreement.\n\n1. License Rights and Redistribution.\n\n  a. Grant of Rights. You are granted a non-exclusive, worldwide, non-transferable and royalty-free\nlimited license under Meta\u2019s intellectual property or other rights owned by Meta embodied in the Llama\nMaterials to use, reproduce, distribute, copy, create derivative works of, and make modifications to the\nLlama Materials.\n\n  b. Redistribution and Use.\n\n      i. If you distribute or make available the Llama Materials (or any derivative works\nthereof), or a product or service that uses any of them, including another AI model, you shall (A) provide\na copy of this Agreement with any such Llama Materials; and (B) prominently display \u201cBuilt with Meta\nLlama 3\u201d on a related website, user interface, blogpost, about page, or product documentation. If you\nuse the Llama Materials to create, train, fine tune, or otherwise improve an AI model, which is\ndistributed or made available, you shall also include \u201cLlama 3\u201d at the beginning of any such AI model\nname.\n\n      ii. If you receive Llama Materials, or any derivative works thereof, from a Licensee as part \nof an integrated end user product, then Section 2 of this Agreement will not apply to you.\n\n      iii. You must retain in all copies of the Llama Materials that you distribute the following\nattribution notice within a \u201cNotice\u201d text file distributed as a part of such copies: \u201cMeta Llama 3 is\nlicensed under the Meta Llama 3 Community License, Copyright \u00a9 Meta Platforms, Inc. All Rights\nReserved.\u201d\n\n      iv. Your use of the Llama Materials must comply with applicable laws and regulations\n(including trade compliance laws and regulations) and adhere to the Acceptable Use Policy for the Llama\nMaterials (available at https://llama.meta.com/llama3/use-policy), which is hereby incorporated by\nreference into this Agreement.\n\n      v. You will not use the Llama Materials or any output or results of the Llama Materials to\nimprove any other large language model (excluding Meta Llama 3 or derivative works thereof).\n\n2. Additional Commercial Terms. If, on the Meta Llama 3 version release date, the monthly active users\nof the products or services made available by or for Licensee, or Licensee\u2019s affiliates, is greater than 700\nmillion monthly active users in the preceding calendar month, you must request a license from Meta,\nwhich Meta may grant to you in its sole discretion, and you are not authorized to exercise any of the\nrights under this Agreement unless or until Meta otherwise expressly grants you such rights.\n\n3. Disclaimer of Warranty. UNLESS REQUIRED BY APPLICABLE LAW, THE LLAMA MATERIALS AND ANY\nOUTPUT AND RESULTS THEREFROM ARE PROVIDED ON AN \u201cAS IS\u201d BASIS, WITHOUT WARRANTIES OF\nANY KIND, AND META DISCLAIMS ALL WARRANTIES OF ANY KIND, BOTH EXPRESS AND IMPLIED,\nINCLUDING, WITHOUT LIMITATION, ANY WARRANTIES OF TITLE, NON-INFRINGEMENT,\nMERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE. YOU ARE SOLELY RESPONSIBLE FOR\nDETERMINING THE APPROPRIATENESS OF USING OR REDISTRIBUTING THE LLAMA MATERIALS AND\nASSUME ANY RISKS ASSOCIATED WITH YOUR USE OF THE LLAMA MATERIALS AND ANY OUTPUT AND\nRESULTS.\n\n4. Limitation of Liability. IN NO EVENT WILL META OR ITS AFFILIATES BE LIABLE UNDER ANY THEORY OF\nLIABILITY, WHETHER IN CONTRACT, TORT, NEGLIGENCE, PRODUCTS LIABILITY, OR OTHERWISE, ARISING\nOUT OF THIS AGREEMENT, FOR ANY LOST PROFITS OR ANY INDIRECT, SPECIAL, CONSEQUENTIAL,\nINCIDENTAL, EXEMPLARY OR PUNITIVE DAMAGES, EVEN IF META OR ITS AFFILIATES HAVE BEEN ADVISED\nOF THE POSSIBILITY OF ANY OF THE FOREGOING.\n\n5. Intellectual Property.\n\n  a. No trademark licenses are granted under this Agreement, and in connection with the Llama\nMaterials, neither Meta nor Licensee may use any name or mark owned by or associated with the other\nor any of its affiliates, except as required for reasonable and customary use in describing and\nredistributing the Llama Materials or as set forth in this Section 5(a). Meta hereby grants you a license to\nuse \u201cLlama 3\u201d (the \u201cMark\u201d) solely as required to comply with the last sentence of Section 1.b.i. You will\ncomply with Meta\u2019s brand guidelines (currently accessible at\nhttps://about.meta.com/brand/resources/meta/company-brand/ ). All goodwill arising out of your use\nof the Mark will inure to the benefit of Meta.\n\n  b. Subject to Meta\u2019s ownership of Llama Materials and derivatives made by or for Meta, with\nrespect to any derivative works and modifications of the Llama Materials that are made by you, as\nbetween you and Meta, you are and will be the owner of such derivative works and modifications.\n\n  c. If you institute litigation or other proceedings against Meta or any entity (including a\ncross-claim or counterclaim in a lawsuit) alleging that the Llama Materials or Meta Llama 3 outputs or\nresults, or any portion of any of the foregoing, constitutes infringement of intellectual property or other\nrights owned or licensable by you, then any licenses granted to you under this Agreement shall\nterminate as of the date such litigation or claim is filed or instituted. You will indemnify and hold\nharmless Meta from and against any claim by any third party arising out of or related to your use or\ndistribution of the Llama Materials.\n\n6. Term and Termination. The term of this Agreement will commence upon your acceptance of this\nAgreement or access to the Llama Materials and will continue in full force and effect until terminated in\naccordance with the terms and conditions herein. Meta may terminate this Agreement if you are in\nbreach of any term or condition of this Agreement. Upon termination of this Agreement, you shall delete\nand cease use of the Llama Materials. Sections 3, 4 and 7 shall survive the termination of this\nAgreement.\n\n7. Governing Law and Jurisdiction. This Agreement will be governed and construed under the laws of\nthe State of California without regard to choice of law principles, and the UN Convention on Contracts\nfor the International Sale of Goods does not apply to this Agreement. The courts of California shall have\nexclusive jurisdiction of any dispute arising out of this Agreement.\"\n",
+ "parameters": "stop                           \"<|im_start|>\"\nstop                           \"<|im_end|>\"",
+ "template": "{{- if .Messages }}\n{{- if or .System .Tools }}<|im_start|>system\n{{- if .Tools }}\nYou are a function calling AI model. You are provided with function signatures within <tools></tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions. Here are the available tools: <tools>\n{{- range .Tools }}\n{\"type\": \"function\", \"function\": {{ .Function }}}\n{{- end }}  </tools> Use the following pydantic model json schema for each tool call you will make: {\"properties\": {\"arguments\": {\"title\": \"Arguments\", \"type\": \"object\"}, \"name\": {\"title\": \"Name\", \"type\": \"string\"}}, \"required\": [\"arguments\", \"name\"], \"title\": \"FunctionCall\", \"type\": \"object\"} For each function call return a json object with function name and arguments within <tool_call></tool_call> XML tags as follows:\n<tool_call>\n{\"arguments\": <args-dict>, \"name\": <function-name>}\n</tool_call>\n{{- else if .System }}\n{{ .System }}\n{{- end }}<|im_end|>\n{{ end }}\n{{- range $i, $_ := .Messages }}\n{{- $last := eq (len (slice $.Messages $i)) 1 -}}\n{{- if eq .Role \"user\" }}<|im_start|>user\n{{ .Content }}<|im_end|>\n{{ else if eq .Role \"assistant\" }}<|im_start|>assistant\n{{ if .Content }}{{ .Content }}\n{{- else if .ToolCalls }}<tool_call>\n{{ range .ToolCalls }}{\"name\": \"{{ .Function.Name }}\", \"arguments\": {{ .Function.Arguments }}}\n{{ end }}</tool_call>\n{{- end }}{{ if not $last }}<|im_end|>\n{{ end }}\n{{- else if eq .Role \"tool\" }}<|im_start|>user\n<tool_response>\n{{ .Content }}\n</tool_response><|im_end|>\n{{ end }}\n{{- if and (ne .Role \"assistant\") $last }}<|im_start|>assistant\n{{ end }}\n{{- end }}\n{{- else }}\n{{- if .System }}<|im_start|>system\n{{ .System }}<|im_end|>\n{{ end }}{{ if .Prompt }}<|im_start|>user\n{{ .Prompt }}<|im_end|>\n{{ end }}<|im_start|>assistant\n{{ end }}{{ .Response }}{{ if .Response }}<|im_end|>{{ end }}",
+ "details": {
+  "parent_model": "",
+  "format": "gguf",
+  "family": "llama",
+  "families": [
+   "llama"
+  ],
+  "parameter_size": "8.0B",
+  "quantization_level": "Q4_0"
+ },
+ "model_info": {
+  "general.architecture": "llama",
+  "general.base_model.0.name": "Meta Llama 3.1 8B",
+  "general.base_model.0.organization": "Meta Llama",
+  "general.base_model.0.repo_url": "https://huggingface.co/meta-llama/Meta-Llama-3.1-8B",
+  "general.base_model.count": 1,
+  "general.basename": "Hermes-3-Llama-3.1",
+  "general.file_type": 2,
+  "general.languages": null,
+  "general.license": "llama3",
+  "general.organization": "NousResearch",
+  "general.parameter_count": 8030261312,
+  "general.quantization_version": 2,
+  "general.size_label": "8B",
+  "general.tags": null,
+  "general.type": "model",
+  "llama.attention.head_count": 32,
+  "llama.attention.head_count_kv": 8,
+  "llama.attention.layer_norm_rms_epsilon": 1e-05,
+  "llama.block_count": 32,
+  "llama.context_length": 131072,
+  "llama.embedding_length": 4096,
+  "llama.feed_forward_length": 14336,
+  "llama.rope.dimension_count": 128,
+  "llama.rope.freq_base": 500000,
+  "llama.vocab_size": 128256,
+  "tokenizer.chat_template.tool_use": "{%- macro json_to_python_type(json_spec) %}\n{%- set basic_type_map = {\n    \"string\": \"str\",\n    \"number\": \"float\",\n    \"integer\": \"int\",\n    \"boolean\": \"bool\"\n} %}\n\n{%- if basic_type_map[json_spec.type] is defined %}\n    {{- basic_type_map[json_spec.type] }}\n{%- elif json_spec.type == \"array\" %}\n    {{- \"list[\" +  json_to_python_type(json_spec|items) + \"]\"}}\n{%- elif json_spec.type == \"object\" %}\n    {%- if json_spec.additionalProperties is defined %}\n        {{- \"dict[str, \" + json_to_python_type(json_spec.additionalProperties) + ']'}}\n    {%- else %}\n        {{- \"dict\" }}\n    {%- endif %}\n{%- elif json_spec.type is iterable %}\n    {{- \"Union[\" }}\n    {%- for t in json_spec.type %}\n      {{- json_to_python_type({\"type\": t}) }}\n      {%- if not loop.last %}\n        {{- \",\" }} \n    {%- endif %}\n    {%- endfor %}\n    {{- \"]\" }}\n{%- else %}\n    {{- \"Any\" }}\n{%- endif %}\n{%- endmacro %}\n\n\n{{- bos_token }}\n{{- \"You are a function calling AI model. You are provided with function signatures within <tools></tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions. Here are the available tools: <tools> \" }}\n{%- for tool in tools %}\n    {%- if tool.function is defined %}\n        {%- set tool = tool.function %}\n    {%- endif %}\n    {{- '{\"type\": \"function\", \"function\": ' }}\n    {{- '{\"name\": \"' + tool.name + '\", ' }}\n    {{- '\"description\": \"' + tool.name + '(' }}\n    {%- for param_name, param_fields in tool.parameters.properties|items %}\n        {{- param_name + \": \" + json_to_python_type(param_fields) }}\n        {%- if not loop.last %}\n            {{- \", \" }}\n        {%- endif %}\n    {%- endfor %}\n    {{- \")\" }}\n    {%- if tool.return is defined %}\n        {{- \" -> \" + json_to_python_type(tool.return) }}\n    {%- endif %}\n    {{- \" - \" + tool.description + \"\\n\\n\" }}\n    {%- for param_name, param_fields in tool.parameters.properties|items %}\n        {%- if loop.first %}\n            {{- \"    Args:\\n\" }}\n        {%- endif %}\n        {{- \"        \" + param_name + \"(\" + json_to_python_type(param_fields) + \"): \" + param_fields.description|trim }}\n    {%- endfor %}\n    {%- if tool.return is defined and tool.return.description is defined %}\n        {{- \"\\n    Returns:\\n        \" + tool.return.description }}\n    {%- endif %}\n    {{- '\"' }}\n    {{- ', \"parameters\": ' }}\n    {%- if tool.parameters.properties | length == 0 %}\n        {{- \"{}\" }}\n    {%- else %}\n        {{- tool.parameters|tojson }}\n    {%- endif %}\n    {{- \"}\" }}\n    {%- if not loop.last %}\n        {{- \"\\n\" }}\n    {%- endif %}\n{%- endfor %}\n{{- \" </tools>\" }}\n{{- 'Use the following pydantic model json schema for each tool call you will make: {\"properties\": {\"name\": {\"title\": \"Name\", \"type\": \"string\"}, \"arguments\": {\"title\": \"Arguments\", \"type\": \"object\"}}, \"required\": [\"name\", \"arguments\"], \"title\": \"FunctionCall\", \"type\": \"object\"}}\n' }}\n{{- \"For each function call return a json object with function name and arguments within <tool_call></tool_call> XML tags as follows:\n\" }}\n{{- \"<tool_call>\n\" }}\n{{- '{\"name\": <function-name>, \"arguments\": <args-dict>}\n' }}\n{{- '</tool_call><|im_end|>' }}\n{%- for message in messages %}\n    {%- if message.role == \"user\" or message.role == \"system\" or (message.role == \"assistant\" and message.tool_calls is not defined) %}\n        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {{- '<|im_start|>' + message.role }}\n    {%- for tool_call in message.tool_calls %}\n       {{- '\n<tool_call>\n' }}           {%- if tool_call.function is defined %}\n                {%- set tool_call = tool_call.function %}\n            {%- endif %}\n            {{- '{' }}\n            {{- '\"name\": \"' }}\n            {{- tool_call.name }}\n            {{- '\"}' }}\n            {{- ', '}}\n            {%- if tool_call.arguments is defined %}\n                {{- '\"arguments\": ' }}\n                {{- tool_call.arguments|tojson }}\n            {%- endif %}\n            {{- '\\n</tool_call>' }}\n    {%- endfor %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if not message.name is defined %}\n            {{- raise_exception(\"Tool response dicts require a 'name' key indicating the name of the called function!\") }}\n        {%- endif %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>tool\\n' }}\n        {%- endif %}\n        {{- '<tool_response>\\n' }}\n        {{- message.content }}\n        {%- if not loop.last %}\n            {{- '\\n</tool_response>\\n' }}\n        {%- else %}\n            {{- '\\n</tool_response>' }}\n        {%- endif %}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}\n",
+  "tokenizer.chat_templates": null,
+  "tokenizer.ggml.bos_token_id": 128000,
+  "tokenizer.ggml.eos_token_id": 128040,
+  "tokenizer.ggml.merges": null,
+  "tokenizer.ggml.model": "gpt2",
+  "tokenizer.ggml.padding_token_id": 128040,
+  "tokenizer.ggml.pre": "llama-bpe",
+  "tokenizer.ggml.token_type": null,
+  "tokenizer.ggml.tokens": null
+ },
+ "tensors": [
+  {
+   "name": "rope_freqs.weight",
+   "type": "F32",
+   "shape": [
+    64
+   ]
+  },
+  {
+   "name": "token_embd.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    128256
+   ]
+  },
+  {
+   "name": "blk.0.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.0.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.0.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.0.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.0.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.0.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.0.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.0.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.0.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.1.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.1.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.1.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.1.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.1.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.1.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.1.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.1.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.1.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.2.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.2.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.2.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.2.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.2.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.2.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.2.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.2.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.2.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.3.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.3.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.3.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.3.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.3.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.3.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.3.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.3.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.3.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.4.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.4.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.4.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.4.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.4.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.4.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.4.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.4.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.4.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.5.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.5.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.5.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.5.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.5.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.5.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.5.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.5.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.5.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.6.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.6.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.6.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.6.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.6.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.6.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.6.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.6.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.6.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.7.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.7.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.7.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.7.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.7.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.7.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.7.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.7.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.7.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.8.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.8.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.8.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.8.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.8.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.8.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.8.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.8.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.8.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.10.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.10.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.10.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.10.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.10.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.10.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.10.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.10.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.10.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.11.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.11.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.11.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.11.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.11.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.11.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.11.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.11.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.11.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.12.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.12.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.12.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.12.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.12.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.12.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.12.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.12.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.12.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.13.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.13.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.13.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.13.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.13.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.13.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.13.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.13.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.13.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.14.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.14.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.14.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.14.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.14.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.14.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.14.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.14.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.14.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.15.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.15.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.15.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.15.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.15.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.15.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.15.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.15.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.15.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.16.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.16.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.16.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.16.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.16.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.16.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.16.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.16.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.16.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.17.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.17.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.17.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.17.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.17.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.17.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.17.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.17.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.17.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.18.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.18.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.18.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.18.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.18.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.18.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.18.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.18.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.18.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.19.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.19.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.19.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.19.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.19.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.19.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.19.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.19.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.19.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.20.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.20.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.20.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.20.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.20.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.9.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.9.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.9.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.9.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.9.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.9.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.9.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.9.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.9.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.20.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.20.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.20.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.20.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.21.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.21.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.21.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.21.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.21.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.21.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.21.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.21.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.21.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.22.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.22.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.22.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.22.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.22.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.22.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.22.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.22.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.22.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.23.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.23.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.23.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.23.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.23.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.23.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.23.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.23.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.23.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.24.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.24.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.24.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.24.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.24.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.24.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.24.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.24.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.24.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.25.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.25.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.25.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.25.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.25.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.25.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.25.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.25.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.25.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.26.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.26.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.26.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.26.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.26.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.26.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.26.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.26.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.26.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.27.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.27.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.27.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.27.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.27.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.27.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.27.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.27.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.27.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.28.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.28.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.28.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.28.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.28.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.28.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.28.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.28.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.28.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.29.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.29.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.29.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.29.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.29.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.29.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.29.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.29.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.29.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.30.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.30.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.30.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.30.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.30.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.30.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.30.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.30.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.30.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.31.ffn_gate.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.31.ffn_up.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    14336
+   ]
+  },
+  {
+   "name": "blk.31.attn_k.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "blk.31.attn_output.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.31.attn_q.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    4096
+   ]
+  },
+  {
+   "name": "blk.31.attn_v.weight",
+   "type": "Q4_0",
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  {
+   "name": "output.weight",
+   "type": "Q6_K",
+   "shape": [
+    4096,
+    128256
+   ]
+  },
+  {
+   "name": "blk.31.attn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "blk.31.ffn_down.weight",
+   "type": "Q4_0",
+   "shape": [
+    14336,
+    4096
+   ]
+  },
+  {
+   "name": "blk.31.ffn_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  },
+  {
+   "name": "output_norm.weight",
+   "type": "F32",
+   "shape": [
+    4096
+   ]
+  }
+ ],
+ "capabilities": [
+  "completion",
+  "tools"
+ ],
+ "modified_at": "2026-06-01T19:46:44.605851427-05:00"
+}

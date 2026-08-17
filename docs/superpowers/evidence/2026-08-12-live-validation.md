@@ -13,6 +13,15 @@ exit 0, all cells measured — spec §12 criterion 1's mechanics held.
 - **KV arithmetic, exactly**: qwen **56** KiB/token, granite **144**,
   codegemma **336** — the "codegemma's window costs 6× qwen's" finding,
   re-derived by assay from `/api/show` metadata alone.
+  *(Erratum, 2026-08-17: the codegemma figure carries E1 — gemma's
+  metadata states `attention.key_length` 256 where v1's derivation read
+  192, so codegemma's true cost is **448** KiB/token and the ratio is
+  **8×**, not 6×. The reproduction claim stands — assay re-derived
+  exactly what the derivation-era code computes — but the number was
+  the derivation's, not the model's. qwen and granite are unaffected
+  (their metadata states no `key_length`). See
+  [`e1-sweep/`](e1-sweep/PROTOCOL.md) and
+  [`live/ERRATA.md`](live/ERRATA.md).)*
 - **Per-model honest ceilings**: granite verified 4096 / first failure
   4352 (`hard_error`); codegemma 8704 / 9216 (`hard_error`) — real,
   training-context-shaped limits, honestly failed by the daemon

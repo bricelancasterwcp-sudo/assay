@@ -358,6 +358,16 @@ reproduces each old figure from the derived `head_dim` so the discrepancy
 stays explained rather than tidied, and the erratum is filed beside the
 profiles at
 [`evidence/tier-enthusiast/ERRATA.md`](docs/superpowers/evidence/tier-enthusiast/ERRATA.md).
+A pre-registered sweep (2026-08-17) then classified **every** committed
+profile in the repository against E1: two more corrections in that
+errata file (gemma2-9b's kv figure was wrong while its promised window
+held; mistral-nemo's window was **under**-promised — the stated
+`key_length` can sit on either side of the derivation), codegemma's v1
+profiles corrected beside themselves (336 → 448 KiB/token — the
+validation write-up's "6×" ratio is really 8×), and the rest settled
+clean or unchanged-by-construction; protocol, verbatim captures, and
+the full table live in
+[`evidence/e1-sweep/`](docs/superpowers/evidence/e1-sweep/PROTOCOL.md).
 The same capture also corrected an assumption about which model
 was the MoE: `qwen3.8:27b` (architecture `qwen35`) reports **no**
 `expert_*` keys at all and correctly reads `None`/`None`, while
