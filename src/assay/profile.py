@@ -236,22 +236,6 @@ def _codecs_from(
     }
 
 
-def _small_landing(
-    codecs: dict[str, dict[str, Landing]] | None, codec: str,
-    *, lens: str = "byte_equality",
-) -> float | None:
-    """The .small landing rate under the named lens, or None wherever it
-    was not measured."""
-    if codecs is None:
-        return None
-    cell = codecs.get(codec, {}).get(_GRADE_FOR_VERDICTS)
-    if cell is None:
-        return None
-    if lens == "applies_and_parses":
-        return cell.lands_applies  # None when the cell exists but n == 0
-    return cell.lands
-
-
 def _truncates_below_4k(ceiling: Ceiling | None) -> bool:
     return (
         ceiling is not None
@@ -290,14 +274,18 @@ def _loop_verdict(loop: Loop | None) -> dict:
     lo, hi = wilson95(round(loop.action_fidelity * loop.n_turns),
                       loop.n_turns)
     verdict = _ladder(loop.action_fidelity)
-    if verdict == "ready" and (loop.patch_rate or 0.0) < 0.5:
+    if (verdict == "ready" and loop.patch_rate is not None
+            and loop.patch_rate < 0.5):
+        # Both demotions below guard on `is not None`, never truthiness:
+        # 0.0 is a measured model that never landed / never recovered and
+        # MUST demote, while None is a rung that never ran and demotes
+        # NOTHING, on either rung. v1.6 fixed the patch-rate line to say
+        # so: `(patch_rate or 0.0) < 0.5` read an unmeasured rate as a
+        # measured zero, so a budget death inside the first golden run
+        # demoted a verdict on evidence nobody collected.
         verdict = "risky"  # follows the loop, does not advance it
     if (verdict == "ready" and loop.recovery_rate is not None
             and loop.recovery_rate < 0.5):
-        # v1.6, mirroring the patch-rate rule one line up. The guard is
-        # `is not None`, not truthiness: recovery_rate 0.0 is a measured
-        # model that never recovered and MUST demote, while None is an
-        # error script that never ran and must demote nothing.
         verdict = "risky"  # follows the loop, cannot get out of a failure
     provisional = _ladder(lo) != _ladder(hi)
     return {"verdict": verdict, "provisional": provisional,

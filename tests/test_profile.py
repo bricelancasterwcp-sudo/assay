@@ -21,6 +21,17 @@ _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _V1_PROFILE = (_REPO_ROOT / "docs/superpowers/evidence/live"
                / "qwen2.5-coder-7b-instruct-q8_0-quick.json")
+#: Every profile this project has ever committed as evidence. The
+#: version-key requirement is the filter, not the folder listing: these
+#: directories also hold labels, transcripts and errata, and a JSON that
+#: is not a profile must be skipped rather than parsed and blamed.
+_COMMITTED_PROFILES = sorted(
+    (path
+     for folder in ("live", "live-run2", "tier-enthusiast")
+     for path in (_REPO_ROOT / "docs/superpowers/evidence" / folder).glob("*.json")
+     if "assay_profile_version" in json.loads(path.read_text(encoding="utf-8"))),
+    key=lambda p: (p.parent.name, p.name),
+)
 _GRADES = ("tiny", "small", "medium")
 _CODECS = ("search_replace", "whole_file", "json_object")
 
@@ -586,6 +597,31 @@ def test_loop_lens_names_the_error_run_denominator():
     assert unmeasured["n_error_runs"] is None
 
 
+@pytest.mark.parametrize(("patch", "expected"), [
+    (1.0, "ready"),
+    (0.5, "ready"),      # the floor itself still passes
+    (0.49, "risky"),
+    (0.0, "risky"),      # measured, never advanced — MUST demote
+    (None, "ready"),     # unmeasured demotes NOTHING
+])
+def test_loop_ready_demotes_only_on_a_measured_low_patch_rate(patch, expected):
+    """The None case is the point (v1.6 correction of a v1.4 rule).
+
+    A budget death inside the FIRST golden run leaves patch_rate None
+    while action_fidelity is still 1.0 over the turns that were scored.
+    Under the old truthiness guard that unmeasured field demoted a ready
+    verdict — an input nobody measured changing a published answer. It
+    now reads exactly like the recovery guard one line below it: 0.0 is
+    a model that never landed a patch and demotes; None never does.
+    """
+    loop = make_loop(action_fidelity=1.0, patch_rate=patch,
+                     recovery_rate=1.0)
+
+    entry = compute_verdicts(None, None, None, None, None, loop)["loop_discipline"]
+
+    assert entry["verdict"] == expected
+
+
 @pytest.mark.parametrize(("recovery", "expected"), [
     (1.0, "ready"),
     (0.5, "ready"),      # the floor itself still passes
@@ -883,6 +919,43 @@ def test_a_v1_codec_cell_has_no_applies_lens_and_says_so():
     assert cell.n > 0
     assert cell.lands is not None
     assert cell.lands_applies is None
+
+
+@pytest.mark.parametrize("path", _COMMITTED_PROFILES,
+                         ids=[f"{p.parent.name}/{p.stem}"
+                              for p in _COMMITTED_PROFILES])
+def test_every_committed_profile_parses_and_renders_both_views(path):
+    """The back-compat claim, checked against the whole corpus.
+
+    "Reads v1 through v6" was pinned on ONE v1 file: the v2 and v3
+    payloads sat committed and exercised by nothing, so a reader-side
+    regression that only bit the middle versions would have shipped
+    green. Every committed profile goes through the parser and BOTH
+    views, because a document that parses and then kills the renderer is
+    still an unreadable profile.
+    """
+    from assay.report import render_report
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    profile = Profile.from_json(payload)
+    table = render_table(profile)
+    html = render_report([payload])
+
+    assert payload["model"]["name"] in table
+    assert f"assay profile v{payload['assay_profile_version']}" in table
+    assert "<!doctype html" in html
+    assert payload["model"]["name"] in html
+
+
+def test_the_committed_corpus_spans_every_schema_version_ever_written():
+    # The guard on the parametrize above: it is only a v1-through-v4
+    # test while the corpus actually holds those versions. If a future
+    # commit prunes the old evidence, this fails loudly instead of
+    # quietly narrowing the coverage claim to whatever is left.
+    versions = {json.loads(p.read_text(encoding="utf-8"))["assay_profile_version"]
+                for p in _COMMITTED_PROFILES}
+    assert versions == {1, 2, 3, 4}
 
 
 def test_a_present_but_null_family_still_has_to_be_named():

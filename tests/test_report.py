@@ -320,6 +320,34 @@ def test_detail_loop_rates_that_were_never_measured_read_as_dashes():
     assert line.count("—") == 2
 
 
+def test_detail_dashes_the_pre_v16_ceiling_and_envelope_nulls_too():
+    """The two lines the v1.6 ``_num`` sweep did not reach.
+
+    ``ceiling.max_verified`` is None whenever the ladder died before it
+    verified anything, and ``envelope.fidelity`` is None whenever the
+    budget died at n == 0 (the field's own comment says so). Both were
+    interpolated raw, so the oldest lines on the page printed Python's
+    ``None`` while every family added since printed a dash.
+    """
+    p = profile_dict()
+    p["ceiling"]["max_verified"] = None
+    p["envelope"]["fidelity"] = None
+
+    html = render_report([p])
+
+    assert "max verified —" in _detail_line(html, "ceiling")
+    assert "None" not in _detail_line(html, "ceiling")
+    assert "fidelity —" in _detail_line(html, "envelope")
+    assert "None" not in _detail_line(html, "envelope")
+
+
+def test_detail_keeps_a_measured_ceiling_a_token_count_not_a_rate():
+    # The dash fix must not reformat the number: max_verified is a token
+    # count, and "16384.00" would read as a rate that overflowed.
+    line = _detail_line(render_report([profile_dict()]), "ceiling")
+    assert "max verified 11500 " in line
+
+
 def test_v4_era_payloads_render_through_the_v16_report(tmp_path):
     """A real v4 profile: speed, loop and shapes, but no tools family,
     no long_output, and a loop with no error script. Every v1.6 addition

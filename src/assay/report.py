@@ -355,6 +355,14 @@ def _loop_detail(loop: dict) -> str:
 
 
 def _detail(profile: dict) -> str:
+    """One profile's expanded detail. Every number on it goes through
+    ``_num``, the two oldest lines included: ``ceiling.max_verified`` is
+    None when the ladder verified nothing and ``envelope.fidelity`` is
+    None when the budget died at n == 0, and both used to interpolate
+    raw — printing Python's ``None`` on a page that dashes unmeasured
+    everywhere else. ``max_verified`` keeps the ``g`` spec because it is
+    a token count, not a rate.
+    """
     model = (profile.get("model") or {}).get("name", "?")
     geo = profile.get("geometry")
     ceiling = profile.get("ceiling")
@@ -372,12 +380,12 @@ def _detail(profile: dict) -> str:
     if ceiling:
         bits.append(
             f"<p><span class='k'>ceiling</span> max verified "
-            f"{_esc(ceiling.get('max_verified'))} · mode "
+            f"{_num(ceiling.get('max_verified'), 'g')} · mode "
             f"{_esc(ceiling.get('failure_mode'))}</p>")
     bits.append(_shapes_grid(profile.get("ceiling_shapes")))
     if envelope:
         bits.append(f"<p><span class='k'>envelope</span> fidelity "
-                    f"{_esc(envelope['fidelity'])} "
+                    f"{_num(envelope['fidelity'])} "
                     f"(n={_esc(envelope['n'])})</p>")
     bits.append(_codec_grid(profile.get("codecs")))
     if loop:
