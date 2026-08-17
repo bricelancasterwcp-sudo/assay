@@ -1,0 +1,29 @@
+# assay diff — gemma-4-12b-it-qat-q4_0-latest
+# old: docs/superpowers/evidence/tier-enthusiast/gemma-4-12b-it-qat-q4_0-latest.json
+#      (provenance.started 2026-08-15T02:02:24Z, quick mode, schema v4, probe 0.5.0, fixtures codec-fixtures-v2, seeds (0,))
+# new: docs/superpowers/evidence/tier-enthusiast-2026-08/gemma-4-12b-it-qat-q4_0-latest.json
+#      (provenance.started 2026-08-17T14:09:42Z, full mode, schema v8, probe 0.9.0, fixtures codec-fixtures-v3, seeds (0, 1))
+# cmd: assay diff <old> <new>
+# exit: 1   (diff taxonomy: 0 clean, 1 drift, 2 not comparable, 4 unreadable)
+# read this beside README.md in this directory — the confounds are named there,
+# and geometry is NOT a family this command compares.
+#
+ceiling.max_verified: 16384 -> 32768 (improvement, rung-change)
+verdict.patch_editing: risky -> ready (improvement, flip)
+verdict.structured_extraction: unusable -> ready (improvement, flip)
+codec.json_object.tiny.lands: 0.0 -> 1.0 (improvement, disjoint-intervals)
+codec.json_object.small.lands: 0.0 -> 1.0 (improvement, disjoint-intervals)
+codec.json_object.medium.lands: 0.0 -> 1.0 (improvement, disjoint-intervals)
+codec.search_replace.tiny.lands: 0.0 -> 1.0 (improvement, disjoint-intervals)
+codec.search_replace.tiny.lands_applies: 0.0 -> 1.0 (improvement, disjoint-intervals)
+codec.search_replace.small.lands: 0.0 -> 0.8 (improvement, disjoint-intervals)
+codec.search_replace.small.lands_applies: 0.0 -> 1.0 (improvement, disjoint-intervals)
+codec.search_replace.medium.lands: 0.0 -> 1.0 (improvement, disjoint-intervals)
+codec.search_replace.medium.lands_applies: 0.0 -> 1.0 (improvement, disjoint-intervals)
+codec.whole_file.tiny.lands: 0.4 -> 1.0 (improvement, disjoint-intervals)
+codec.whole_file.tiny.lands_applies: 0.4 -> 1.0 (improvement, disjoint-intervals)
+codec.whole_file.small.lands_applies: 0.6 -> 1.0 (improvement, disjoint-intervals)
+codec.whole_file.medium.lands: 0.2 -> 0.8 (improvement, disjoint-intervals)
+codec.whole_file.medium.lands_applies: 0.4 -> 1.0 (improvement, disjoint-intervals)
+within noise: ceiling.failure_mode, ceiling_shapes.shape:2048, ceiling_shapes.shape:2048.failure_mode, ceiling_shapes.shape:4096, ceiling_shapes.shape:4096.failure_mode, ceiling_shapes.shape:8192, ceiling_shapes.shape:8192.failure_mode, verdict.agent_speed, verdict.chat_speed, verdict.long_context, verdict.loop_discipline, verdict.loop_discipline.provisional, codec.whole_file.small.lands, speed.decode_tps, speed.prefill_tps
+dropped: verdict.long_output, verdict.tool_calling, codec.json_object.constrained.lands, codec.json_object.nested.lands, codec.json_object.tabular.lands

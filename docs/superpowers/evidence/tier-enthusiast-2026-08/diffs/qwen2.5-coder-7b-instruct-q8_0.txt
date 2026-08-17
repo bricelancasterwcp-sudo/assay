@@ -1,0 +1,18 @@
+# assay diff — qwen2.5-coder-7b-instruct-q8_0
+# old: docs/superpowers/evidence/tier-enthusiast/coder-7b-fixtures-v2-quick.json
+#      (provenance.started 2026-08-14T06:30:30Z, quick mode, schema v3, probe 0.4.1, fixtures codec-fixtures-v2, seeds (0,))
+# new: docs/superpowers/evidence/tier-enthusiast-2026-08/qwen2.5-coder-7b-instruct-q8_0.json
+#      (provenance.started 2026-08-17T14:31:04Z, full mode, schema v8, probe 0.9.0, fixtures codec-fixtures-v3, seeds (0, 1))
+# cmd: assay diff <old> <new>
+# exit: 1   (diff taxonomy: 0 clean, 1 drift, 2 not comparable, 4 unreadable)
+# note: two old rows name this model; NEWEST by provenance.started chosen — coder-7b-fixtures-v2-quick.json (2026-08-14T06:30:30Z, schema v3) over qwen2.5-coder-7b-q8-quick.json (2026-08-13T22:38:07Z, schema v2)
+# read this beside README.md in this directory — the confounds are named there,
+# and geometry is NOT a family this command compares.
+#
+ceiling.max_verified: 16384 -> 32768 (improvement, rung-change)
+verdict.patch_editing: unusable -> risky (improvement, flip)
+verdict.structured_extraction.provisional: True -> False (neutral, flip)
+codec.search_replace.tiny.lands_applies: 0.4 -> 0.9428571428571428 (improvement, disjoint-intervals)
+codec.search_replace.medium.lands_applies: 0.0 -> 0.6571428571428571 (improvement, disjoint-intervals)
+within noise: ceiling.failure_mode, verdict.agent_speed, verdict.chat_speed, verdict.long_context, verdict.structured_extraction, codec.json_object.tiny.lands, codec.json_object.small.lands, codec.json_object.medium.lands, codec.search_replace.tiny.lands, codec.search_replace.small.lands, codec.search_replace.small.lands_applies, codec.search_replace.medium.lands, codec.whole_file.tiny.lands, codec.whole_file.tiny.lands_applies, codec.whole_file.small.lands, codec.whole_file.small.lands_applies, codec.whole_file.medium.lands, codec.whole_file.medium.lands_applies, speed.decode_tps, speed.prefill_tps
+dropped: ceiling_shapes.shape:2048, ceiling_shapes.shape:4096, ceiling_shapes.shape:8192, verdict.long_output, verdict.loop_discipline, verdict.tool_calling, codec.json_object.constrained.lands, codec.json_object.nested.lands, codec.json_object.tabular.lands

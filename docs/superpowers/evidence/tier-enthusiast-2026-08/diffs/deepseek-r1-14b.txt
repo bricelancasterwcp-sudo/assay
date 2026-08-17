@@ -1,0 +1,14 @@
+# assay diff — deepseek-r1-14b
+# old: docs/superpowers/evidence/tier-enthusiast/deepseek-r1-14b.json
+#      (provenance.started 2026-08-15T01:51:54Z, quick mode, schema v4, probe 0.5.0, fixtures codec-fixtures-v2, seeds (0,))
+# new: docs/superpowers/evidence/tier-enthusiast-2026-08/deepseek-r1-14b.json
+#      (provenance.started 2026-08-17T14:41:20Z, full mode, schema v8, probe 0.9.0, fixtures codec-fixtures-v3, seeds (0, 1))
+# cmd: assay diff <old> <new>
+# exit: 1   (diff taxonomy: 0 clean, 1 drift, 2 not comparable, 4 unreadable)
+# read this beside README.md in this directory — the confounds are named there,
+# and geometry is NOT a family this command compares.
+#
+ceiling.max_verified: 16384 -> 32768 (improvement, rung-change)
+verdict.patch_editing: risky -> unusable (regression, flip)
+within noise: ceiling.failure_mode, ceiling_shapes.shape:2048, ceiling_shapes.shape:2048.failure_mode, ceiling_shapes.shape:4096, ceiling_shapes.shape:4096.failure_mode, ceiling_shapes.shape:8192, ceiling_shapes.shape:8192.failure_mode, verdict.agent_speed, verdict.chat_speed, verdict.long_context, verdict.loop_discipline, verdict.loop_discipline.provisional, verdict.structured_extraction, verdict.structured_extraction.provisional, codec.json_object.tiny.lands, codec.json_object.small.lands, codec.json_object.medium.lands, codec.search_replace.tiny.lands, codec.search_replace.tiny.lands_applies, codec.search_replace.small.lands, codec.search_replace.small.lands_applies, codec.search_replace.medium.lands, codec.search_replace.medium.lands_applies, codec.whole_file.tiny.lands, codec.whole_file.tiny.lands_applies, codec.whole_file.small.lands, codec.whole_file.small.lands_applies, codec.whole_file.medium.lands, codec.whole_file.medium.lands_applies, speed.decode_tps, speed.prefill_tps
+dropped: verdict.long_output, verdict.tool_calling, codec.json_object.constrained.lands, codec.json_object.nested.lands, codec.json_object.tabular.lands

@@ -14,6 +14,16 @@ one exit-4 attempt described next.
 [`campaign-run.log`](campaign-run.log) is the durable timing record and
 pins the instrument (`assay_version=0.9.0`, `assay_commit=d9b9792`).
 
+These fifteen rows are what the published capability matrix
+(<https://bricelancasterwcp-sudo.github.io/assay/matrix/>, committed at
+[`../../../matrix/index.html`](../../../matrix/index.html)) is built
+from. [`diffs/`](diffs/) holds one `assay diff` per model against the
+previous campaign, and [`diffs/README.md`](diffs/README.md) is the
+read-out — **start there** before reading any movement between the two
+campaigns as a model change: the mode, the fixture set and the ceiling
+cap all changed too, and that file names each confound rather than
+subtracting it silently.
+
 ## `qwen3:14b` was run twice; the second run is the row
 
 `qwen3:14b`'s first attempt died at ~call 308 on an HTTP 500 from
