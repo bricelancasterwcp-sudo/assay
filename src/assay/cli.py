@@ -70,34 +70,34 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 # Full is sequential, so its worst case IS thorough's old worst case (no
 # cell decides early and every one runs to the 35-sample cap):
 # 2 calibration + ~12 ladder + 9 shapes + 30 envelope + up to 420 codec
-# + 25 loop + 4 speed + 4 long-output rungs + 40 tools ≈ 546. THE 500
-# DEFAULT NO LONGER COVERS THAT. The codec term is 420 rather than
-# v1.6's 315 because json_object gained nested/tabular/constrained
-# (codecs.GRADES_FOR), and the tools term is 40 rather than 10 because
-# full samples that family sequentially too since v1.7: 20 tasks x 2
-# turns is the cap a pool that never decides runs to. Measured, not
-# estimated (scripted suite, 2026-08-17): a clean full run spends 546
-# calls, and under the 500 default it dies with the long-output ladder
-# and the whole tools family named in `dropped`. Raising the default is
-# a deliberate decision that belongs with the v1.7 budget work, not a
-# side effect of adding grades; this comment records the measurement so
-# the gap cannot go unnoticed in the meantime.
+# + 25 loop + 4 speed + 4 long-output rungs + 40 tools ≈ 546. THE FULL
+# AND THOROUGH CALL BUDGETS ARE RAISED 500 -> 600 HERE, for the same
+# reason quick's went up in v1.6: v1.7's deep json grades take the codec
+# term 315 -> 420 (json_object gained nested/tabular/constrained —
+# codecs.GRADES_FOR) on top of the tools family's 10 -> 40 (full samples
+# that pool sequentially too since v1.7: 20 tasks x 2 turns is the cap a
+# pool that never decides runs to), and at 500 a clean full run died
+# with the long-output ladder and the whole tools family named in
+# `dropped`. 600 is derived from the MEASUREMENT below rather than
+# guessed: ~10% over the measured clean run, which is the room a failing
+# ceiling's bisection calls need. A typical run stops well short: the
+# budget covers the case where nothing decides.
 #
 # Token side: the long-output ladder is the one family whose charge is
 # dominated by GENERATION, not prompt — 4 rungs at 512/1024/2048/4096
 # charge 7,832 tokens, because a 4096-token generation shares the window
 # with its prompt and must not be priced like a 512-token one. Measured
-# on the scripted suite (re-measured v1.7), a clean quick run spends 117
-# calls and 79,420 of 220,000 prompt tokens, and a clean full run 546
-# calls and 230,125 of 1,000,000; the token side of both stays
-# comfortable even where the call side does not. Quick's token ceiling
-# rose 200k -> 220k with its call ceiling so the two stay proportionate
-# — a call budget that outruns its token budget just moves the
-# mid-family death to the other meter.
+# on the scripted suite (re-measured v1.7, 2026-08-17), a clean quick
+# run spends 117 calls and 79,420 of 220,000 prompt tokens, and a clean
+# full run 546 calls and 230,125 of 1,000,000 — both now inside their
+# defaults on BOTH meters, with nothing dropped. Quick's ceilings stay
+# 130 / 220k (worst case 124) and the token ceilings do not move: a call
+# budget that outruns its token budget just relocates the mid-family
+# death to the other meter, and 1M is nowhere near 230k.
 DEFAULT_BUDGETS = {
     "quick": Budget(max_calls=130, max_prompt_tokens=220_000),
-    "full": Budget(max_calls=500, max_prompt_tokens=1_000_000),
-    "thorough": Budget(max_calls=500, max_prompt_tokens=1_000_000),
+    "full": Budget(max_calls=600, max_prompt_tokens=1_000_000),
+    "thorough": Budget(max_calls=600, max_prompt_tokens=1_000_000),
 }
 
 #: The commands that spend GPU time, and so take a budget.

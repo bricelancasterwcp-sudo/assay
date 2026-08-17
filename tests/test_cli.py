@@ -155,19 +155,40 @@ def test_cli_default_mode_is_full():
     assert quick.mode == "quick"
 
 
-def test_default_budget_for_the_default_mode_covers_the_worst_case():
-    # THIS TEST'S NAME IS A CLAIM v1.7 BROKE, and it is left standing so
-    # the gap is visible rather than tidied away. The default mode's
-    # worst case is thorough's old worst case (a codec matrix that never
-    # decides early runs to its cap), and the deep json grades took that
-    # cap from 315 codec calls to 420: a clean full run now MEASURES 546
-    # calls against this 500 ceiling (scripted suite, 2026-08-17), and
-    # loses the long-output ladder and the tools family to `dropped`.
-    # The values below are pinned at what ships today; raising them is a
-    # budget decision that belongs with the v1.7 budget work, not with
-    # the task that added the grades.
-    assert cli.DEFAULT_BUDGETS["full"].max_calls == 500
-    assert cli.DEFAULT_BUDGETS["full"].max_prompt_tokens == 1_000_000
+def test_the_default_budget_covers_a_measured_clean_full_run(
+    tmp_path, monkeypatch, capsys
+):
+    # The default mode's worst case is thorough's old worst case: a codec
+    # matrix where no cell decides early runs every cell to its 35-sample
+    # cap, which v1.7's deep json grades took from 315 codec calls to
+    # 420. The budget was raised 500 -> 600 for exactly that, and this
+    # test MEASURES the run rather than restating a hand count: it fails
+    # if someone lowers the default under the suite's own cost, and it
+    # fails if a family's cost creeps up without the default following.
+    _use_backend(monkeypatch, ScriptedBackend())
+    out = tmp_path / "profile.json"
+
+    code = cli.main(["probe", _URL, "--model", "fake-model",
+                     "--json", str(out)])  # no mode flag: the default is full
+
+    assert code == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["provenance"]["budget"] == {
+        "max_calls": 600,
+        "max_prompt_tokens": 1_000_000,
+    }
+    # Measured on the scripted suite, 2026-08-17 (v1.7, six json grades).
+    spent = payload["provenance"]["spent"]
+    assert spent["calls"] == 546
+    assert spent["prompt_tokens"] == 230_125
+    assert spent["calls"] < cli.DEFAULT_BUDGETS["full"].max_calls
+    # THE acceptance for the raise: a clean run loses NOTHING to the
+    # meter. At 500 this list named the long-output ladder and the whole
+    # tools family.
+    assert payload["provenance"]["dropped"] == []
+    assert payload["long_output"] is not None and payload["tools"] is not None
+    # ~10% headroom for a failing ceiling's bisection calls.
+    assert cli.DEFAULT_BUDGETS["full"].max_calls - spent["calls"] >= 50
     assert cli.DEFAULT_BUDGETS["full"] == cli.DEFAULT_BUDGETS["thorough"]
 
 

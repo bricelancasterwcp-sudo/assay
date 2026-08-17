@@ -646,17 +646,17 @@ from 102 in v1.6 because `json_object` gained three deeper grades, which
 takes the codec family from 45 calls to 60 and quick's worst case to
 **124 of 130**.
 
-Full and thorough are **500 calls / 1M tokens**, and that call ceiling
-is now too low. Full is sequential, so its worst case is the old
-thorough worst case — no codec cell decides early and every one runs to
-the 35-sample cap — which the deep json grades take from 315 codec calls
-to 420. A clean full run on the scripted suite measures **546 calls** and
-230,125 tokens; under the 500 default it exhausts after the codec matrix
-and reports the long-output ladder and the whole tools family as
-`dropped`. The token side is untouched (230k of 1M). Raising the call
-ceiling is a deliberate budget decision rather than a side effect of
-adding grades, so it is tracked with the v1.7 budget work; until then
-run full mode with `--max-calls 600` or higher to get every family.
+Full and thorough are **600 calls / 1M tokens**, raised in v1.7 from
+500 / 1M for the same reason quick moved in v1.6. Full is sequential, so
+its worst case is the old thorough worst case — no codec cell decides
+early and every one runs to the 35-sample cap — which the deep json
+grades take from 315 codec calls to 420. A clean full run on the
+scripted suite measures **546 calls** and 230,125 tokens, and at the old
+500 it exhausted after the codec matrix and reported the long-output
+ladder and the whole tools family as `dropped`. 600 is derived from that
+measurement rather than guessed: about 10% over the clean run, which is
+the room a failing ceiling ladder's bisection calls need. The token
+ceiling does not move — 230k of 1M is not close.
 
 The long-output ladder is the one family whose charge is dominated by
 **generation** rather than prompt: a 4096-token rung shares the context
