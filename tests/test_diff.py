@@ -940,3 +940,148 @@ def test_the_rerun_codec_cells_that_actually_moved_are_absorbed_as_noise():
                 assert f"codec.{codec}.{grade}.lands" in within_noise, (
                     name, codec, grade)
     assert len(moved) == 5, moved
+
+
+# --- cross-version: today's shape against a committed v4 profile -----
+#
+# These are REGRESSION PINS, not a fix: the comparator was written to
+# read every schema this project has ever written, and it already
+# handles the v1.7 additions by the None-is-never-zero rule. What was
+# never pinned is the whole cross-version path end to end — an operator
+# diffing last month's committed profile against a run made today —
+# and the families v1.7 adds are exactly the shape of gap that reads as
+# a regression if absence is ever scored.
+
+_COMMITTED_V4 = EVIDENCE / "tier-enthusiast/qwen2-5-coder-1-5b-instruct-q8_0.json"
+#: The three json SHAPE grades v1.7 added (``codecs.JSON_DEEP_GRADES``).
+#: Named here rather than imported so the pin states the strings a v4
+#: file cannot contain, whatever the probe later calls them.
+_DEEP_GRADES = ("nested", "tabular", "constrained")
+
+
+def _committed_v4() -> dict:
+    payload = json.loads(_COMMITTED_V4.read_text(encoding="utf-8"))
+    assert payload["assay_profile_version"] == 4, "the fixture is the old shape"
+    assert "tools" not in payload
+    assert set(payload["codecs"]["json_object"]) == set(_GRADES_V4)
+    return payload
+
+
+_GRADES_V4 = ("tiny", "small", "medium")
+
+
+def _current_shape_for(old: dict, **overrides) -> dict:
+    """A profile in TODAY's shape, from the profile factories: the tools
+    family, a ``tool_calling`` verdict, and ``json_object`` measured at
+    six grades.
+
+    Its identity is pinned to the old file's — same model, quant,
+    weights, tier — because the question here is what happens across a
+    SCHEMA boundary, and an identity mismatch would answer a different
+    one (that path is pinned separately, below).
+    """
+    from assay.profile import PROFILE_VERSION
+    from test_profile import make_codecs, make_profile, make_tools
+
+    profile = make_profile(
+        assay_profile_version=PROFILE_VERSION,
+        model=dict(old["model"]),
+        codecs=make_codecs(deep=True),
+        tools=make_tools(),
+        verdicts={
+            "structured_extraction": {"verdict": "ready", "provisional": False,
+                                      "interval95": None, "lens": {}},
+            "patch_editing": {"verdict": "ready", "provisional": False,
+                              "interval95": None, "lens": {}},
+            "long_context": {"verdict": "ready", "provisional": False,
+                             "interval95": None, "lens": {}},
+            "tool_calling": _tool_calling("ready"),
+        },
+        **overrides)
+    payload = json.loads(profile.to_json())
+    # The gate reads tier and emulated off provenance; the factory's
+    # provenance is a fixture, so the hardware half of the identity is
+    # taken from the file being compared against.
+    payload["provenance"]["tier"] = old["provenance"]["tier"]
+    payload["provenance"]["emulated"] = old["provenance"]["emulated"]
+    return payload
+
+
+def test_current_shape_against_v4_drops_the_families_v4_could_not_carry():
+    """The families v1.7 added are absent from a v4 file because the
+    schema had no place for them, not because the model failed at them.
+    Every one must reach ``dropped`` and NONE may reach ``changes``: a
+    comparator that scored them would report a regression on the day the
+    schema grew, on every archived profile at once.
+    """
+    old = _committed_v4()
+    new = _current_shape_for(old)
+
+    result = diff_profiles(old, new)
+
+    assert result.comparable, result.identity_notes
+    assert "verdict.tool_calling" in result.dropped
+    for grade in _DEEP_GRADES:
+        assert f"codec.json_object.{grade}.lands" in result.dropped, grade
+    absent = {"tool_calling", *_DEEP_GRADES}
+    assert not [change for change in result.changes
+                if any(name in change.cell for name in absent)], result.changes
+    # Non-vacuity: the cells both files DO carry were compared, so the
+    # clean half of this is a comparison and not an empty run.
+    assert "codec.json_object.small.lands" in (
+        result.within_noise + tuple(c.cell for c in result.changes))
+
+
+def test_current_shape_against_v4_renders_the_absent_cells_as_unmeasured():
+    """...and the reader is told. ``render_diff`` names every dropped
+    cell in full — the shape grades and the tools verdict included — so
+    "not compared" is on the page rather than being silence the reader
+    has to notice."""
+    old = _committed_v4()
+    rendered = render_diff(diff_profiles(old, _current_shape_for(old)))
+
+    dropped_line = next(line for line in rendered.splitlines()
+                        if line.startswith("dropped: "))
+    assert "verdict.tool_calling" in dropped_line
+    for grade in _DEEP_GRADES:
+        assert f"codec.json_object.{grade}.lands" in dropped_line, grade
+    assert "not comparable" not in rendered
+
+
+def test_cli_diff_across_the_version_boundary_takes_the_documented_exits(
+        tmp_path, capsys):
+    """The three documented codes on this path, from the CLI docstring:
+    0 nothing moved beyond noise, 1 drift found, 2 not comparable.
+
+    The v4 file against itself is 0 — the version boundary alone
+    manufactures nothing. Against a factory profile of the same model it
+    is 1, because cells both files measured really did move (this
+    fixture's ceiling and speed are not that model's recorded numbers);
+    never 2, which would mean the schema bump had broken the identity
+    gate, and never 4, which would mean the current shape no longer
+    parses as a profile document.
+    """
+    from assay.cli import main
+
+    old = _committed_v4()
+    old_path = tmp_path / "old.json"
+    old_path.write_text(json.dumps(old), encoding="utf-8")
+    new_path = tmp_path / "new.json"
+    new_path.write_text(json.dumps(_current_shape_for(old)), encoding="utf-8")
+    other_path = tmp_path / "other.json"
+    other = _current_shape_for(old)
+    other["model"] = {**other["model"], "name": "some-other-model:14b"}
+    other_path.write_text(json.dumps(other), encoding="utf-8")
+
+    assert main(["diff", str(old_path), str(old_path)]) == 0
+    assert "no drift beyond noise" in capsys.readouterr().out
+
+    assert main(["diff", str(old_path), str(new_path)]) == 1
+    capsys.readouterr()
+
+    # The identity gate is unchanged by the new families: a different
+    # model is still fatal, still reports nothing, still exits 2.
+    assert main(["diff", str(old_path), str(other_path)]) == 2
+    out = capsys.readouterr().out
+    assert out.startswith("not comparable")
+    assert "dropped" not in out

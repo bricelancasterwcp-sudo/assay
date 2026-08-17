@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from assay.cli import main
+from assay.profile import PROFILE_VERSION, Profile, render_table
 from assay.report import VERDICT_ORDER, render_report
 
 from test_profile import make_profile  # the canonical full-profile builder
@@ -483,6 +484,60 @@ def test_codec_grid_of_a_three_grade_profile_is_unchanged():
     assert grid.count("<th>") == 4
     for grade in _DEEP_GRADES:
         assert grade not in grid, grade
+
+
+def test_a_mixed_version_set_renders_as_one_page():
+    """A committed v4 profile and a run made today, side by side — the
+    matrix an operator actually builds after a schema bump.
+
+    One page, both models, both schema versions declared in the header,
+    and each detail block showing the grades ITS run measured: three for
+    the old file, six for the new one. A page that showed one grade set
+    for both would be claiming a measurement one of them never made.
+    """
+    v4 = json.loads(_V4_PROFILE.read_text(encoding="utf-8"))
+    current = profile_dict(assay_profile_version=PROFILE_VERSION,
+                           codecs=make_codecs(deep=True), tools=make_tools())
+    assert v4["assay_profile_version"] != current["assay_profile_version"]
+
+    html = render_report([v4, current])
+
+    assert html.count("<!doctype html") == 1
+    assert v4["model"]["name"] in html and current["model"]["name"] in html
+    versions = sorted({v4["assay_profile_version"],
+                       current["assay_profile_version"]})
+    assert f"{versions}" in html
+    grids = [_codec_grid_html(html[i:]) for i in
+             [html.index('<table class="grid"><tr><th>codec '),
+              html.rindex('<table class="grid"><tr><th>codec ')]]
+    assert [grid.count("<th>") for grid in grids] == [4, 7], (
+        "the old profile keeps three grade columns, the new one gets six")
+
+
+def test_render_table_of_a_mixed_version_set_names_both_probe_versions():
+    """The human view of the same set. ``render_table`` is per profile
+    and states the version of the instrument that produced it on its
+    first line, so a mixed set names both probes — which is the fact a
+    reader needs before comparing two rows measured months apart.
+
+    (The HTML page declares SCHEMA versions, not probe versions; the
+    probe version reaches a reader through this view.)
+    """
+    v4 = json.loads(_V4_PROFILE.read_text(encoding="utf-8"))
+    current = make_profile(assay_profile_version=PROFILE_VERSION,
+                           codecs=make_codecs(deep=True), tools=make_tools())
+    pages = [render_table(Profile.from_json(v4)), render_table(current)]
+
+    assert pages[0].startswith(
+        f"assay profile v{v4['assay_profile_version']} "
+        f"(probe {v4['probe_version']})")
+    assert pages[1].startswith(
+        f"assay profile v{current.assay_profile_version} "
+        f"(probe {current.probe_version})")
+    assert v4["probe_version"] != current.probe_version
+    both = "\n".join(pages)
+    assert both.count(f"probe {v4['probe_version']}") == 1
+    assert both.count(f"probe {current.probe_version}") == 1
 
 
 def test_cli_report_rejects_files_that_are_not_profiles(tmp_path, capsys):
