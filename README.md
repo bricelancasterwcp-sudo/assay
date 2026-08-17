@@ -14,6 +14,19 @@ it can choose another format or another model.
 Version history — what each release changed in what the numbers
 *mean* — lives in [CHANGELOG.md](CHANGELOG.md).
 
+**The measurements.** Fifteen models profiled on one enthusiast-tier box
+(RTX 5080 16 GiB, ollama 0.32.13) on 2026-08-17 are published as the
+capability matrix at
+**<https://bricelancasterwcp-sudo.github.io/assay/matrix/>** — the same
+page is committed at [`docs/matrix/index.html`](docs/matrix/index.html)
+and opens offline. The profiles it is built from, their call
+transcripts, and per-model diffs against the previous campaign are in
+[`docs/superpowers/evidence/tier-enthusiast-2026-08/`](docs/superpowers/evidence/tier-enthusiast-2026-08/);
+read
+[`diffs/README.md`](docs/superpowers/evidence/tier-enthusiast-2026-08/diffs/README.md)
+before treating any movement between the two campaigns as a model
+change — the instrument changed too, and that file names every confound.
+
 ## Why it exists
 
 Three findings, all measured live against real local endpoints, motivated
