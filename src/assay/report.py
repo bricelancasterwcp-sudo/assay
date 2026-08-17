@@ -8,6 +8,14 @@ and the dropped list prints in full. Stdlib only, inline CSS, no
 JavaScript, no server: the file works offline and attaches to an
 email. The GUI is the instrument's ethics made visible; nothing is
 shown without its lens.
+
+v1.7 adds the two knobs a PUBLISHED page needs — its own title and an
+intro paragraph above the matrix — and names, per profile, the probe
+version that measured it. The header has always declared schema
+versions, which describe the shape of the documents; the probe version
+is the instrument, it differs row by row on a campaign that spanned an
+instrument change, and until now it reached a reader only through
+``profile.render_table``.
 """
 
 from __future__ import annotations
@@ -88,7 +96,15 @@ table.grid { border-collapse:collapse; margin:.6rem 0; }
 .mono { font-family: ui-monospace, monospace; font-size:.85rem; }
 .dropped { color:var(--muted); font-size:.85rem; }
 .k { color:var(--muted); }
+.intro { max-width:70ch; margin:0 0 1.8rem; }
+.intro p { margin:.55rem 0; }
 """
+
+#: The page's name when the caller does not give it one. A constant
+#: rather than a literal in the template because it appears twice — the
+#: tab and the heading — and the two drifting apart is the kind of
+#: nothing-bug that ships.
+_DEFAULT_TITLE = "assay capability report"
 
 
 def _esc(value: object) -> str:
@@ -494,7 +510,16 @@ def _detail(profile: dict) -> str:
         items = "".join(f"<li>{_esc(d)}</li>" for d in dropped)
         bits.append(f'<p class="dropped">dropped:</p><ul class="dropped">{items}</ul>')
     bits.append(
-        f"<p class='k mono'>mode={_esc(prov.get('mode'))} · "
+        # The probe version leads the provenance line: it says which
+        # INSTRUMENT produced everything above it, and a row measured by
+        # an older probe is not comparable to one beside it just because
+        # both are on the same page. ``_word`` rather than raw
+        # interpolation for the module's standing reason — a document
+        # that declares no probe reads as a dash, never as Python's
+        # ``None`` — and it escapes, so the key is as untrusted as the
+        # rest of the document.
+        f"<p class='k mono'>probe={_word(profile.get('probe_version'))} · "
+        f"mode={_esc(prov.get('mode'))} · "
         f"presentation={_esc(prov.get('presentation'))} · "
         f"fixtures={_esc(prov.get('fixture_set'))} · "
         f"temperature={_esc(prov.get('temperature'))} · "
@@ -503,8 +528,30 @@ def _detail(profile: dict) -> str:
     return "".join(bits)
 
 
-def render_report(profiles: Iterable[dict]) -> str:
+def render_report(profiles: Iterable[dict], *, page_title: str | None = None,
+                  intro_html: str | None = None) -> str:
+    """The page. ``None`` for both extras is the report every operator
+    already gets, to the byte.
+
+    **The escape contract, because the two parameters are not alike.**
+    ``page_title`` is TEXT: it goes through ``_esc`` like every other
+    string on this page, because a caller that builds a title out of a
+    profile field (a tier, a model name) must not become the caller that
+    writes markup. ``intro_html`` is AUTHOR-supplied MARKUP and is
+    inserted verbatim — it carries links, which is the whole reason it
+    is HTML — and it is therefore the single trusted input to this
+    module. A caller that interpolates any profile-sourced value into it
+    owns escaping that value (``scripts/build_matrix.py`` does, with
+    ``html.escape``). Nothing in this file ever routes document text
+    into it.
+    """
     profiles = list(profiles)
+    title = _DEFAULT_TITLE if page_title is None else _esc(page_title)
+    # Empty rather than an empty wrapper: a stray <section> in every
+    # operator's report is not "the same page" just because it is
+    # invisible.
+    intro = ("" if intro_html is None
+             else f'<section class="intro">{intro_html}</section>\n')
     header = "".join(f"<th>{_esc(v)}</th>" for v in VERDICT_ORDER)
     rows = []
     for p in profiles:
@@ -520,14 +567,14 @@ def render_report(profiles: Iterable[dict]) -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>assay capability report</title>
+<title>{title}</title>
 <style>{_CSS}</style></head><body>
-<h1>assay capability report</h1>
+<h1>{title}</h1>
 <p class="sub">{len(profiles)} profile(s) · schema version(s)
 {_esc(sorted(v for v in versions if v is not None))} · every verdict wears its
 lens (hover a badge); &#8224; = provisional — this sample cannot separate the
 verdict from its neighbours, or the ladder behind it did not finish.</p>
-<table class="matrix"><tr><th>model / tier</th>
+{intro}<table class="matrix"><tr><th>model / tier</th>
 <th>decode / prefill</th>{header}</tr>{"".join(rows)}</table>
 {details}
 </body></html>

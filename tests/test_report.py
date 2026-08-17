@@ -92,13 +92,14 @@ def test_report_escapes_every_profile_sourced_cell_not_just_the_name():
     p["ceiling"]["max_verified"] = payload               # ceiling line
     p["envelope"]["fidelity"] = payload                  # envelope line
     p["parallel"]["rows"][0]["mode"] = payload           # parallel grid
+    p["probe_version"] = payload                         # provenance line
 
     html = render_report([p])
 
     assert "<script>" not in html
     # ...and every one of them still reached the page, escaped: dropping
     # the cell would hide the finding instead of neutering the markup.
-    assert html.count("&lt;script&gt;alert(1)&lt;/script&gt;") == 8
+    assert html.count("&lt;script&gt;alert(1)&lt;/script&gt;") == 9
 
 
 # --- v1.5: the long_output column and its rung grid ------------------------
@@ -666,3 +667,86 @@ def test_cli_report_writes_the_file(tmp_path):
     assert main(["report", str(f1), str(f2), "--out", str(out)]) == 0
     html = out.read_text()
     assert "second-model" in html and "qwen2.5-coder" in html
+
+
+# --- v1.7: the published page (title, intro, per-row probe version) --------
+
+
+def test_page_title_and_intro_default_to_nothing_at_all():
+    """The published matrix passes a title and an intro; every other
+    caller — ``assay report`` included — passes neither, and must get
+    exactly the page it got before the parameters existed.
+
+    The pin is the two call forms against each other plus the absence of
+    the artifacts: a default that quietly rendered an empty
+    ``<section class="intro">`` would still be "byte-identical to
+    itself" while shipping a stray element to every operator's report.
+    """
+    profiles = [profile_dict()]
+    plain = render_report(profiles)
+
+    assert plain == render_report(profiles, page_title=None, intro_html=None)
+    assert 'class="intro"' not in plain
+    assert "<title>assay capability report</title>" in plain
+    assert "<h1>assay capability report</h1>" in plain
+
+
+def test_page_title_renames_both_the_tab_and_the_heading():
+    html = render_report([profile_dict()],
+                         page_title="assay capability matrix")
+
+    assert "<title>assay capability matrix</title>" in html
+    assert "<h1>assay capability matrix</h1>" in html
+    assert "assay capability report" not in html
+
+
+def test_page_title_is_escaped_because_a_title_is_still_text():
+    """``intro_html`` is author-supplied markup by contract; the title is
+    not. It is a plain string, it reaches two places in the document, and
+    a caller that builds it from a profile field (a tier, a model name)
+    must not be the caller that writes the page's markup."""
+    html = render_report([profile_dict()],
+                         page_title='<script>alert(1)</script>')
+
+    assert "<script>alert(1)</script>" not in html
+    assert html.count("&lt;script&gt;alert(1)&lt;/script&gt;") == 2
+
+
+def test_intro_html_rides_above_the_matrix_and_is_kept_verbatim():
+    """The intro is the ONE trusted input on this page: it is written by
+    the build script, never by a profile, and it carries links — so it is
+    inserted as markup rather than escaped. It belongs above the table,
+    where the caveats are read before the badges they qualify."""
+    intro = '<p>rates of <em>instructed</em> behaviour — see <a href="e">E</a></p>'
+
+    html = render_report([profile_dict()], intro_html=intro)
+
+    assert intro in html
+    assert html.index(intro) < html.index('<table class="matrix">')
+    assert html.index("<h1>") < html.index(intro)
+
+
+def test_every_detail_block_names_the_probe_that_measured_it():
+    """The header declares SCHEMA versions — the shape of the documents.
+    The probe version is the instrument, and it is per profile: a matrix
+    published from a campaign that spanned an instrument change has rows
+    measured by two different probes, and only the row says which.
+    """
+    old = json.loads(_V4_PROFILE.read_text(encoding="utf-8"))
+    current = profile_dict(probe_version="0.9.0")
+    assert old["probe_version"] != current["probe_version"]
+
+    html = render_report([old, current])
+
+    assert f"probe={old['probe_version']}" in html
+    assert "probe=0.9.0" in html
+
+
+def test_a_document_with_no_probe_version_dashes_it_rather_than_saying_none():
+    p = profile_dict()
+    del p["probe_version"]
+
+    html = render_report([p])
+
+    assert "probe=—" in html
+    assert "probe=None" not in html
