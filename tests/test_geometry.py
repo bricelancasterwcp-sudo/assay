@@ -364,6 +364,20 @@ def test_the_v14_kv_numbers_were_the_derived_head_dim_and_are_now_superseded(
     recomputed = record["v16_recomputed_under_v14_conditions"]
     conditions = dict(vram_free_mib=v14["vram_free_mib"], user_cap=None)
 
+    # Against the PROFILE ITSELF, not a copy of its numbers: the erratum
+    # is a claim about a committed file, so the file is what it is
+    # checked against. Transcribing the figures into results.json and
+    # comparing to those would only prove the transcription.
+    profile = json.loads((ANCHOR / v14["file"]).read_text())
+    assert profile["model"]["name"] == record["model"]
+    assert profile["assay_profile_version"] == 4
+    for field in ("kv_kib_per_token", "vram_free_mib", "usable_window",
+                  "limited_by"):
+        assert profile["geometry"][field] == v14[field], field
+    # v1.4's schema had no expert keys at all — which is why the erratum
+    # is about kv arithmetic and not about MoE metadata going missing.
+    assert "expert_count" not in profile["geometry"]
+
     # The v1.4 profile as committed, reproduced from the derived head_dim.
     derived = plan_window(
         replace(info, head_dim=record["head_dim_if_derived"], loaded=True),
