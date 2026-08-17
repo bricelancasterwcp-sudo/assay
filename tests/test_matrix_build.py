@@ -19,7 +19,8 @@ from pathlib import Path
 
 from test_profile import make_profile
 
-_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "build_matrix.py"
+_REPO = Path(__file__).resolve().parents[1]
+_SCRIPT = _REPO / "scripts" / "build_matrix.py"
 
 
 def _load_script():
@@ -341,3 +342,37 @@ def test_the_out_directory_is_created_if_it_does_not_exist(tmp_path):
     assert build_matrix.main(["--profiles-dir", str(tmp_path / "profiles"),
                               "--out", str(out)]) == 0
     assert out.exists()
+
+
+# --- the committed page ----------------------------------------------------
+
+
+def test_the_committed_page_is_what_the_defaults_build_today(tmp_path):
+    """Spec §5's acceptance: the published matrix is a COPY of a build,
+    so it is the one artifact in this repository that can go stale in
+    silence. A renderer change or an edit to the campaign's evidence
+    leaves `docs/matrix/index.html` publishing the old numbers while
+    every other test in this file — all of which build into `tmp_path` —
+    stays green. This rebuilds the page from the script's REAL defaults
+    and compares the bytes, so drift on either side fails here.
+
+    It passed on arrival: the committed page is what the current
+    renderer makes of the current evidence. That makes it a guard rather
+    than a fix, and when it does fail the remedy is to rerun
+    ``python scripts/build_matrix.py`` and commit the result — never to
+    loosen the comparison, which would retire the only check that the
+    published page and the repository still agree.
+
+    The defaults are read from `parse_args` rather than retyped, so this
+    builds exactly what the bare command builds; the literals themselves
+    are pinned by the test above.
+    """
+    defaults = build_matrix.parse_args([])
+    out = tmp_path / "index.html"
+
+    code = build_matrix.main(
+        ["--profiles-dir", str(_REPO / defaults.profiles_dir),
+         "--out", str(out)])
+
+    assert code == 0
+    assert out.read_bytes() == (_REPO / defaults.out).read_bytes()
