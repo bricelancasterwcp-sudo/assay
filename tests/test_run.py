@@ -16,7 +16,9 @@ _VRAM_MIB = 14558
 # 5 ladder sizes (1024..16384, one seed, no bisection when clean),
 # 10 envelope, 3 codecs x 3 grades x 5 = 45 codec probes.
 # +shapes +loop (v1.4), +4 long-output rungs (v1.5).
-_QUICK_CALLS_TOTAL = 2 + 5 + 9 + 10 + 45 + 9 + 2 + 4
+# The loop term is 15, not 9, BY DESIGN (v1.6): scripted-loop-v2 plays a
+# 2-turn error script alongside each of the 3 golden 3-turn runs.
+_QUICK_CALLS_TOTAL = 2 + 5 + 9 + 10 + 45 + 15 + 2 + 4
 _CALLS_THROUGH_CEILING = 2 + 5
 
 

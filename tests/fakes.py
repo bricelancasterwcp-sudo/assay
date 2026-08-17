@@ -68,6 +68,16 @@ def _search_replace_block(original: str, expected: str) -> str:
     raise AssertionError("fixture original and expected do not differ")
 
 
+def _loop_patch() -> str:
+    """The loop probe's correct patch, indentation and all."""
+    from assay.loop import _fixture
+    _, original, expected = _fixture()
+    o, e = original.split("\n"), expected.split("\n")
+    at = next(i for i, (a, b) in enumerate(zip(o, e)) if a != b)
+    return ("patch tiny.py\n```\n<<<<<<< SEARCH\n" + o[at]
+            + "\n=======\n" + e[at] + "\n>>>>>>> REPLACE\n```")
+
+
 class ScriptedBackend:
     """A well-behaved endpoint: counts reported, every probe answered."""
 
@@ -117,13 +127,17 @@ class ScriptedBackend:
 
     def _reply_text(self, prompt: str, seed: int) -> str:
         if prompt.startswith("You are repairing one bug"):
+            # The error script's T2' (v1.6) is a DIFFERENT prompt, taught
+            # here on purpose: a well-behaved endpoint shown its own
+            # dedented patch failing re-emits the block with the file's
+            # real indentation — it recovers. Checked before the golden
+            # turn-2 route because that prompt's text is a substring of
+            # this one, and a fake must never answer a prompt it was
+            # never taught just because an older branch happens to match.
+            if "The patch FAILED to apply" in prompt:
+                return _loop_patch()
             if "Contents of `tiny.py`" in prompt:
-                from assay.loop import _fixture
-                _, original, expected = _fixture()
-                o, e = original.split("\n"), expected.split("\n")
-                at = next(i for i, (a, b) in enumerate(zip(o, e)) if a != b)
-                return ("patch tiny.py\n```\n<<<<<<< SEARCH\n" + o[at]
-                        + "\n=======\n" + e[at] + "\n>>>>>>> REPLACE\n```")
+                return _loop_patch()
             if "every test passes" in prompt:
                 return "done the defect is fixed"
             return "read tiny.py"

@@ -909,4 +909,7 @@ def test_loop_verdict_downgrades_follow_without_advance():
                 repeat_rate=0.4, anchor_violations=0, n_runs=5, n_turns=15)
     verdicts = compute_verdicts(None, None, None, None, None, loop)
     assert verdicts["loop_discipline"]["verdict"] == "risky"
-    assert verdicts["loop_discipline"]["lens"]["instrument"] == "scripted-loop-v1"
+    # v1 -> v2 BY DESIGN (v1.6): the error script changed the instrument,
+    # so the lens string must change with it — a profile scored under
+    # scripted-loop-v2 may never read as a scripted-loop-v1 measurement.
+    assert verdicts["loop_discipline"]["lens"]["instrument"] == "scripted-loop-v2"

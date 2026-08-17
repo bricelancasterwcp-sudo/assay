@@ -67,10 +67,12 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
         "max_prompt_tokens": 200_000,
     }
     # ...and it COVERS the whole quick suite (2 calibration + 5 ladder +
-    # 9 shapes + 10 envelope + 45 codecs + 9 loop + 2 speed + 4 long-output
-    # rungs = 86): the run must never exhaust the default budget on a
-    # well-behaved endpoint (spec §12 criterion 1).
-    assert payload["provenance"]["spent"]["calls"] == 86
+    # 9 shapes + 10 envelope + 45 codecs + 15 loop + 2 speed + 4
+    # long-output rungs = 92): the run must never exhaust the default
+    # budget on a well-behaved endpoint (spec §12 criterion 1). The loop
+    # family went 9 -> 15 BY DESIGN in v1.6: scripted-loop-v2 plays a
+    # two-turn error script alongside each three-turn golden run.
+    assert payload["provenance"]["spent"]["calls"] == 92
     assert (payload["provenance"]["spent"]["prompt_tokens"]
             < payload["provenance"]["budget"]["max_prompt_tokens"])
     for codec in ("search_replace", "whole_file", "json_object"):
@@ -81,7 +83,7 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
     # Human table on stdout; recording actually wrote a transcript.
     assert "assay profile" in capsys.readouterr().out
     rows = record.read_text(encoding="utf-8").strip().splitlines()
-    assert len(rows) == 86  # one recorded call per spent call
+    assert len(rows) == 92  # one recorded call per spent call
     assert json.loads(rows[0])["outcome"] == "reply"
 
 
