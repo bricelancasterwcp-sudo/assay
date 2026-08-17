@@ -1,5 +1,7 @@
 """Native tool-calling probe (v1.6): the scripted-tools-v1 instrument."""
 
+from typing import NamedTuple
+
 import pytest
 from fakes import ScriptedToolsBackend, ToolsUnsupportedBackend
 
@@ -41,6 +43,15 @@ def tool_result(messages) -> str | None:
     )
 
 
+class Sent(NamedTuple):
+    """One call the probe made, exactly as the backend received it."""
+
+    messages: list[dict]
+    tools: list[dict]
+    seed: int
+    max_tokens: int
+
+
 class ToolScriptFake:
     """chat_tools answers from injected per-turn scripts.
 
@@ -57,7 +68,7 @@ class ToolScriptFake:
         self._t2 = t2 if t2 is not None else golden_t2
         self._refuse_from = refuse_from  # 1-based call number, inclusive
         self.attempts = 0
-        self.seen: list[tuple[list[dict], list[dict], int]] = []
+        self.seen: list[Sent] = []
 
     def chat_tools(self, messages, tools, *, seed, max_tokens):
         self.attempts += 1
@@ -65,7 +76,7 @@ class ToolScriptFake:
             raise ToolsUnsupported(
                 f"scripted refusal from call {self._refuse_from} onward"
             )
-        self.seen.append((messages, tools, seed))
+        self.seen.append(Sent(messages, tools, seed, max_tokens))
         index = task_index(messages)
         result = tool_result(messages)
         script = self._t1 if result is None else self._t2
@@ -181,14 +192,14 @@ def test_golden_model_scores_every_rate_one():
 def test_seeds_are_distinct_and_deterministic():
     fake = ToolScriptFake(golden_t1)
     probe_tools(fake, meter(), seed_base=1400)
-    seeds = [seed for _, _, seed in fake.seen]
+    seeds = [sent.seed for sent in fake.seen]
     assert seeds == [1400, 1500, 1401, 1501, 1402, 1502, 1403, 1503, 1404, 1504]
 
 
 def test_t1_sends_a_system_line_and_the_task_with_the_toolset():
     fake = ToolScriptFake(golden_t1)
     probe_tools(fake, meter())
-    messages, tools, _ = fake.seen[0]
+    messages, tools = fake.seen[0].messages, fake.seen[0].tools
     assert [m["role"] for m in messages] == ["system", "user"]
     assert "tool" in messages[0]["content"].lower()
     assert messages[1]["content"] == TASKS[0][0]
@@ -200,20 +211,37 @@ def test_t2_carries_the_golden_call_and_a_seeded_canary_result():
     # called something else, and T2 still carries the golden call.
     fake = ToolScriptFake(wrong_tool_t1)
     probe_tools(fake, meter(), seed_base=1400)
-    messages, _, seed = fake.seen[1]
+    messages, seed = fake.seen[1].messages, fake.seen[1].seed
     assert seed == 1500
     roles = [m["role"] for m in messages]
     assert roles == ["system", "user", "assistant", "tool"]
-    call = messages[2]["tool_calls"][0]["function"]
-    assert call["name"] == TASKS[0][1]
-    assert call["arguments"] == TASKS[0][2]
+    emitted = messages[2]["tool_calls"][0]
+    assert emitted["function"]["name"] == TASKS[0][1]
+    assert emitted["function"]["arguments"] == TASKS[0][2]
     assert "CANARY-1500" in messages[3]["content"]
+    # The result must answer THAT call: a tool message whose
+    # tool_call_id matches nothing is what a strict OpenAI-compat
+    # server 400s on, and the 400 would read as a tools refusal.
+    assert messages[3]["tool_call_id"] == emitted["id"]
+    assert messages[3]["name"] == emitted["function"]["name"]
+
+
+def test_every_turn_asks_for_the_same_generation_headroom():
+    # The generation cap reaches the wire, and is the same on both turns:
+    # a T2 truncated before the canary would score a result-use miss the
+    # model did not earn.
+    from assay.tools import _MAX_TOKENS
+
+    fake = ToolScriptFake(golden_t1)
+    probe_tools(fake, meter())
+    assert {sent.max_tokens for sent in fake.seen} == {_MAX_TOKENS}
+    assert _MAX_TOKENS >= 64  # room for a call plus a sentence
 
 
 def test_t1_messages_are_not_mutated_into_the_t2_transcript():
     fake = ToolScriptFake(golden_t1)
     probe_tools(fake, meter())
-    sent_for_t1 = fake.seen[0][0]
+    sent_for_t1 = fake.seen[0].messages
     assert len(sent_for_t1) == 2  # still the two it was sent with
 
 
@@ -256,10 +284,15 @@ def test_missing_required_key_is_schema_invalid():
     assert tools.args_valid_rate == 1 / 5
 
 
-def test_non_string_argument_is_schema_invalid():
-    fake = ToolScriptFake(args_t1({"path": 7, "query": 7}))
+def test_a_non_string_argument_never_scores_valid():
+    # `{"path": 7}` reaches the declared-type rule on the two read_file
+    # tasks (it is the right key) and the unknown-key rule on the rest.
+    # Through the probe, equality with the pinned value rejects it either
+    # way — the type rule itself is pinned in `test_schema_validation_rules`.
+    fake = ToolScriptFake(args_t1({"path": 7}))
     tools = probe_tools(fake, meter())
     assert tools.args_valid_rate == 0.0
+    assert tools.right_tool_rate == 1.0
 
 
 def test_right_shape_wrong_value_fails_the_pinned_argument():
@@ -478,7 +511,7 @@ def test_the_meter_is_charged_on_the_replay_key_material():
     probe_tools(fake, m)
     expected = sum(
         max(1, len(tools_key_material(messages, tools)) // 4)
-        for messages, tools, _ in fake.seen
+        for messages, tools, _, _ in fake.seen
     )
     assert m.spent.prompt_tokens == expected
     assert m.spent.calls == 10

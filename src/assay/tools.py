@@ -27,6 +27,17 @@ NOTHING branches on what the model said:
 
 Honesty rules, the same ones every probe here follows:
 
+- THE INSTRUMENT ANNOUNCES ITS OWN RUBRIC. ``_SYSTEM`` tells the model
+  to call exactly one tool, to use the arguments the request names, and
+  to quote the result token verbatim — which is, criterion for
+  criterion, what ``call_rate``, ``args_valid_rate`` and
+  ``result_use_rate`` score. So these are rates of INSTRUCTED behavior,
+  not of spontaneous behavior: ``call_rate`` says "told to call one
+  tool, it called one tool", never "it reached for a tool unprompted".
+  The rubric is announced on purpose (every model is asked in the same
+  words, so nothing is measured except the model), but a reader
+  comparing these numbers to an agent harness that does NOT spell the
+  rules out should expect this instrument to read high.
 - ``supported`` is a three-state fact. ``None`` = never attempted
   (budget died first); ``False`` = the endpoint REFUSED the tools
   parameter, which is a measured capability, not a failure; ``True`` =
