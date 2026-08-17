@@ -643,8 +643,12 @@ stay proportionate; a call budget that outruns its token budget just
 moves the death to the other meter. Measured on the scripted suite, a
 clean quick run spends 117 calls and 79,420 of the 220,000 tokens — up
 from 102 in v1.6 because `json_object` gained three deeper grades, which
-takes the codec family from 45 calls to 60 and quick's worst case to
-**124 of 130**.
+takes the codec family from 45 calls to 60. Add the most a failing
+ceiling ladder can spend bisecting (4 calls at quick's one seed) and
+quick's worst case is **121 of 130**. Those per-family numbers are
+declared, not counted: `assay.run.worst_case_calls` prices every family
+from the constants its own probe consumes, and the tests sum the table
+against the metered run.
 
 Full and thorough are **610 calls / 1M tokens**, raised in v1.7 from
 500 / 1M for the same reason quick moved in v1.6. Full is sequential, so
@@ -654,10 +658,12 @@ grades take from 315 codec calls to 420. A clean full run on the
 scripted suite measures **552 calls** and 230,293 tokens, and at the old
 500 it exhausted after the codec matrix and reported the long-output
 ladder and the whole tools family as `dropped`. The ceiling is derived
-from that measurement rather than guessed: about 10% over the clean run,
-which is the room a failing ceiling ladder's bisection calls need — 600
-when the clean run was 546, and 610 once the parallel family's six
-concurrent lanes took it to 552. The default follows the measurement;
+from that measurement rather than guessed: about 10% over the clean run —
+600 when the clean run was 546, and 610 once the parallel family's six
+concurrent lanes took it to 552. The first claim on that headroom is a
+failing ceiling ladder's bisection, at most 8 calls at full's two seeds,
+which puts full's worst case at **560 of 610**. The default follows the
+measurement;
 the acceptance does not move to fit it. The token ceiling does not
 move — 230k of 1M is not close. Quick measures no concurrency, so its
 numbers are unchanged.

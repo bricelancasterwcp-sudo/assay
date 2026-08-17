@@ -198,7 +198,11 @@ def test_the_default_budget_covers_a_measured_clean_full_run(
     assert payload["provenance"]["dropped"] == []
     assert payload["long_output"] is not None and payload["tools"] is not None
     assert payload["parallel"] is not None
-    # ~10% headroom for a failing ceiling's bisection calls.
+    # ~10% headroom, whose first claim is a failing ceiling's bisection:
+    # at most 8 calls (ceiling.bisection_worst_case_steps x 2 seeds), so
+    # the worst case is 560 of 610. tests/test_run.py asserts that term
+    # against the derived number; this is the pre-registered acceptance
+    # for the raise itself.
     assert cli.DEFAULT_BUDGETS["full"].max_calls - spent["calls"] >= 50
     assert cli.DEFAULT_BUDGETS["full"] == cli.DEFAULT_BUDGETS["thorough"]
 

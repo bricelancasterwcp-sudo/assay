@@ -148,9 +148,12 @@ def _codec_half_calls(codecs: tuple[str, ...], params: ModeParams) -> int:
 #: what a run that finds no failure spends. A ladder that DOES fail stops
 #: early and bisects instead, and the bisection's own worst case
 #: (``ceiling.bisection_worst_case_steps`` x seeds — 8 calls in full
-#: mode) is the run-level headroom the default budgets carry rather than
-#: a per-family reservation, because no run pays for both tails: see the
-#: derivation above ``cli.DEFAULT_BUDGETS``.
+#: mode, 4 in quick) is the run-level headroom the default budgets carry
+#: rather than a per-family reservation, because no run pays for both
+#: tails. Those two numbers are the derivation, not an estimate of it:
+#: the budget block above ``cli.DEFAULT_BUDGETS`` quotes THEM (552 + 8 of
+#: 610 full, 117 + 4 of 130 quick), and tests/test_run.py sums this table
+#: against the metered runs.
 _WORST_CASE = {
     # Geometry is arithmetic over model_info plus a VRAM reading: it asks
     # the model nothing, and 0 is a measurement, not a placeholder.

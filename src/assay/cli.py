@@ -56,22 +56,32 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 # default below the suite's own call count exhausts mid-family on every
 # run (this bit once at 60 and nearly again at 80).
 #
-# Quick (v1.7): 2 calibration + 5 ladder + ~7 bisection + 9 shape probes
-# + 10 envelope + 60 codecs + 15 loop + 2 speed + 4 long-output rungs +
-# 10 tools ≈ 124. THE QUICK CALL BUDGET WAS RAISED 110 -> 130 in v1.6,
-# and the reason is exactly the failure this comment block exists to
-# prevent: v1.6 added the loop's error script (+2 per run, so 9 -> 15)
-# and the tools family (+10), which put the worst case at 109 of 110 —
-# one call from a mid-family death, on the mode an operator reaches for
-# when they are in a hurry. v1.7's three deeper json grades take the
-# codec term 45 -> 60, so quick's worst case is now 124 of 130: inside,
-# but with six calls of headroom rather than twenty-one.
+# Every term below is DERIVED, not counted by hand: ``run.worst_case_calls``
+# prices each family from the constants that family's probe consumes, and
+# tests/test_run.py sums that table against the numbers in this block. A
+# family that grows re-prices itself there and fails the test here.
+#
+# Quick (v1.7): 2 calibration + 5 ladder + 9 shape probes + 10 envelope
+# + 60 codecs + 15 loop + 2 speed + 4 long-output rungs + 10 tools = 117,
+# which is exactly what a clean quick run spends. Add at most 4 bisection
+# calls (``ceiling.bisection_worst_case_steps(16384)`` x 1 seed) and the
+# worst case is 121 of 130 — an upper bound twice over, because a ladder
+# only bisects when a rung FAILS and a failing ladder stopped early, so
+# no run pays the whole 5 rungs AND the 4. THE QUICK CALL BUDGET WAS
+# RAISED 110 -> 130 in v1.6, and the reason is exactly the failure this
+# comment block exists to prevent: v1.6 added the loop's error script
+# (+2 per run, so 9 -> 15) and the tools family (+10), which put the
+# worst case at 109 of 110 — one call from a mid-family death, on the
+# mode an operator reaches for when they are in a hurry. v1.7's three
+# deeper json grades take the codec term 45 -> 60, so quick's worst case
+# is now 121 of 130: inside, but with nine calls of headroom rather than
+# twenty-one.
 #
 # Full is sequential, so its worst case IS thorough's old worst case (no
 # cell decides early and every one runs to the 35-sample cap):
-# 2 calibration + ~12 ladder + 9 shapes + 30 envelope + up to 420 codec
+# 2 calibration + 12 ladder + 9 shapes + 30 envelope + up to 420 codec
 # + 25 loop + 4 speed + 6 parallel lanes + 4 long-output rungs + 40 tools
-# ≈ 552. THE FULL AND THOROUGH CALL BUDGETS WERE RAISED 500 -> 600 in
+# = 552. THE FULL AND THOROUGH CALL BUDGETS WERE RAISED 500 -> 600 in
 # v1.7, for the same reason quick's went up in v1.6: the deep json grades
 # take the codec term 315 -> 420 (json_object gained
 # nested/tabular/constrained — codecs.GRADES_FOR) on top of the tools
@@ -87,9 +97,13 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 # headroom where the derivation asks for ~10%. The DEFAULT FOLLOWS THE
 # MEASUREMENT (the alternative was moving the acceptance threshold to fit
 # the number, which is the one thing a measurement instrument may not
-# do): 552 x 1.1 = 607, rounded up to 610. That headroom is the room a
-# failing ceiling's bisection calls need. A typical run stops well short:
-# the budget covers the case where nothing decides.
+# do): 552 x 1.1 = 607, rounded up to 610. The first claim on that
+# headroom is the one term the per-family numbers do not carry: a failing
+# ceiling ladder bisects, at most 8 calls
+# (``ceiling.bisection_worst_case_steps(32768)`` x 2 seeds), so the full
+# worst case is 552 + 8 = 560 of 610 and the remaining 50 is headroom
+# rather than an unnamed family. A typical run stops well short: the
+# budget covers the case where nothing decides.
 #
 # Token side: the long-output ladder is the one family whose charge is
 # dominated by GENERATION, not prompt — 4 rungs at 512/1024/2048/4096
@@ -99,7 +113,7 @@ from assay.run import MODE_PARAMS, ceiling_cap_for, probe
 # run spends 117 calls and 79,420 of 220,000 prompt tokens, and a clean
 # full run 552 calls and 230,293 of 1,000,000 — both now inside their
 # defaults on BOTH meters, with nothing dropped. Quick's ceilings stay
-# 130 / 220k (worst case 124 — quick does not measure concurrency) and
+# 130 / 220k (worst case 121 — quick does not measure concurrency) and
 # the token ceilings do not move: a call budget that outruns its token
 # budget just relocates the mid-family death to the other meter, and 1M
 # is nowhere near 230k.
