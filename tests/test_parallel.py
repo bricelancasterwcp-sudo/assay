@@ -1,0 +1,473 @@
+"""v1.7 parallel degradation: k lanes, serialized detection, server-timed rates.
+
+The instrument's two clocks are tested apart, because the module keeps
+them apart: the BACKEND decides what came back (a timed reply, an
+untimed one, or an exception) and the RUNNER decides the wall-clock
+spans a client would have seen. Rates may only come from the first;
+the serialized/parallel fact may only come from the second.
+"""
+
+import threading
+from dataclasses import FrozenInstanceError
+
+import pytest
+
+from assay.backends.base import Reply
+from assay.budget import Budget, BudgetMeter
+from assay.errors import BudgetExhausted, InfrastructureError
+from assay.parallel import (
+    OVERLAP_TOLERANCE_S,
+    TOLERANCE_PROVENANCE,
+    Parallel,
+    ParallelRow,
+    probe_parallel,
+)
+from assay.speed import DECODE_MAX_TOKENS, DECODE_PROMPT
+
+# --- doubles ----------------------------------------------------------------
+
+
+def timed_reply(decode_tps: float) -> Reply:
+    """A reply carrying the server's own decode rate."""
+    return Reply(
+        text="1\n2\n3\n4",
+        tokens_in=20,
+        tokens_out=4,
+        stop_reason="stop",
+        raw={"timings": {"predicted_per_second": decode_tps}},
+    )
+
+
+UNTIMED_REPLY = Reply(
+    text="1\n2\n3\n4", tokens_in=20, tokens_out=4, stop_reason="stop", raw={}
+)
+
+
+class LaneFake:
+    """Per-lane outcomes keyed by SEED, never by call order.
+
+    Threads finish in whatever order the OS picks, so a fake scripted by
+    arrival order would be deterministic under the synthetic runner and
+    a coin flip under the real threaded one. The seed is the probe's own
+    lane identity, so keying on it works under both.
+    """
+
+    def __init__(self, by_seed: dict, before_reply=None) -> None:
+        self._by_seed = dict(by_seed)
+        self._before_reply = before_reply
+        self.requests: list[tuple[str, int, int]] = []
+        self._lock = threading.Lock()
+
+    def generate(self, prompt, *, seed, max_tokens, num_ctx=None):
+        with self._lock:
+            self.requests.append((prompt, seed, max_tokens))
+        if self._before_reply is not None:
+            self._before_reply()
+        if seed not in self._by_seed:
+            raise AssertionError(f"lane fake got an unscripted seed: {seed}")
+        outcome = self._by_seed[seed]
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    @property
+    def seeds(self) -> list[int]:
+        return sorted(seed for _, seed, _ in self.requests)
+
+
+class PinnedSpans:
+    """A runner that really calls each lane and pins its wall-clock span.
+
+    One batch per k, in order. The length assertion is load-bearing: it
+    pins that the probe builds exactly k lane callables for k.
+    """
+
+    def __init__(self, *batches: tuple[tuple[float, float], ...]) -> None:
+        self._batches = list(batches)
+        self.calls = 0
+
+    def __call__(self, callables):
+        assert self.calls < len(self._batches), (
+            "runner called more times than the test scripted"
+        )
+        spans = self._batches[self.calls]
+        self.calls += 1
+        assert len(spans) == len(callables), (
+            f"scripted {len(spans)} spans but the probe built "
+            f"{len(callables)} lanes"
+        )
+        results = []
+        for (start, end), call in zip(spans, callables):
+            try:
+                value = call()
+            except Exception as exc:  # the runner's contract: reply_or_exc
+                value = exc
+            results.append((start, end, value))
+        return results
+
+
+def counting_clock(step: float = 1.0):
+    """A thread-safe monotonic counter — the suite never reads real time."""
+    state = {"t": 0.0}
+    lock = threading.Lock()
+
+    def clock() -> float:
+        with lock:
+            state["t"] += step
+            return state["t"]
+
+    return clock
+
+
+def meter(calls: int = 99, tokens: int = 10**9) -> BudgetMeter:
+    return BudgetMeter(Budget(max_calls=calls, max_prompt_tokens=tokens))
+
+
+def two_lanes(*, spans, by_seed, baseline=60.0, meter_=None):
+    """Run one k=2 probe over pinned spans and scripted lane replies."""
+    return probe_parallel(
+        LaneFake(by_seed),
+        meter_ or meter(),
+        baseline_decode_tps=baseline,
+        ks=(2,),
+        runner=PinnedSpans(spans),
+    )
+
+
+# --- (a) serialized vs parallel, decided by client clocks only --------------
+
+
+def test_stacked_spans_classify_serialized():
+    # Lane 2 begins exactly when lane 1 ends: the endpoint queued them.
+    result = two_lanes(
+        spans=((0.0, 1.0), (1.0, 2.0)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+    )
+    assert result.rows[0].mode == "serialized"
+
+
+def test_overlapping_spans_classify_parallel():
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.1, 1.1)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+    )
+    assert result.rows[0].mode == "parallel"
+
+
+def test_overlap_exactly_at_the_tolerance_is_still_serialized():
+    # Pinned to the second decimal against OVERLAP_TOLERANCE_S = 0.25:
+    # next.start (0.75) == prev.end (1.0) - tolerance (0.25).
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.75, 1.75)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+    )
+    # The behavior first, the constant second: a moved tolerance must
+    # break the CLASSIFICATION here, not merely a bookkeeping equality.
+    assert result.rows[0].mode == "serialized"
+    assert OVERLAP_TOLERANCE_S == 0.25  # the spans above are pinned to it
+
+
+def test_one_hundredth_past_the_tolerance_is_parallel():
+    # The other side of the same boundary: 0.74 < 1.0 - 0.25.
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.74, 1.74)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+    )
+    assert result.rows[0].mode == "parallel"
+
+
+def test_spans_are_sorted_by_start_before_classifying():
+    # Lane order is arrival order, not time order; the later-starting
+    # lane came back first here and the classification must not care.
+    result = two_lanes(
+        spans=((1.0, 2.0), (0.0, 1.0)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+    )
+    assert result.rows[0].mode == "serialized"
+
+
+def test_a_single_returned_lane_has_no_mode():
+    # "Serialized" is a claim about two lanes' relationship; with one
+    # lane there is nothing to relate, and None says so rather than
+    # defaulting to the reassuring answer.
+    result = probe_parallel(
+        LaneFake({1710: timed_reply(30.0)}),
+        meter(),
+        baseline_decode_tps=60.0,
+        ks=(1,),
+        runner=PinnedSpans(((0.0, 1.0),)),
+    )
+    assert result.rows[0].mode is None
+    assert result.rows[0].per_lane_decode_tps == 30.0
+
+
+# --- (b) degradation arithmetic ---------------------------------------------
+
+
+def test_degradation_ratio_is_per_lane_over_the_single_lane_baseline():
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.1, 1.1)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+        baseline=60.0,
+    )
+    row = result.rows[0]
+    assert row.per_lane_decode_tps == 30.0
+    assert row.total_throughput_tps == 60.0
+    assert row.degradation_ratio == 0.5
+    assert row.n_lanes_ok == 2
+    assert row.evidence == "server_timings"
+
+
+def test_rates_come_from_server_timings_not_from_the_span_widths():
+    # The spans say each lane took 1 second; the server says 30 tok/s.
+    # A client-clock rate would be 64/1.0 = 64.0 (DECODE_MAX_TOKENS over
+    # the span). The instrument must report what the server reported.
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.1, 1.1)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+    )
+    assert result.rows[0].per_lane_decode_tps == 30.0
+
+
+# --- (c) an errored lane is named, never a zero -----------------------------
+
+
+def test_errored_lane_is_named_and_excluded_from_the_mean():
+    # Three lanes at 30/30/60 mean 40.0. A fourth lane counted as 0.0
+    # would mean 30.0 — the exact lie this test exists to catch.
+    result = probe_parallel(
+        LaneFake(
+            {
+                1740: timed_reply(30.0),
+                1741: InfrastructureError("transport failure: connection reset"),
+                1742: timed_reply(30.0),
+                1743: timed_reply(60.0),
+            }
+        ),
+        meter(),
+        baseline_decode_tps=60.0,
+        ks=(4,),
+        runner=PinnedSpans(((0.0, 1.0), (0.1, 0.2), (0.1, 1.1), (0.1, 1.1))),
+    )
+    row = result.rows[0]
+    assert row.per_lane_decode_tps == 40.0
+    assert row.total_throughput_tps == 120.0
+    assert row.degradation_ratio == pytest.approx(40.0 / 60.0)
+    assert row.n_lanes_ok == 3
+    assert len(row.lane_errors) == 1
+    assert "InfrastructureError" in row.lane_errors[0]
+    assert "connection reset" in row.lane_errors[0]
+    assert "lane 1" in row.lane_errors[0]
+
+
+# --- (d) every lane errored: unmeasured, never zero -------------------------
+
+
+def test_all_lanes_errored_reports_nothing_measured_never_zero():
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.1, 1.1)),
+        by_seed={
+            1720: InfrastructureError("transport failure: connection refused"),
+            1721: InfrastructureError("transport failure: connection refused"),
+        },
+    )
+    row = result.rows[0]
+    assert row.per_lane_decode_tps is None
+    assert row.total_throughput_tps is None
+    assert row.degradation_ratio is None
+    assert row.mode is None
+    assert row.n_lanes_ok == 0
+    assert len(row.lane_errors) == 2
+    assert row.evidence == "unmeasured"
+
+
+# --- (e) missing server timings -> named, and no client-clock guess ---------
+
+
+def test_missing_server_timings_names_the_class_and_reports_no_rate():
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.1, 1.1)),
+        by_seed={1720: UNTIMED_REPLY, 1721: UNTIMED_REPLY},
+    )
+    row = result.rows[0]
+    assert row.evidence == "unmeasured"
+    assert row.per_lane_decode_tps is None
+    assert row.total_throughput_tps is None
+    assert row.degradation_ratio is None
+    # The lanes came back — they just came back without timings. That is
+    # a different fact from an errored lane, and n_lanes_ok keeps them
+    # apart: two healthy replies, no rate.
+    assert row.n_lanes_ok == 2
+    assert row.lane_errors == ()
+    # The scheduling fact survives: client clocks are allowed to decide
+    # this one thing even when no rate can be read.
+    assert row.mode == "parallel"
+
+
+def test_row_evidence_names_the_weakest_class_among_lanes():
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.1, 1.1)),
+        by_seed={1720: timed_reply(30.0), 1721: UNTIMED_REPLY},
+    )
+    row = result.rows[0]
+    assert row.evidence == "unmeasured"
+    # One lane reported; the mean is over that lane alone, not over two.
+    assert row.per_lane_decode_tps == 30.0
+    assert row.n_lanes_ok == 2
+
+
+# --- (f) the meter: all-or-nothing per k ------------------------------------
+
+
+def test_meter_refusal_at_k4_keeps_the_k2_row_and_skips_k4():
+    tight = meter(calls=2)
+    runner = PinnedSpans(((0.0, 1.0), (0.1, 1.1)))
+    result = probe_parallel(
+        LaneFake({1720: timed_reply(30.0), 1721: timed_reply(30.0)}),
+        tight,
+        baseline_decode_tps=60.0,
+        ks=(2, 4),
+        runner=runner,
+    )
+    assert [row.k for row in result.rows] == [2]
+    # Nothing was charged for the k the probe never ran.
+    assert tight.spent.calls == 2
+    assert runner.calls == 1
+
+
+def test_prompt_token_limit_refuses_a_k_all_or_nothing():
+    per_lane_tokens = max(1, len(DECODE_PROMPT) // 3)
+    tight = meter(calls=99, tokens=per_lane_tokens * 3)  # room for 3 lanes
+    result = probe_parallel(
+        LaneFake({1720: timed_reply(30.0), 1721: timed_reply(30.0)}),
+        tight,
+        baseline_decode_tps=60.0,
+        ks=(2, 4),
+        runner=PinnedSpans(((0.0, 1.0), (0.1, 1.1))),
+    )
+    assert [row.k for row in result.rows] == [2]
+    # k=4 needed four lanes and only one lane's worth was left: the
+    # partial charge is never made, so the third lane's tokens stay
+    # unspent rather than paying for lanes that never launched.
+    assert tight.spent.prompt_tokens == per_lane_tokens * 2
+
+
+def test_budget_exhausted_before_any_k_propagates():
+    dead = meter(calls=1)
+    with pytest.raises(BudgetExhausted):
+        probe_parallel(
+            LaneFake({1720: timed_reply(30.0), 1721: timed_reply(30.0)}),
+            dead,
+            baseline_decode_tps=60.0,
+            ks=(2, 4),
+            runner=PinnedSpans(((0.0, 1.0), (0.1, 1.1))),
+        )
+    assert dead.spent.calls == 0
+
+
+# --- the request shape mirrors the serial speed probe -----------------------
+
+
+def test_lanes_send_the_speed_probe_request_with_pinned_per_lane_seeds():
+    fake = LaneFake({1720: timed_reply(30.0), 1721: timed_reply(30.0)})
+    probe_parallel(
+        fake,
+        meter(),
+        baseline_decode_tps=60.0,
+        ks=(2,),
+        runner=PinnedSpans(((0.0, 1.0), (0.1, 1.1))),
+    )
+    assert fake.seeds == [1720, 1721]  # seed_base + k*10 + lane
+    for prompt, _, max_tokens in fake.requests:
+        assert prompt == DECODE_PROMPT
+        assert max_tokens == DECODE_MAX_TOKENS
+
+
+def test_seed_base_is_injectable_and_lanes_stay_distinguishable():
+    fake = LaneFake({2540: timed_reply(30.0), 2541: timed_reply(30.0),
+                     2542: timed_reply(30.0), 2543: timed_reply(30.0)})
+    probe_parallel(
+        fake,
+        meter(),
+        baseline_decode_tps=60.0,
+        ks=(4,),
+        seed_base=2500,
+        runner=PinnedSpans(((0.0, 1.0),) * 4),
+    )
+    assert fake.seeds == [2540, 2541, 2542, 2543]
+
+
+# --- the envelope carries its provisional tolerance -------------------------
+
+
+def test_result_carries_the_tolerance_and_its_chosen_provenance():
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.1, 1.1)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+        baseline=60.0,
+    )
+    assert isinstance(result, Parallel)
+    assert isinstance(result.rows[0], ParallelRow)
+    assert isinstance(result.rows, tuple)
+    assert result.baseline_decode_tps == 60.0
+    assert result.tolerance_s == OVERLAP_TOLERANCE_S
+    # A CHOSEN threshold travels with the fact that it was chosen, so a
+    # reader never mistakes it for a derived one.
+    assert result.tolerance_provenance == TOLERANCE_PROVENANCE == "chosen-2026-08-17"
+
+
+def test_rows_are_frozen():
+    row = two_lanes(
+        spans=((0.0, 1.0), (0.1, 1.1)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+    ).rows[0]
+    with pytest.raises(FrozenInstanceError):
+        row.mode = "serialized"
+
+
+# --- the default runner really runs threads ---------------------------------
+
+
+def test_default_threaded_runner_launches_lanes_concurrently():
+    # No injected runner: this exercises the module's own threading
+    # default against an in-process fake (no sockets). The barrier is
+    # the proof — a lane cannot pass it until BOTH lanes are inside
+    # generate(), so a runner that ran lanes one after another would
+    # deadlock until the timeout and surface as a lane error.
+    barrier = threading.Barrier(2, timeout=10)
+    fake = LaneFake(
+        {1720: timed_reply(30.0), 1721: timed_reply(10.0)},
+        before_reply=barrier.wait,
+    )
+    result = probe_parallel(
+        fake,
+        meter(),
+        baseline_decode_tps=60.0,
+        ks=(2,),
+        clock=counting_clock(),
+    )
+    row = result.rows[0]
+    assert row.lane_errors == ()
+    assert row.n_lanes_ok == 2
+    assert row.per_lane_decode_tps == 20.0
+    assert row.total_throughput_tps == 40.0
+    # Both starts are clocked before either lane clears the barrier, so
+    # the counting clock hands out {1,2} to the starts and {3,4} to the
+    # ends: overlapping spans, deterministically.
+    assert row.mode == "parallel"
+    assert fake.seeds == [1720, 1721]
+
+
+def test_no_lane_vanishes_from_the_threaded_runner():
+    # A BaseException escaping a worker thread would leave that lane
+    # with no result at all, and the row would report "one lane came
+    # back" — a failure that shrank the look without ever being named.
+    fake = LaneFake({1720: SystemExit("lane killed"), 1721: timed_reply(30.0)})
+    result = probe_parallel(
+        fake, meter(), baseline_decode_tps=60.0, ks=(2,), clock=counting_clock()
+    )
+    row = result.rows[0]
+    assert row.n_lanes_ok == 1
+    assert len(row.lane_errors) == 1
+    assert "SystemExit" in row.lane_errors[0]
+    assert row.per_lane_decode_tps == 30.0
