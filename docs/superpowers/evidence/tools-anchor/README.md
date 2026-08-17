@@ -234,13 +234,32 @@ only thing that changed:
 | qwen3.8:27b | 213 (v1.4 derived) | 216 | **4922** — matches the committed v1.4 profile |
 | qwen3.8:27b | 256 (v1.6, stated) | 260 | **4096** |
 
-So the v1.6 reading is 50% more cache per token on deepseek-coder-v2 and 20%
-more on qwen3.8:27b, and the v1.4 profiles **over-promised** the usable
-window by 33% and 20% respectively. The v1.4 numbers are left as committed —
-evidence is not rewritten to suit a later fix — and this table is the
-erratum. Anyone reading a v1.4 profile's `geometry` block for one of these
-architectures should treat its `kv_kib_per_token` and `usable_window` as
-optimistic.
+Two ratios come out of that table, on **two different bases**, and mixing
+them is easy enough that both are named here and recorded in
+`results.json` under `moe.conventions`:
+
+- **kv excess over v1.4** = (v1.6 − v1.4) ÷ v1.4 bytes per token — how much
+  more cache the corrected `head_dim` costs. **+50.0%** on
+  deepseek-coder-v2, **+20.2%** on qwen3.8:27b.
+- **window shortfall of the v1.4 promise** = (v1.4 − v1.6) ÷ v1.4
+  `usable_window`, under that profile's own VRAM reading — how much of the
+  window v1.4 promised is not there. **−33.3%** on deepseek-coder-v2,
+  **−16.8%** on qwen3.8:27b.
+
+The two are not independent, which is exactly why they are easy to mix up:
+where the VRAM term binds, `usable_window` is inversely proportional to kv
+bytes per token, so the shortfall stated the OTHER way round — as excess
+over the true window — is **identically** the kv excess, 50.0% and 20.2%.
+"33.3% of the promised window is missing" and "the true cost is 50.0%
+higher" are the same fact on two bases; quoting one number from each pair
+is the error to avoid.
+
+The v1.4 numbers are left as committed — evidence is not rewritten to suit
+a later fix — and this table is the erratum. Anyone reading a v1.4
+profile's `geometry` block for one of these architectures should treat its
+`kv_kib_per_token` and `usable_window` as optimistic; the same erratum is
+filed beside the profiles themselves at
+[`../tier-enthusiast/ERRATA.md`](../tier-enthusiast/ERRATA.md).
 
 Geometry as measured live today (the VRAM term moves with whatever else is
 resident, so these are readings, not properties):

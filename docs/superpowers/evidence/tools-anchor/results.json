@@ -14,11 +14,26 @@
     "instrument": "scripted-tools-v1",
     "toolset": "toolset-v1",
     "seed_base": 1400,
-    "t1_seeds": [1400, 1401, 1402, 1403, 1404],
-    "t2_seeds": [1500, 1501, 1502, 1503, 1504],
+    "t1_seeds": [
+      1400,
+      1401,
+      1402,
+      1403,
+      1404
+    ],
+    "t2_seeds": [
+      1500,
+      1501,
+      1502,
+      1503,
+      1504
+    ],
     "temperature": 0.2,
     "max_tokens": 256,
-    "budget": {"max_calls": 20, "max_prompt_tokens": 200000},
+    "budget": {
+      "max_calls": 20,
+      "max_prompt_tokens": 200000
+    },
     "captures": [
       {
         "model": "gemma2:9b",
@@ -27,6 +42,10 @@
         "calls_charged": 1,
         "prompt_tokens_charged": 233,
         "elapsed_s": 0.1,
+        "show": "show-gemma2-9b.json",
+        "capabilities": [
+          "completion"
+        ],
         "error_raw": {
           "error": "registry.ollama.ai/library/gemma2:9b does not support tools"
         },
@@ -100,12 +119,23 @@
   "loop": {
     "instrument": "scripted-loop-v2",
     "seed_base": 800,
-    "golden_seeds": [800, 801, 802],
-    "error_seeds": [850, 851, 852],
+    "golden_seeds": [
+      800,
+      801,
+      802
+    ],
+    "error_seeds": [
+      850,
+      851,
+      852
+    ],
     "runs": 3,
     "temperature": 0.2,
     "max_tokens": 512,
-    "budget": {"max_calls": 30, "max_prompt_tokens": 200000},
+    "budget": {
+      "max_calls": 30,
+      "max_prompt_tokens": 200000
+    },
     "captures": [
       {
         "model": "qwen2.5-coder:7b-instruct-q8_0",
@@ -137,7 +167,7 @@
         "model": "deepseek-coder-v2:16b-lite-instruct-q5_K_M",
         "show": "show-deepseek-coder-v2-16b-lite-instruct-q5_K_M.json",
         "architecture": "deepseek2",
-        "is_moe": true,
+        "moe_metadata_reported": true,
         "expert_keys_reported": [
           "deepseek2.expert_count",
           "deepseek2.expert_feed_forward_length",
@@ -178,14 +208,17 @@
         "v16_recomputed_under_v14_conditions": {
           "kv_kib_per_token": 324,
           "usable_window": 5394,
-          "limited_by": "vram"
+          "limited_by": "vram",
+          "kv_bytes_per_token_if_derived": 221184,
+          "window_shortfall_pct_of_v14_promise": 33.3,
+          "kv_excess_pct_over_v14": 50.0
         }
       },
       {
         "model": "qwen3.8:27b",
         "show": "show-qwen3.8-27b.json",
         "architecture": "qwen35",
-        "is_moe": false,
+        "moe_metadata_reported": false,
         "expert_keys_reported": [],
         "expert_count": null,
         "expert_used_count": null,
@@ -220,9 +253,16 @@
         "v16_recomputed_under_v14_conditions": {
           "kv_kib_per_token": 260,
           "usable_window": 4096,
-          "limited_by": "vram"
+          "limited_by": "vram",
+          "kv_bytes_per_token_if_derived": 221520,
+          "window_shortfall_pct_of_v14_promise": 16.8,
+          "kv_excess_pct_over_v14": 20.2
         }
       }
-    ]
+    ],
+    "conventions": {
+      "window_shortfall_pct_of_v14_promise": "(v14 usable_window - v16 usable_window) / v14 usable_window, under that profile's own VRAM reading: how much of the window v1.4 promised is not there.",
+      "kv_excess_pct_over_v14": "(v16 kv_bytes_per_token - v14 kv_bytes_per_token) / v14, on exact bytes: how much MORE cache per token the corrected head_dim costs. A different base from the line above \u2014 the two must not be mixed."
+    }
   }
 }

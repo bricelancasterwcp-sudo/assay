@@ -348,11 +348,17 @@ a property of the models. Read from the stated `key_length` instead,
 `deepseek-coder-v2:16b-lite-q5_K_M` costs **324** KiB/token (head_dim
 192, not 128) and `qwen3.8:27b` costs **260** (head_dim 256, not 213);
 under each profile's own VRAM reading the planned window falls from 8092
-to 5394 and from 4922 to 4096. **The v1.4 numbers were optimistic by 33%
-and 20%.** They are left as committed — evidence is not rewritten to
-suit a later fix — and a test reproduces each old figure from the
-derived `head_dim` so the discrepancy stays explained rather than
-tidied. The same capture also corrected an assumption about which model
+to 5394 and from 4922 to 4096 — **33.3% and 16.8% of the promised window
+is not there** (shortfall over what v1.4 promised; the same gap stated as
+excess over the true window is 50.0% and 20.2%, identically the kv excess
+above, since the window is inversely proportional to cost per token
+wherever VRAM binds — the two bases must not be mixed). They are left as
+committed — evidence is not rewritten to suit a later fix — a test
+reproduces each old figure from the derived `head_dim` so the discrepancy
+stays explained rather than tidied, and the erratum is filed beside the
+profiles at
+[`evidence/tier-enthusiast/ERRATA.md`](docs/superpowers/evidence/tier-enthusiast/ERRATA.md).
+The same capture also corrected an assumption about which model
 was the MoE: `qwen3.8:27b` (architecture `qwen35`) reports **no**
 `expert_*` keys at all and correctly reads `None`/`None`, while
 `deepseek-coder-v2:16b-lite` (`deepseek2`) reports **64 experts, 6

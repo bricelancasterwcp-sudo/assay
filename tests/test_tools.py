@@ -627,6 +627,24 @@ def test_the_committed_refusal_replays_as_a_capability_fact():
     assert "tool" in body.lower()
 
 
+def test_the_daemon_corroborates_the_refusal_from_the_other_side():
+    """The refusal is not just a 400: the model file has no tool template.
+
+    `/api/show` for gemma2:9b lists `capabilities: ["completion"]` and no
+    `tools`, which is the same fact the 400 reports — so the committed
+    body is what that claim rests on rather than a remembered reading.
+    """
+    capture = next(c for c in anchor_captures() if c["model"] == "gemma2:9b")
+    show = json.loads((ANCHOR / capture["show"]).read_text())
+
+    assert show["capabilities"] == capture["capabilities"] == ["completion"]
+    assert "tools" not in show["capabilities"]
+    assert show["details"]["family"] == "gemma2"
+    # The three models that DID speak the protocol are the control: this
+    # is a property of gemma2's file, not of every model on the box.
+    assert "tools" not in show.get("template", "")
+
+
 def test_the_refusal_transcript_holds_one_row_and_no_reply():
     # The "stop on the first refusal" rule, pinned to the bytes: nine
     # further refusals would have measured nothing new, and a reply row

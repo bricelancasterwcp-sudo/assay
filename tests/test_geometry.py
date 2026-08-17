@@ -306,9 +306,16 @@ def test_the_anchor_covers_a_real_moe_and_a_real_non_moe():
     # An anchor that only ever saw one of the two would pin nothing about
     # the distinction it exists to check.
     records = anchor_moe()
-    assert sorted(r["is_moe"] for r in records) == [False, True]
-    moe = next(r for r in records if r["is_moe"])
-    dense = next(r for r in records if not r["is_moe"])
+    # The flag is `moe_metadata_reported`, not `is_moe`: the daemon told
+    # us whether expert keys are PRESENT, which for the second model is
+    # "unreported", not "measured dense". `expert_keys_reported` carries
+    # the raw fact and the two must agree.
+    assert sorted(r["moe_metadata_reported"] for r in records) == [False, True]
+    for record in records:
+        assert record["moe_metadata_reported"] is bool(
+            record["expert_keys_reported"])
+    moe = next(r for r in records if r["moe_metadata_reported"])
+    unreported = next(r for r in records if not r["moe_metadata_reported"])
 
     assert moe["architecture"] == "deepseek2"
     assert moe["expert_count"] == 64 and moe["expert_used_count"] == 6
@@ -321,9 +328,9 @@ def test_the_anchor_covers_a_real_moe_and_a_real_non_moe():
 
     # The other model was ASSUMED to be the box's MoE and is not: its
     # metadata carries no expert key at all, which is what makes it the
-    # right partner here — a None that was measured, not defaulted.
-    assert dense["architecture"] == "qwen35"
-    other = json.loads((ANCHOR / dense["show"]).read_text())
+    # right partner here — unreported, not measured dense.
+    assert unreported["architecture"] == "qwen35"
+    other = json.loads((ANCHOR / unreported["show"]).read_text())
     assert [k for k in other["model_info"] if "expert" in k] == []
 
 
@@ -378,6 +385,13 @@ def test_the_v14_kv_numbers_were_the_derived_head_dim_and_are_now_superseded(
     # is about kv arithmetic and not about MoE metadata going missing.
     assert "expert_count" not in profile["geometry"]
 
+    # `loaded=True` is FORCED by the conditions, not fitted to make the
+    # arithmetic land: a v1.4 profile is written mid-run with its own
+    # model resident, and unloaded there is nothing to reproduce — the
+    # weights alone exceed the free VRAM the profile recorded.
+    assert plan_window(replace(info, loaded=False), **conditions
+                       ).usable_window == 0
+
     # The v1.4 profile as committed, reproduced from the derived head_dim.
     derived = plan_window(
         replace(info, head_dim=record["head_dim_if_derived"], loaded=True),
@@ -395,3 +409,57 @@ def test_the_v14_kv_numbers_were_the_derived_head_dim_and_are_now_superseded(
     assert current.usable_window == recomputed["usable_window"]
     assert current.kv_kib_per_token > v14["kv_kib_per_token"]
     assert current.usable_window < v14["usable_window"]
+
+
+@pytest.mark.parametrize("record", anchor_moe(), ids=lambda r: r["model"])
+def test_the_erratum_percentages_are_on_the_bases_they_name(record):
+    """Two ratios, two bases, and the identity that makes them confusable.
+
+    The published pair is the **window shortfall of the v1.4 promise**
+    and the **kv excess over v1.4**. They are not independent: where the
+    VRAM term binds, `usable_window` is inversely proportional to kv
+    bytes per token, so the shortfall stated the other way round — as
+    excess over the TRUE window — is identically the kv excess. Quoting
+    one number from each pair is the mistake this test exists to make
+    impossible, so both are recomputed here from the integers rather
+    than trusted as prose.
+    """
+    v14 = record["v14_profile"]
+    now = record["v16_recomputed_under_v14_conditions"]
+    old_bytes = now["kv_bytes_per_token_if_derived"]
+    new_bytes = record["kv_bytes_per_token"]
+
+    # The derived-head_dim kv figure is arithmetic, not a second reading.
+    assert old_bytes == (
+        4 * record["block_count"] * record["kv_head_count"]
+        * record["head_dim_if_derived"]
+    )
+
+    shortfall = 100 * (v14["usable_window"] - now["usable_window"]) / v14["usable_window"]
+    excess = 100 * (new_bytes - old_bytes) / old_bytes
+    assert round(shortfall, 1) == now["window_shortfall_pct_of_v14_promise"]
+    assert round(excess, 1) == now["kv_excess_pct_over_v14"]
+    # The two bases are genuinely different numbers...
+    assert shortfall < excess
+    # ...and the identity that links them, which is why they get mixed up.
+    over_true = 100 * (v14["usable_window"] - now["usable_window"]) / now["usable_window"]
+    assert round(over_true, 1) == pytest.approx(round(excess, 1), abs=0.1)
+
+
+def test_the_erratum_is_filed_beside_the_profiles_it_corrects():
+    """Reachability: the correction must be where the wrong numbers are.
+
+    A reader opening `tier-enthusiast/` for a kv or window figure has no
+    reason to know the tools anchor exists, so the erratum is filed in
+    that directory and names every profile it applies to.
+    """
+    errata = (ANCHOR / "../tier-enthusiast/ERRATA.md").resolve()
+    assert errata.exists()
+    text = errata.read_text()
+    for record in anchor_moe():
+        name = pathlib.Path(record["v14_profile"]["file"]).name
+        assert name in text, name
+        assert (errata.parent / name).exists()
+        now = record["v16_recomputed_under_v14_conditions"]
+        assert str(now["usable_window"]) in text
+        assert str(now["kv_kib_per_token"]) in text

@@ -10,7 +10,8 @@
         "json_bytes": 28941
       }
     },
-    "why": "Bulk that no assay code path reads, dropped to keep the evidence readable. The verbatim untrimmed body is in git at commit 910607d. Everything assay reads \u2014 model_info, details, capabilities \u2014 is present here exactly as the daemon sent it."
+    "untrimmed_committed_at": "910607d",
+    "why": "Bulk that no assay code path reads, dropped to keep the evidence readable. Everything assay reads \u2014 model_info, details, capabilities \u2014 is present exactly as the daemon sent it."
   },
   "capabilities": [
     "completion",
