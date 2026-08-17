@@ -564,3 +564,30 @@ Detail and evidence:
    dead the moment the worktree was removed. Ruling 18 is the fix, and
    the general form is that a durable artifact may cite an ephemeral one
    for *provenance* but never for *content*.
+
+---
+
+## Inbound findings — bloomery drift-watch live acceptance (2026-08-17)
+
+Measured against assay 0.9.0 by bloomery's drift-watch boots (evidence:
+bloomery `docs/superpowers/evidence/2026-08-17-drift-watch-live.md`,
+PR #12). Recorded here because they are assay-instrument facts, not
+bloomery defects; v1.8 candidates.
+
+1. **`diff --gate` exits 0 ("no drift beyond noise") on a v8-vs-v4
+   pair while five measured families vanish** (`long_output`,
+   `tool_calling`, three deep `json_object` cells go unmeasured-on-one-
+   side). Literally true under the gate's rules — vanished families are
+   unmeasured, not drifted — but a consumer trusting exit codes alone
+   reads "nothing changed" across an instrument boundary. bloomery
+   guards it with a version precheck that refuses to run the diff at
+   all; assay's own gate could rank wholesale family disappearance as
+   at least reportable (a distinct exit, or gating on it).
+2. **`diff` prose falsely reports `dropped: verdict.long_context` for
+   equal objects** (reproduced twice, both sides byte-equal on that
+   verdict). Prose-only — the gate's exit code is unaffected — but the
+   display layer misnames an unchanged field.
+3. **assay 0.5.0 has no `diff` subcommand; its argparse exits 2**,
+   which a consumer maps to "not comparable" — an accidental
+   right-answer-for-the-wrong-reason edge, unreachable behind a version
+   precheck, recorded so nobody relies on it.
