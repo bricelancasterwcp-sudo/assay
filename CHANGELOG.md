@@ -61,8 +61,14 @@ question the other modes cannot.
   never the client's clock (the clock decides the scheduling fact and
   nothing else). The overlap tolerance is a **chosen** constant and says
   so in `tolerance_provenance` — thresholds are derived, not chosen, and
-  one that is not must be flagged until the campaign's live rows can
-  sanity-check it. And nothing partial is reported as whole:
+  one that is not stays flagged until evidence retires it. The
+  campaign's live rows have now sanity-checked it and **the flag
+  stands**: all fifteen models read `mode: parallel` at both k = 2 and
+  k = 4 — thirty lane readings, no errored lane, no `skipped` k — so the
+  tolerance was never the binding term in any of them. It is consistent
+  with every live row and exercised at its edge by none, which is a
+  weaker claim than a derived threshold and is left saying so. And
+  nothing partial is reported as whole:
   `total_throughput_tps` is `None` unless **every** returned lane
   reported timings, an errored lane is named in `lane_errors` rather
   than averaged in as a zero, and a k the budget refused is named in
@@ -114,10 +120,32 @@ question the other modes cannot.
   table — so a family that grows re-prices itself everywhere at once
   instead of waiting for a mid-family death to correct a hand count.
 - **The matrix** — this release is the instrument the 2026-08
-  tier-enthusiast re-profile campaign runs, and the capability matrix
-  published on GitHub Pages is what those v8 profiles feed. The campaign
-  writes to a new dated evidence directory; the existing one and its
-  errata stand untouched, because evidence is not rewritten.
+  tier-enthusiast re-profile campaign **ran on**, and the capability
+  matrix published on GitHub Pages
+  (<https://bricelancasterwcp-sudo.github.io/assay/matrix/>, committed at
+  `docs/matrix/index.html`) is built from those v8 profiles. The
+  campaign measured **fifteen models on 2026-08-17** at `--full` on one
+  enthusiast-16gb box (RTX 5080, ollama 0.32.13), 08:35→11:42 −05:00,
+  and wrote fifteen profiles and fifteen call transcripts to a new dated
+  evidence directory, `docs/superpowers/evidence/tier-enthusiast-2026-08/`.
+  Sixteen runs produced those fifteen rows: `qwen3:14b`'s first attempt
+  died mid-run on a transient HTTP 500 from ollama's `/api/generate`
+  (exit 4, **no profile written**) and was re-run clean from zero rather
+  than resumed — both the failure and the rerun are dated in the
+  committed run log, and the second run is the committed row. The
+  existing evidence directory and its errata stand untouched, because
+  evidence is not rewritten; per-model `assay diff` runs against the
+  previous campaign are committed beside the new profiles in `diffs/`,
+  with the mode, fixture-set and ceiling-cap confounds named in
+  `diffs/README.md` rather than subtracted silently.
+- **A live anchor for the new tools instrument** —
+  `docs/superpowers/evidence/tools-anchor-v2/` pins `scripted-tools-v2`
+  the way `tools-anchor/` pins v1, and pins it harder. Its forty
+  `chat_tools` rows are a verbatim slice of the campaign's own
+  `llama3.1:8b` run, replayed through the unmodified probe, so the
+  anchor's replayed `Tools` values and that committed profile's `tools`
+  block are one measurement reached by two roads — the suite asserts
+  they agree, and they cannot drift apart without a test failing.
 
 ## v0.8 (v1.6 fast-follow): the tools probe records its own ceiling
 
