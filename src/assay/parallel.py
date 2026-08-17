@@ -78,7 +78,10 @@ Runner = Callable[[list[Callable[[], Reply]]], list[LaneResult]]
 class ParallelRow:
     k: int
     per_lane_decode_tps: float | None   # None = no lane reported timings
-    total_throughput_tps: float | None  # sum over the lanes that DID report
+    # None unless EVERY returned lane reported timings — a partial total
+    # is not a total. When they all reported it is the sum over them;
+    # errored lanes never "returned" and are named in lane_errors.
+    total_throughput_tps: float | None
     degradation_ratio: float | None     # per-lane / single-lane baseline
     mode: str | None                    # "parallel" | "serialized" | None
     n_lanes_ok: int                     # lanes that returned a reply at all
@@ -211,6 +214,15 @@ def _row(
     (named, excluded, not counted ok), a lane that replied without
     timings (counted ok, excluded from the mean, named in `evidence`),
     and a lane that replied with timings (counted everywhere).
+
+    The mean and the total take that middle state differently, on
+    purpose. A MEAN over the reporting lanes is still a per-lane rate —
+    speed.py's honest partial, with its evidence class beside it. A SUM
+    over a subset is not a total of anything: a k=4 look with two
+    timing-free lanes would put roughly half the endpoint's aggregate
+    under a field named "total throughput", and no consumer reading a
+    number could tell that from a genuinely halved endpoint. So the
+    total is None unless every returned lane reported.
     """
     rates: list[float] = []
     classes: list[str] = []
@@ -230,10 +242,13 @@ def _row(
             classes.append("server_timings")
 
     per_lane = sum(rates) / len(rates) if rates else None
+    every_returned_lane_reported = bool(rates) and len(rates) == len(spans)
     return ParallelRow(
         k=k,
         per_lane_decode_tps=per_lane,
-        total_throughput_tps=sum(rates) if rates else None,
+        total_throughput_tps=(
+            sum(rates) if every_returned_lane_reported else None
+        ),
         degradation_ratio=(
             per_lane / baseline_decode_tps
             if per_lane is not None and baseline_decode_tps > 0

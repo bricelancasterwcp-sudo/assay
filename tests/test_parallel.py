@@ -212,7 +212,9 @@ def test_degradation_ratio_is_per_lane_over_the_single_lane_baseline():
     )
     row = result.rows[0]
     assert row.per_lane_decode_tps == 30.0
-    assert row.total_throughput_tps == 60.0
+    # Every returned lane reported, so the total is a real total: the
+    # sum of the lane rates, not the mean scaled by k.
+    assert row.total_throughput_tps == 30.0 + 30.0
     assert row.degradation_ratio == 0.5
     assert row.n_lanes_ok == 2
     assert row.evidence == "server_timings"
@@ -251,7 +253,11 @@ def test_errored_lane_is_named_and_excluded_from_the_mean():
     )
     row = result.rows[0]
     assert row.per_lane_decode_tps == 40.0
-    assert row.total_throughput_tps == 120.0
+    # An errored lane never "returned", so it does not block the total
+    # the way a timing-free reply does: all three lanes that came back
+    # reported, and their sum is a total of what came back. (It is also
+    # not per_lane * k, which would be 160.0.)
+    assert row.total_throughput_tps == 30.0 + 30.0 + 60.0
     assert row.degradation_ratio == pytest.approx(40.0 / 60.0)
     assert row.n_lanes_ok == 3
     assert len(row.lane_errors) == 1
@@ -312,8 +318,17 @@ def test_row_evidence_names_the_weakest_class_among_lanes():
     row = result.rows[0]
     assert row.evidence == "unmeasured"
     # One lane reported; the mean is over that lane alone, not over two.
+    # A mean over a subset is still a per-lane rate, so it survives with
+    # its evidence class beside it.
     assert row.per_lane_decode_tps == 30.0
     assert row.n_lanes_ok == 2
+    # The TOTAL does not survive. A sum over one of two returned lanes
+    # is not a total of anything: 30.0 here would be a field named
+    # "total throughput" reporting half the endpoint's aggregate, and no
+    # reader could tell that from a genuinely halved endpoint. Nor may
+    # it be extrapolated to per_lane * k (60.0) — that is a guess, not a
+    # measurement. Unmeasurable totals are None.
+    assert row.total_throughput_tps is None
 
 
 # --- (f) the meter: all-or-nothing per k ------------------------------------
