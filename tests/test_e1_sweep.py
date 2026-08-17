@@ -60,23 +60,64 @@ def affected_rows() -> list[dict]:
             if r["classification"] == "AFFECTED"]
 
 
-def test_the_sweep_covers_every_committed_profile_exactly_once():
-    """Scope completeness: a 24th profile must break this sweep's claim.
+# Erratum E1 (head_dim derived instead of read) was FIXED in probe
+# 0.7.0 — see tier-enthusiast/ERRATA.md, "Fixed in probe 0.7.0 (v1.6)".
+# A profile written by 0.7.0+ reads the stated key_length, so it cannot
+# carry the defect and is outside this sweep's scope by construction.
+E1_FIXED_IN = (0, 7, 0)
 
-    The sweep says "every committed profile classified". If a profile
-    is ever added without re-running the sweep, the claim silently
-    rots — so the claim is recomputed from the tree.
-    """
-    on_disk = []
+
+def _version_tuple(text: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in text.split("."))
+
+
+def _committed_profiles() -> list[tuple[str, str]]:
+    """(path relative to EVIDENCE, probe_version) for every profile."""
+    found = []
     for path in sorted(EVIDENCE.glob("**/*.json")):
         if path.is_relative_to(SWEEP):
             continue
         data = json.loads(path.read_text())
         if isinstance(data, dict) and "assay_profile_version" in data:
-            on_disk.append(str(path.relative_to(EVIDENCE)))
+            found.append((str(path.relative_to(EVIDENCE)),
+                          data["probe_version"]))
+    return found
+
+
+def test_the_sweep_covers_every_profile_in_e1s_blast_radius_exactly_once():
+    """Scope completeness: a 24th AFFECTABLE profile must break this.
+
+    The sweep says "every committed profile that COULD carry E1 is
+    classified". The qualifier is load-bearing and is enforced, not
+    assumed: the scope is recomputed from the tree by probe version, so
+    a pre-0.7.0 profile added without re-running the sweep still breaks
+    the claim. Profiles written by 0.7.0+ are excluded because the
+    defect was fixed there — excluded by a version comparison anyone
+    can check, never by a hand-maintained filename list.
+    """
+    affectable = [name for name, probe in _committed_profiles()
+                  if _version_tuple(probe) < E1_FIXED_IN]
     swept = [r["file"] for r in RESULTS["profiles"]]
-    assert sorted(swept) == sorted(on_disk)
-    assert len(on_disk) == 23
+    assert sorted(swept) == sorted(affectable)
+    assert len(affectable) == 23
+
+
+def test_profiles_written_after_the_e1_fix_are_out_of_scope_not_forgotten():
+    """The excluded set is named, so exclusion cannot hide a regression.
+
+    Every profile the sweep does not classify must justify itself with
+    a probe version at or past the fix. A profile that lands with no
+    probe_version, or with an older one, falls into the test above
+    instead of quietly slipping between the two.
+    """
+    swept = {r["file"] for r in RESULTS["profiles"]}
+    for name, probe in _committed_profiles():
+        if name in swept:
+            assert _version_tuple(probe) < E1_FIXED_IN, (
+                f"{name} was swept but its probe {probe} postdates the fix")
+        else:
+            assert _version_tuple(probe) >= E1_FIXED_IN, (
+                f"{name} is unswept and unexcused at probe {probe}")
 
 
 @pytest.mark.parametrize("name", sorted(RESULTS["models"]),

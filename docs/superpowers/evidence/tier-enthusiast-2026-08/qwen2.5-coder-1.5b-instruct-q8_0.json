@@ -1,0 +1,435 @@
+{
+  "assay_profile_version": 8,
+  "probe_version": "0.9.0",
+  "endpoint": {
+    "kind": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "autodetected": true
+  },
+  "model": {
+    "name": "qwen2.5-coder:1.5b-instruct-q8_0",
+    "quant": "Q8_0",
+    "weights_bytes": 1646586631,
+    "training_ctx": 32768
+  },
+  "geometry": {
+    "kv_kib_per_token": 28,
+    "vram_free_mib": 13218,
+    "usable_window": 32768,
+    "limited_by": "training_ctx",
+    "source": "api_show",
+    "expert_count": null,
+    "expert_used_count": null
+  },
+  "ceiling": {
+    "max_verified": 32768,
+    "first_failure": null,
+    "failure_mode": "none_up_to_cap",
+    "counts_available": true,
+    "evidence": [
+      {
+        "est_tokens": 1024,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=960 stop_reason=stop"
+      },
+      {
+        "est_tokens": 1024,
+        "seed": 1,
+        "signal": "ok",
+        "detail": "tokens_in=974 stop_reason=stop"
+      },
+      {
+        "est_tokens": 2048,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=1871 stop_reason=stop"
+      },
+      {
+        "est_tokens": 2048,
+        "seed": 1,
+        "signal": "ok",
+        "detail": "tokens_in=1869 stop_reason=stop"
+      },
+      {
+        "est_tokens": 4096,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=3697 stop_reason=stop"
+      },
+      {
+        "est_tokens": 4096,
+        "seed": 1,
+        "signal": "ok",
+        "detail": "tokens_in=3712 stop_reason=stop"
+      },
+      {
+        "est_tokens": 8192,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=7305 stop_reason=stop"
+      },
+      {
+        "est_tokens": 8192,
+        "seed": 1,
+        "signal": "ok",
+        "detail": "tokens_in=7359 stop_reason=stop"
+      },
+      {
+        "est_tokens": 16384,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=14609 stop_reason=stop"
+      },
+      {
+        "est_tokens": 16384,
+        "seed": 1,
+        "signal": "ok",
+        "detail": "tokens_in=14632 stop_reason=stop"
+      },
+      {
+        "est_tokens": 32768,
+        "seed": 0,
+        "signal": "ok",
+        "detail": "tokens_in=29224 stop_reason=stop"
+      },
+      {
+        "est_tokens": 32768,
+        "seed": 1,
+        "signal": "ok",
+        "detail": "tokens_in=29163 stop_reason=stop"
+      }
+    ]
+  },
+  "ceiling_shapes": [
+    {
+      "shape": 2048,
+      "max_verified": 1664,
+      "failure_mode": "ok_to_shape"
+    },
+    {
+      "shape": 4096,
+      "max_verified": 3712,
+      "failure_mode": "ok_to_shape"
+    },
+    {
+      "shape": 8192,
+      "max_verified": 7808,
+      "failure_mode": "ok_to_shape"
+    }
+  ],
+  "envelope": {
+    "fidelity": 1.0,
+    "n": 30,
+    "failures": {
+      "prose": 0,
+      "shape": 0,
+      "refusal": 0
+    }
+  },
+  "codecs": {
+    "search_replace": {
+      "tiny": {
+        "lands": 0.2,
+        "lands_applies": 0.2,
+        "n": 10
+      },
+      "small": {
+        "lands": 0.37142857142857144,
+        "lands_applies": 0.5714285714285714,
+        "n": 35
+      },
+      "medium": {
+        "lands": 0.0,
+        "lands_applies": 0.2,
+        "n": 10
+      }
+    },
+    "whole_file": {
+      "tiny": {
+        "lands": 0.37142857142857144,
+        "lands_applies": 1.0,
+        "n": 35
+      },
+      "small": {
+        "lands": 0.6285714285714286,
+        "lands_applies": 1.0,
+        "n": 35
+      },
+      "medium": {
+        "lands": 0.4,
+        "lands_applies": 1.0,
+        "n": 35
+      }
+    },
+    "json_object": {
+      "tiny": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 35
+      },
+      "small": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 35
+      },
+      "medium": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 35
+      },
+      "nested": {
+        "lands": 0.9428571428571428,
+        "lands_applies": 0.9428571428571428,
+        "n": 35
+      },
+      "tabular": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 35
+      },
+      "constrained": {
+        "lands": 1.0,
+        "lands_applies": 1.0,
+        "n": 35
+      }
+    }
+  },
+  "speed": {
+    "decode_tps": 286.6537886599715,
+    "prefill_tps": 25217.286496765813,
+    "evidence": "server_timings",
+    "n_decode": 3,
+    "n_prefill": 1,
+    "decode_samples": [
+      284.83054807628116,
+      286.97492556587866,
+      288.1558923377547
+    ],
+    "prefill_samples": [
+      25217.286496765813
+    ]
+  },
+  "loop": {
+    "action_fidelity": 1.0,
+    "patch_rate": 0.0,
+    "finish_rate": 1.0,
+    "repeat_rate": 0.16,
+    "anchor_violations": 0,
+    "n_runs": 5,
+    "n_turns": 25,
+    "recovery_rate": 0.0,
+    "doom_loop_rate": 0.0,
+    "n_error_runs": 5
+  },
+  "long_output": {
+    "rungs": [
+      {
+        "target_tokens": 512,
+        "generated_tokens": 512,
+        "distinct_ratio": 0.47411444141689374,
+        "zlib_ratio": 0.1975560081466395,
+        "degenerate": true
+      },
+      {
+        "target_tokens": 1024,
+        "generated_tokens": 1024,
+        "distinct_ratio": 0.399734395750332,
+        "zlib_ratio": 0.1302019956193721,
+        "degenerate": true
+      },
+      {
+        "target_tokens": 2048,
+        "generated_tokens": 1614,
+        "distinct_ratio": 0.3768718801996672,
+        "zlib_ratio": 0.09047619047619047,
+        "degenerate": true
+      },
+      {
+        "target_tokens": 4096,
+        "generated_tokens": 804,
+        "distinct_ratio": 0.4628099173553719,
+        "zlib_ratio": 0.16519622756312746,
+        "degenerate": true
+      }
+    ],
+    "skipped": []
+  },
+  "tools": {
+    "supported": true,
+    "call_rate": 0.0,
+    "right_tool_rate": null,
+    "args_valid_rate": null,
+    "result_use_rate": 0.0,
+    "composite": 0.0,
+    "n_tasks": 5,
+    "n_turns": 10,
+    "n_truncated": 0,
+    "n_stop_unreported": 0,
+    "stopping_rule": "wilson95-looks-5-10-20"
+  },
+  "parallel": {
+    "rows": [
+      {
+        "k": 2,
+        "per_lane_decode_tps": 286.76512743529065,
+        "total_throughput_tps": 573.5302548705813,
+        "degradation_ratio": 1.0003884085252794,
+        "mode": "parallel",
+        "n_lanes_ok": 2,
+        "lane_errors": [],
+        "evidence": "server_timings"
+      },
+      {
+        "k": 4,
+        "per_lane_decode_tps": 288.3424042689053,
+        "total_throughput_tps": 1153.3696170756211,
+        "degradation_ratio": 1.0058907841993912,
+        "mode": "parallel",
+        "n_lanes_ok": 4,
+        "lane_errors": [],
+        "evidence": "server_timings"
+      }
+    ],
+    "baseline_decode_tps": 286.6537886599715,
+    "tolerance_s": 0.25,
+    "tolerance_provenance": "chosen-2026-08-17",
+    "skipped": []
+  },
+  "verdicts": {
+    "structured_extraction": {
+      "verdict": "ready",
+      "provisional": false,
+      "interval95": [
+        0.901,
+        1.0
+      ],
+      "lens": {
+        "landing": "json_valid_required_keys",
+        "presentation": "default-v1",
+        "stopping_rule": "wilson95-looks-5-10-20-35",
+        "n_used": 35,
+        "temperature": 0.2,
+        "fixtures": "codec-fixtures-v3"
+      }
+    },
+    "patch_editing": {
+      "verdict": "ready",
+      "provisional": false,
+      "interval95": [
+        0.901,
+        1.0
+      ],
+      "lens": {
+        "landing": "applies_and_parses(python)",
+        "presentation": "default-v1",
+        "stopping_rule": "wilson95-looks-5-10-20-35",
+        "n_used": 35,
+        "temperature": 0.2,
+        "fixtures": "codec-fixtures-v3"
+      }
+    },
+    "long_context": {
+      "verdict": "ready",
+      "lens": {
+        "evidence": "counts+canary"
+      }
+    },
+    "loop_discipline": {
+      "verdict": "risky",
+      "provisional": true,
+      "interval95": [
+        0.867,
+        1.0
+      ],
+      "lens": {
+        "instrument": "scripted-loop-v2",
+        "fixtures": "codec-fixtures-v3",
+        "temperature": 0.2,
+        "n_error_runs": 5
+      }
+    },
+    "chat_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "decode_tps",
+        "floor_ready": 8.0,
+        "floor_risky": 4.0,
+        "evidence": "server_timings"
+      }
+    },
+    "agent_speed": {
+      "verdict": "ready",
+      "lens": {
+        "metric": "prefill_tps",
+        "floor_ready": 200.0,
+        "floor_risky": 80.0,
+        "evidence": "server_timings"
+      }
+    },
+    "long_output": {
+      "verdict": "unusable",
+      "provisional": false,
+      "lens": {
+        "metrics": "distinct4gram+zlib",
+        "distinct_floor": 0.3,
+        "zlib_floor": 0.2557,
+        "thresholds": "derived-2026-08-15 (zlib only; distinct still assumed)",
+        "task": "enumeration-v1",
+        "temperature": 0.2,
+        "rungs_scored": 4,
+        "deepest_scored_tokens": 4096
+      }
+    },
+    "tool_calling": {
+      "verdict": "unusable",
+      "provisional": false,
+      "interval95": [
+        0.0,
+        0.434
+      ],
+      "lens": {
+        "instrument": "scripted-tools-v2",
+        "toolset": "toolset-v1",
+        "stopping_rule": "wilson95-looks-5-10-20",
+        "n_used": 5,
+        "temperature": 0.2,
+        "call_rate": 0.0,
+        "right_tool_rate": null,
+        "args_valid_rate": null,
+        "result_use_rate": 0.0,
+        "n_truncated": 0,
+        "n_stop_unreported": 0
+      }
+    }
+  },
+  "provenance": {
+    "started": "2026-08-17T13:09:17Z",
+    "finished": "2026-08-17T13:12:58Z",
+    "mode": "full",
+    "tier": "enthusiast-16gb",
+    "emulated": false,
+    "presentation": "default-v1",
+    "fixture_set": "codec-fixtures-v3",
+    "temperature": 0.2,
+    "thinking": "disabled",
+    "seeds": [
+      0,
+      1
+    ],
+    "budget": {
+      "max_calls": 610,
+      "max_prompt_tokens": 1000000
+    },
+    "spent": {
+      "calls": 472,
+      "prompt_tokens": 211056
+    },
+    "calibration": {
+      "chars_per_token": 5.861313868613139,
+      "counts_available": true,
+      "deterministic": true
+    },
+    "dropped": []
+  }
+}
