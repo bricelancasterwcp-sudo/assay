@@ -6,9 +6,17 @@ well enough to drive the full pipeline deterministically.
 """
 
 from assay import fixtures
-from assay.backends.base import BackendCaps, ModelInfo, Reply
+from assay.backends.base import (
+    BackendCaps,
+    ModelInfo,
+    Reply,
+    ToolCall,
+    ToolReply,
+    ToolsUnsupported,
+)
 from assay.codecs import JSON_DIRECTIVE
 from assay.errors import InfrastructureError
+from assay.tools import TASKS as _TOOL_TASKS
 
 # The fake's fixed "tokenizer" rate; calibration should measure ~this.
 import random as _random
@@ -215,6 +223,91 @@ class LongOutputTerseBackend(ScriptedBackend):
         if prompt.startswith("Write a numbered list of distinct"):
             return "no thanks"
         return super()._reply_text(prompt, seed)
+
+
+def _tools_turn(messages: list[dict]) -> tuple[int, str | None]:
+    """(which scripted task, the tool result) for a scripted-tools transcript.
+
+    The tool result is None on turn 1 and the canary-carrying string on
+    turn 2, so it identifies the turn as well as supplying its content.
+    An unscripted task raises, the same way an unscripted prompt does:
+    a fake that quietly answers a question it was never taught would let
+    a probe change its instrument without a single test noticing.
+    """
+    user = next((m["content"] for m in messages if m["role"] == "user"), None)
+    index = next(
+        (i for i, task in enumerate(_TOOL_TASKS) if task[0] == user), None
+    )
+    if index is None:
+        raise AssertionError(
+            f"scripted tools backend got an unexpected task: {user!r}"
+        )
+    return index, next(
+        (m["content"] for m in messages if m["role"] == "tool"), None
+    )
+
+
+class ScriptedToolsBackend(ScriptedBackend):
+    """A well-behaved endpoint that also speaks the native tool protocol.
+
+    Answers the scripted-tools-v1 transcript the way a model that has
+    fully got it would: turn 1 emits exactly the golden call, turn 2
+    answers in prose quoting the tool result (canary and all) and calls
+    nothing further. Keyed on the SCRIPT — which task, which turn — never
+    on model output, because in a scripted probe there is none to branch
+    on.
+    """
+
+    def chat_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        seed: int,
+        max_tokens: int,
+    ) -> ToolReply:
+        self.calls += 1
+        index, result = _tools_turn(messages)
+        _, name, arguments = _TOOL_TASKS[index]
+        if result is None:
+            text, calls = "", (ToolCall(name=name, arguments=dict(arguments)),)
+        else:
+            text, calls = f"The {name} call returned: {result}", ()
+        return ToolReply(
+            text=text,
+            tool_calls=calls,
+            tokens_in=max(
+                1,
+                sum(len(m["content"]) for m in messages) // CHARS_PER_TOKEN,
+            ),
+            tokens_out=max(1, len(text) // CHARS_PER_TOKEN),
+            stop_reason="stop",
+            raw={"scripted": True},
+        )
+
+
+class ToolsUnsupportedBackend(ScriptedToolsBackend):
+    """Answers every text probe; refuses the tools parameter.
+
+    The capability fact in fake form — an endpoint whose model has no
+    tool template. The refusal carries the endpoint's own error body,
+    because that body is the primary source assay classified from.
+    """
+
+    def chat_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        seed: int,
+        max_tokens: int,
+    ) -> ToolReply:
+        self.calls += 1
+        refusal = ToolsUnsupported(
+            "HTTP 400 from /api/chat: endpoint refused the tools parameter"
+        )
+        refusal.raw = {"error": f"{self.model} does not support tools"}
+        raise refusal
 
 
 class MetadataFreeBackend(ScriptedBackend):

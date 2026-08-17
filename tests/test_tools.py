@@ -1,0 +1,484 @@
+"""Native tool-calling probe (v1.6): the scripted-tools-v1 instrument."""
+
+import pytest
+from fakes import ScriptedToolsBackend, ToolsUnsupportedBackend
+
+from assay.backends.base import ToolCall, ToolReply, ToolsUnsupported
+from assay.budget import Budget, BudgetMeter
+from assay.errors import InfrastructureError
+from assay.replay import tools_key_material
+from assay.tools import (
+    TASKS,
+    TOOLS_INSTRUMENT,
+    TOOLSET,
+    TOOLSET_NAME,
+    Tools,
+    probe_tools,
+    t1_messages,
+    t2_messages,
+)
+
+
+def meter(max_calls: int = 99):
+    return BudgetMeter(Budget(max_calls=max_calls, max_prompt_tokens=10**9))
+
+
+def _charge_for(messages) -> int:
+    """What the probe pays for one call — the replay key material's size."""
+    return max(1, len(tools_key_material(messages, TOOLSET)) // 4)
+
+
+def task_index(messages) -> int:
+    """Which of the five tasks this transcript is, by its user message."""
+    user = next(m["content"] for m in messages if m["role"] == "user")
+    return next(i for i, task in enumerate(TASKS) if task[0] == user)
+
+
+def tool_result(messages) -> str | None:
+    """The scripted tool result in a T2 transcript; None on a T1."""
+    return next(
+        (m["content"] for m in messages if m["role"] == "tool"), None
+    )
+
+
+class ToolScriptFake:
+    """chat_tools answers from injected per-turn scripts.
+
+    Keyed on the SCRIPTED transcript (which task, which turn) and never
+    on model output — there is nothing to branch on, which is what makes
+    the instrument a script rather than a benchmark. Every call is
+    recorded so a test can assert on what the probe actually sent.
+    """
+
+    model = "fake-model"
+
+    def __init__(self, t1, t2=None, *, refuse_from=None):
+        self._t1 = t1
+        self._t2 = t2 if t2 is not None else golden_t2
+        self._refuse_from = refuse_from  # 1-based call number, inclusive
+        self.attempts = 0
+        self.seen: list[tuple[list[dict], list[dict], int]] = []
+
+    def chat_tools(self, messages, tools, *, seed, max_tokens):
+        self.attempts += 1
+        if self._refuse_from is not None and self.attempts >= self._refuse_from:
+            raise ToolsUnsupported(
+                f"scripted refusal from call {self._refuse_from} onward"
+            )
+        self.seen.append((messages, tools, seed))
+        index = task_index(messages)
+        result = tool_result(messages)
+        script = self._t1 if result is None else self._t2
+        text, calls = script(index, messages, seed)
+        return ToolReply(
+            text=text,
+            tool_calls=tuple(calls),
+            tokens_in=10,
+            tokens_out=5,
+            stop_reason="stop",
+            raw={"scripted": True},
+        )
+
+
+def golden_t1(index, messages, seed):
+    _, name, arguments = TASKS[index]
+    return "", (ToolCall(name=name, arguments=dict(arguments)),)
+
+
+def golden_t2(index, messages, seed):
+    return f"Done — the tool said: {tool_result(messages)}", ()
+
+
+def wrong_tool_t1(index, messages, seed):
+    """Calls a real tool, always the wrong one for this task."""
+    _, expected, _ = TASKS[index]
+    name = "run_tests" if expected != "run_tests" else "read_file"
+    arguments = {} if name == "run_tests" else {"path": "somewhere.py"}
+    return "", (ToolCall(name=name, arguments=arguments),)
+
+
+def args_t1(override):
+    """A right-tool call whose arguments are replaced by `override`."""
+
+    def script(index, messages, seed):
+        _, name, _ = TASKS[index]
+        return "", (ToolCall(name=name, arguments=override),)
+
+    return script
+
+
+def prose_t1(index, messages, seed):
+    return "I would open that file for you, but let me describe it instead.", ()
+
+
+def two_calls_t1(index, messages, seed):
+    _, name, arguments = TASKS[index]
+    return "", (
+        ToolCall(name=name, arguments=dict(arguments)),
+        ToolCall(name="run_tests", arguments={}),
+    )
+
+
+def spurious_call_t2(index, messages, seed):
+    """Echoes the canary but ALSO calls another tool: the job is not done."""
+    _, name, arguments = TASKS[index]
+    return (
+        f"Let me double check: {tool_result(messages)}",
+        (ToolCall(name=name, arguments=dict(arguments)),),
+    )
+
+
+def no_canary_t2(index, messages, seed):
+    return "The tool ran and everything looks fine.", ()
+
+
+# --- the registered instrument ----------------------------------------------
+
+
+def test_instrument_and_toolset_are_named():
+    assert TOOLS_INSTRUMENT == "scripted-tools-v1"
+    assert TOOLSET_NAME == "toolset-v1"
+
+
+def test_toolset_registers_the_three_schemas():
+    names = [tool["function"]["name"] for tool in TOOLSET]
+    assert names == ["read_file", "run_tests", "search_docs"]
+    for tool in TOOLSET:
+        assert tool["type"] == "function"
+        parameters = tool["function"]["parameters"]
+        assert parameters["type"] == "object"
+        assert set(parameters["required"]) <= set(parameters["properties"])
+
+
+def test_every_task_pins_a_registered_tool_and_valid_arguments():
+    schemas = {
+        t["function"]["name"]: t["function"]["parameters"]
+        for t in TOOLSET
+    }
+    assert len(TASKS) == 5
+    for message, name, arguments in TASKS:
+        assert message and name in schemas
+        assert set(arguments) == set(schemas[name]["required"])
+
+
+# --- the golden path --------------------------------------------------------
+
+
+def test_golden_model_scores_every_rate_one():
+    fake = ScriptedToolsBackend()
+    tools = probe_tools(fake, meter())
+    assert tools.supported is True
+    assert tools.call_rate == 1.0
+    assert tools.right_tool_rate == 1.0
+    assert tools.args_valid_rate == 1.0
+    assert tools.result_use_rate == 1.0
+    assert tools.composite == 1.0
+    assert tools.n_tasks == 5
+    assert tools.n_turns == 10
+    assert isinstance(tools, Tools)
+
+
+def test_seeds_are_distinct_and_deterministic():
+    fake = ToolScriptFake(golden_t1)
+    probe_tools(fake, meter(), seed_base=1400)
+    seeds = [seed for _, _, seed in fake.seen]
+    assert seeds == [1400, 1500, 1401, 1501, 1402, 1502, 1403, 1503, 1404, 1504]
+
+
+def test_t1_sends_a_system_line_and_the_task_with_the_toolset():
+    fake = ToolScriptFake(golden_t1)
+    probe_tools(fake, meter())
+    messages, tools, _ = fake.seen[0]
+    assert [m["role"] for m in messages] == ["system", "user"]
+    assert "tool" in messages[0]["content"].lower()
+    assert messages[1]["content"] == TASKS[0][0]
+    assert tools == TOOLSET
+
+
+def test_t2_carries_the_golden_call_and_a_seeded_canary_result():
+    # The wrong-tool fake proves the continuation is CANNED: the model
+    # called something else, and T2 still carries the golden call.
+    fake = ToolScriptFake(wrong_tool_t1)
+    probe_tools(fake, meter(), seed_base=1400)
+    messages, _, seed = fake.seen[1]
+    assert seed == 1500
+    roles = [m["role"] for m in messages]
+    assert roles == ["system", "user", "assistant", "tool"]
+    call = messages[2]["tool_calls"][0]["function"]
+    assert call["name"] == TASKS[0][1]
+    assert call["arguments"] == TASKS[0][2]
+    assert "CANARY-1500" in messages[3]["content"]
+
+
+def test_t1_messages_are_not_mutated_into_the_t2_transcript():
+    fake = ToolScriptFake(golden_t1)
+    probe_tools(fake, meter())
+    sent_for_t1 = fake.seen[0][0]
+    assert len(sent_for_t1) == 2  # still the two it was sent with
+
+
+# --- T1 scoring -------------------------------------------------------------
+
+
+def test_wrong_tool_keeps_call_rate_and_zeroes_the_rest():
+    fake = ToolScriptFake(wrong_tool_t1)
+    tools = probe_tools(fake, meter())
+    assert tools.call_rate == 1.0
+    assert tools.right_tool_rate == 0.0
+    assert tools.args_valid_rate == 0.0  # the pinned value is the TASK's
+    assert tools.composite == 0.0
+    assert tools.result_use_rate == 1.0  # T2 is unaffected
+    assert tools.n_tasks == 5
+
+
+def test_unreadable_arguments_are_an_invalid_call_not_a_crash():
+    # arguments=None is the malformed-JSON case the OpenAI wire produces.
+    fake = ToolScriptFake(args_t1(None))
+    tools = probe_tools(fake, meter())
+    assert tools.call_rate == 1.0
+    assert tools.right_tool_rate == 1.0
+    assert tools.args_valid_rate == 0.0
+    assert tools.composite == 0.0
+
+
+def test_unknown_argument_key_is_schema_invalid():
+    fake = ToolScriptFake(args_t1({"path": "config.yaml", "mode": "r"}))
+    tools = probe_tools(fake, meter())
+    assert tools.right_tool_rate == 1.0
+    assert tools.args_valid_rate == 0.0
+
+
+def test_missing_required_key_is_schema_invalid():
+    fake = ToolScriptFake(args_t1({}))
+    tools = probe_tools(fake, meter())
+    assert tools.right_tool_rate == 1.0
+    # The `run_tests` task pins {} and DOES score; the other four do not.
+    assert tools.args_valid_rate == 1 / 5
+
+
+def test_non_string_argument_is_schema_invalid():
+    fake = ToolScriptFake(args_t1({"path": 7, "query": 7}))
+    tools = probe_tools(fake, meter())
+    assert tools.args_valid_rate == 0.0
+
+
+def test_right_shape_wrong_value_fails_the_pinned_argument():
+    fake = ToolScriptFake(args_t1({"path": "elsewhere.yaml"}))
+    tools = probe_tools(fake, meter())
+    assert tools.right_tool_rate == 1.0
+    assert tools.args_valid_rate == 0.0
+    assert tools.composite == 0.0
+
+
+def test_prose_answer_scores_zero_calls_and_leaves_tool_rates_unmeasured():
+    fake = ToolScriptFake(prose_t1)
+    tools = probe_tools(fake, meter())
+    assert tools.call_rate == 0.0
+    assert tools.right_tool_rate is None  # nothing called: not measured, not 0
+    assert tools.args_valid_rate is None
+    assert tools.composite == 0.0
+    assert tools.n_tasks == 5
+
+
+def test_two_calls_fail_call_rate_while_the_first_is_still_scored():
+    fake = ToolScriptFake(two_calls_t1)
+    tools = probe_tools(fake, meter())
+    assert tools.call_rate == 0.0
+    assert tools.right_tool_rate == 1.0
+    assert tools.args_valid_rate == 1.0
+    assert tools.composite == 0.0
+
+
+# --- T2 scoring -------------------------------------------------------------
+
+
+def test_spurious_second_call_fails_only_result_use():
+    fake = ToolScriptFake(golden_t1, spurious_call_t2)
+    tools = probe_tools(fake, meter())
+    assert tools.result_use_rate == 0.0
+    assert tools.call_rate == 1.0
+    assert tools.right_tool_rate == 1.0
+    assert tools.args_valid_rate == 1.0
+    assert tools.composite == 1.0
+
+
+def test_missing_canary_fails_only_result_use():
+    fake = ToolScriptFake(golden_t1, no_canary_t2)
+    tools = probe_tools(fake, meter())
+    assert tools.result_use_rate == 0.0
+    assert tools.composite == 1.0
+    assert tools.n_turns == 10
+
+
+# --- unsupported, budget, infrastructure ------------------------------------
+
+
+def test_unsupported_on_the_first_call_is_a_capability_fact():
+    fake = ToolsUnsupportedBackend()
+    tools = probe_tools(fake, meter())
+    assert tools.supported is False
+    assert tools.call_rate is None
+    assert tools.right_tool_rate is None
+    assert tools.args_valid_rate is None
+    assert tools.result_use_rate is None
+    assert tools.composite is None
+    assert tools.n_tasks == 0 and tools.n_turns == 0
+    assert fake.calls == 1  # it stopped; no burning nine more refusals
+
+
+def test_refusal_on_the_canned_continuation_keeps_the_partial():
+    # A server that will not accept the canned T2 message (the wire-shape
+    # hazard in the module docstring) must not overwrite a capability it
+    # already demonstrated on T1.
+    fake = ToolScriptFake(golden_t1, refuse_from=2)
+    tools = probe_tools(fake, meter())
+    assert tools.supported is True  # it DID speak the protocol once
+    assert tools.n_tasks == 1 and tools.n_turns == 1
+    assert tools.call_rate == 1.0
+    assert tools.result_use_rate is None  # no T2 was ever scored
+    assert fake.attempts == 2  # and it stopped there
+
+
+def test_a_later_task_refusing_does_not_erase_the_measured_tasks():
+    # The refusal lands on task 1's T1, after task 0 scored two turns:
+    # `supported=False` here would throw away a capability we measured.
+    fake = ToolScriptFake(golden_t1, refuse_from=3)
+    tools = probe_tools(fake, meter())
+    assert tools.supported is True
+    assert tools.n_tasks == 1 and tools.n_turns == 2
+    assert tools.composite == 1.0
+    assert tools.result_use_rate == 1.0
+    assert fake.attempts == 3  # stopped, not eight more refusals
+
+
+def test_budget_death_before_the_first_call_is_never_attempted():
+    fake = ToolScriptFake(golden_t1)
+    dead = BudgetMeter(Budget(max_calls=0, max_prompt_tokens=1))
+    tools = probe_tools(fake, dead)
+    assert tools.supported is None  # never attempted, not refused
+    assert tools.call_rate is None and tools.composite is None
+    assert tools.n_tasks == 0 and tools.n_turns == 0
+    assert fake.seen == []
+
+
+def test_budget_death_midway_yields_an_honest_partial_n():
+    fake = ToolScriptFake(golden_t1)
+    tools = probe_tools(fake, meter(max_calls=3))
+    assert tools.supported is True
+    assert tools.n_tasks == 2 and tools.n_turns == 3
+    assert tools.composite == 1.0  # over the two tasks that ran
+    assert tools.result_use_rate == 1.0  # over the one T2 that ran
+    assert len(fake.seen) == 3
+
+
+def test_budget_death_ends_the_probe_instead_of_skipping_to_cheaper_turns():
+    # A budget with room for two T1s but not for a T2. Carrying on to the
+    # affordable turns would grow the composite's n while `result_use`
+    # stayed unmeasured — a run reported as fuller than it was.
+    charge = _charge_for(t1_messages(0)) + _charge_for(t1_messages(1))
+    assert _charge_for(t2_messages(0, 1500)) > _charge_for(t1_messages(1))
+    fake = ToolScriptFake(golden_t1)
+    tools = probe_tools(
+        fake, BudgetMeter(Budget(max_calls=99, max_prompt_tokens=charge))
+    )
+    assert tools.n_tasks == 1 and tools.n_turns == 1
+    assert fake.attempts == 1
+    assert tools.result_use_rate is None
+
+
+def test_budget_death_does_not_hunt_for_a_task_it_can_still_afford():
+    # Enough left for task 3's (cheaper) first turn but not task 2's.
+    # Skipping ahead would make partial n depend on which task happened
+    # to be worded shortest — measurement decided by sentence length.
+    full = sum(
+        _charge_for(t1_messages(i)) + _charge_for(t2_messages(i, 1500 + i))
+        for i in (0, 1)
+    )
+    spare = _charge_for(t1_messages(3))
+    assert _charge_for(t1_messages(2)) > spare  # the ordering under test
+    fake = ToolScriptFake(golden_t1)
+    tools = probe_tools(
+        fake, BudgetMeter(Budget(max_calls=99, max_prompt_tokens=full + spare))
+    )
+    assert tools.n_tasks == 2 and tools.n_turns == 4
+    assert fake.attempts == 4
+
+
+def test_infrastructure_errors_propagate():
+    class Broken(ToolScriptFake):
+        def chat_tools(self, messages, tools, *, seed, max_tokens):
+            raise InfrastructureError("transport failure (scripted)")
+
+    with pytest.raises(InfrastructureError):
+        probe_tools(Broken(golden_t1), meter())
+
+
+# --- the schema check, which today's tasks make a backstop ------------------
+#
+# Every registered task pins an exact argument value, and equality with a
+# pinned value is STRICTER than the schema (it implies the keys, the
+# types and the values). So these two suites cover the schema rules
+# directly: through the probe they are redundant, and they stop being
+# redundant the moment a task pins `None` instead of a value.
+
+
+def test_schema_validation_rules():
+    from assay.tools import _schema_valid
+
+    assert _schema_valid("read_file", {"path": "a.py"}) is True
+    assert _schema_valid("run_tests", {}) is True
+    assert _schema_valid("read_file", {}) is False           # required missing
+    assert _schema_valid("run_tests", {"path": "a"}) is False  # unknown key
+    assert _schema_valid("read_file", {"path": 7}) is False  # declared string
+    assert _schema_valid("read_file", None) is False         # unreadable
+    assert _schema_valid("delete_everything", {}) is False   # not registered
+
+
+def test_an_unpinned_task_still_scores_arguments_against_the_schema():
+    from assay.tools import _score_t1
+
+    def reply(arguments):
+        return ToolReply(
+            text="",
+            tool_calls=(ToolCall(name="read_file", arguments=arguments),),
+            tokens_in=1, tokens_out=1, stop_reason="stop", raw={},
+        )
+
+    # expected_args None: nothing to compare against, so schema validity
+    # is the whole of the args verdict.
+    assert _score_t1(reply({"path": "anything.py"}), "read_file", None) == (
+        True, True, True, True
+    )
+    assert _score_t1(reply({}), "read_file", None)[3] is False
+    assert _score_t1(reply({"path": 7}), "read_file", None)[3] is False
+    assert _score_t1(reply(None), "read_file", None)[3] is False
+
+
+# --- charging cannot drift from the replay key ------------------------------
+
+
+def test_a_recorded_run_replays_call_for_call(tmp_path):
+    # The instrument's whole claim to being replayable: identical
+    # messages and seeds on the second pass, so every strict key hits.
+    from assay.replay import CallRecorder, CallReplayer
+
+    live = ScriptedToolsBackend()
+    path = tmp_path / "tools.jsonl"
+    recorded = probe_tools(CallRecorder(live, path), meter())
+    replayed = probe_tools(
+        CallReplayer(path, model=live.model, caps=live.caps), meter()
+    )
+    assert replayed == recorded
+    assert recorded.n_turns == 10
+
+
+def test_the_meter_is_charged_on_the_replay_key_material():
+    fake = ToolScriptFake(golden_t1)
+    m = meter()
+    probe_tools(fake, m)
+    expected = sum(
+        max(1, len(tools_key_material(messages, tools)) // 4)
+        for messages, tools, _ in fake.seen
+    )
+    assert m.spent.prompt_tokens == expected
+    assert m.spent.calls == 10
