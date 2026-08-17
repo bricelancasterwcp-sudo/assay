@@ -105,7 +105,7 @@ def make_tools(**overrides):
     from assay.tools import Tools
     fields = dict(supported=True, call_rate=1.0, right_tool_rate=1.0,
                   args_valid_rate=1.0, result_use_rate=1.0, composite=1.0,
-                  n_tasks=5, n_turns=10)
+                  n_tasks=5, n_turns=10, n_truncated=0, n_stop_unreported=0)
     fields.update(overrides)
     return Tools(**fields)
 
@@ -486,6 +486,29 @@ def test_tool_calling_interval_is_wilson_over_the_composites_own_n():
     assert entry["lens"]["n_used"] == 5
 
 
+def test_the_tool_calling_lens_records_the_stop_counters():
+    # The token ceiling is an ambient variable of the instrument: a
+    # reader weighing a result-use miss must be able to see whether the
+    # missing turns were cut off at max_tokens or never said how they
+    # stopped. Counters, not re-scores — the rates are untouched.
+    tools = make_tools(n_truncated=2, n_stop_unreported=1)
+    lens = compute_verdicts(
+        None, None, None, None, tools=tools)["tool_calling"]["lens"]
+    assert lens["n_truncated"] == 2
+    assert lens["n_stop_unreported"] == 1
+
+
+def test_a_pre_v7_tools_payload_parses_with_unmeasured_stop_counters():
+    # A profile written before the counters existed carries neither key.
+    # It parses — as None, unmeasured, never as a measured 0.
+    payload = json.loads(make_profile().to_json())
+    del payload["tools"]["n_truncated"]
+    del payload["tools"]["n_stop_unreported"]
+    restored = Profile.from_json(payload)
+    assert restored.tools.n_truncated is None
+    assert restored.tools.n_stop_unreported is None
+
+
 def test_five_of_five_tool_tasks_is_ready_but_provisional():
     # Same rule as the codec verdicts: at n=5 the interval spans ready
     # and risky, and the verdict has to say so.
@@ -654,12 +677,12 @@ def test_the_recovery_demotion_never_promotes():
 
 def test_schema_version_and_package_version_move_together():
     # The schema and the distribution version are one release, not two:
-    # a profile that says v6 must have been written by a 0.7.0 probe.
+    # a profile that says v7 must have been written by a 0.8.0 probe.
     import assay
 
-    assert PROFILE_VERSION == 6
-    assert assay.__version__ == "0.7.0"
-    assert 'version = "0.7.0"' in (
+    assert PROFILE_VERSION == 7
+    assert assay.__version__ == "0.8.0"
+    assert 'version = "0.8.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite

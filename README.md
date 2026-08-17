@@ -110,7 +110,7 @@ defaults to `--full`.
 
 ## The profile
 
-One versioned JSON document (`assay_profile_version: 6`). Every field is
+One versioned JSON document (`assay_profile_version: 7`). Every field is
 a measurement, a `None` with a named reason, or provenance.
 
 | Field | What it says |
@@ -125,7 +125,7 @@ a measurement, a `None` with a named reason, or provenance.
 | `speed` | `decode_tps` (chat usability) and `prefill_tps` (agent usability), their `evidence` class, and — new in v5 — the per-call `decode_samples` / `prefill_samples` a diff needs to tell noise from drift |
 | `loop` | scripted repair over **two** scripts. `action_fidelity` and `repeat_rate` are rates over the shared `n_turns`, and `anchor_violations` a count over the same turns — all three span golden and error turns alike; `patch_rate` and `finish_rate` are golden-only, over `n_runs`; and — new in v6 — `recovery_rate` / `doom_loop_rate` are error-only, over `n_error_runs`. Single-call probes cannot see loop failure |
 | `long_output` | per-rung `target_tokens`, `generated_tokens`, `distinct_ratio`, `zlib_ratio`, `degenerate`, plus a `skipped` list naming why each unattempted rung did not run |
-| `tools` | native tool calling: `supported` (three-state), `call_rate`, `right_tool_rate`, `args_valid_rate`, `result_use_rate`, the `composite` the verdict ladders on, and `n_tasks` / `n_turns` — rates of **instructed** behavior, see [Native tool calling](#native-tool-calling) |
+| `tools` | native tool calling: `supported` (three-state), `call_rate`, `right_tool_rate`, `args_valid_rate`, `result_use_rate`, the `composite` the verdict ladders on, and `n_tasks` / `n_turns` — rates of **instructed** behavior, see [Native tool calling](#native-tool-calling); plus — new in v7 — `n_truncated` / `n_stop_unreported`, the scored turns the token ceiling cut off and the ones whose backend never said how they stopped (recorded beside the rates, never fed into them) |
 | `verdicts` | `structured_extraction`, `patch_editing`, `long_context`, `loop_discipline`, `chat_speed`, `agent_speed`, `long_output`, `tool_calling` — each `ready` / `risky` / `unusable` / `unmeasured` (`long_output` may also read `degrades-at-N`; `tool_calling` may also read `unsupported`), each carrying its own lens |
 | `provenance` | started/finished, mode, seeds, budget granted vs spent, calibration, and `dropped` |
 

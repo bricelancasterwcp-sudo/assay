@@ -67,10 +67,12 @@ class ToolScriptFake:
 
     model = "fake-model"
 
-    def __init__(self, t1, t2=None, *, refuse_from=None):
+    def __init__(self, t1, t2=None, *, refuse_from=None, stop=None):
         self._t1 = t1
         self._t2 = t2 if t2 is not None else golden_t2
         self._refuse_from = refuse_from  # 1-based call number, inclusive
+        # (task index, is_t2) -> the reply's stop_reason; default "stop".
+        self._stop = stop if stop is not None else (lambda index, t2: "stop")
         self.attempts = 0
         self.seen: list[Sent] = []
 
@@ -90,7 +92,7 @@ class ToolScriptFake:
             tool_calls=tuple(calls),
             tokens_in=10,
             tokens_out=5,
-            stop_reason="stop",
+            stop_reason=self._stop(index, result is not None),
             raw={"scripted": True},
         )
 
@@ -439,6 +441,55 @@ def test_budget_death_does_not_hunt_for_a_task_it_can_still_afford():
     )
     assert tools.n_tasks == 2 and tools.n_turns == 4
     assert fake.attempts == 4
+
+
+def test_length_and_unreported_stops_are_counted_never_rescored():
+    """The token ceiling is an ambient variable, so it is RECORDED.
+
+    A turn cut off at max_tokens (stop_reason "length") and a turn whose
+    backend reported no stop_reason at all are both counted beside the
+    rates — and the rates themselves do not move: the rubric's reading
+    of a truncated miss (module docstring) stands as pre-registered.
+    """
+    def stop(index, is_t2):
+        if index == 0 and not is_t2:
+            return "length"
+        if index == 1 and is_t2:
+            return None
+        return "stop"
+
+    backend = ToolScriptFake(golden_t1, stop=stop)
+    tools = probe_tools(backend, meter())
+    assert tools.n_truncated == 1
+    assert tools.n_stop_unreported == 1
+    assert tools.n_turns == 10
+    # Recorded, never re-scored: the golden run still scores clean.
+    assert tools.composite == 1.0
+    assert tools.result_use_rate == 1.0
+
+
+def test_stop_counters_are_measured_zeros_on_a_clean_run():
+    """Every scored turn reported "stop": 0 is a measurement here, not a
+    default — the unreported case has its own counter beside it."""
+    tools = probe_tools(ToolScriptFake(golden_t1), meter())
+    assert tools.n_truncated == 0
+    assert tools.n_stop_unreported == 0
+
+
+def test_nothing_scored_leaves_stop_counters_unmeasured():
+    """No turn scored → nothing was inspected → None, never 0."""
+    tools = probe_tools(ToolScriptFake(golden_t1, refuse_from=1), meter())
+    assert tools.supported is False
+    assert tools.n_truncated is None
+    assert tools.n_stop_unreported is None
+
+
+def test_stop_counters_cover_only_the_turns_the_budget_paid_for():
+    backend = ToolScriptFake(golden_t1, stop=lambda index, t2: "length")
+    tools = probe_tools(backend, meter(max_calls=3))
+    assert tools.n_turns == 3
+    assert tools.n_truncated == 3
+    assert tools.n_stop_unreported == 0
 
 
 def test_infrastructure_errors_propagate():

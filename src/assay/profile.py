@@ -36,7 +36,7 @@ from assay.stats import ladder as _ladder
 from assay.stats import wilson95
 from assay.tools import TOOLS_INSTRUMENT, TOOLSET_NAME, Tools
 
-PROFILE_VERSION = 6
+PROFILE_VERSION = 7
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
              "speed", "loop", "long_output", "tools")
@@ -325,6 +325,12 @@ def _tools_lens(tools: Tools | None) -> dict:
     for rate in ("call_rate", "right_tool_rate", "args_valid_rate",
                  "result_use_rate"):
         lens[rate] = None if tools is None else getattr(tools, rate)
+    # The readout's ambient facts, beside the rates they contextualize:
+    # a miss on a turn the token ceiling cut off ("length") reads
+    # differently from a miss with headroom, and a backend that never
+    # reported how it stopped is a named gap, not a clean zero.
+    for counter in ("n_truncated", "n_stop_unreported"):
+        lens[counter] = None if tools is None else getattr(tools, counter)
     return lens
 
 

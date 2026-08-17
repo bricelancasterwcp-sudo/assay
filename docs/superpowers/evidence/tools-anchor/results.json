@@ -57,7 +57,9 @@
           "result_use_rate": null,
           "composite": null,
           "n_tasks": 0,
-          "n_turns": 0
+          "n_turns": 0,
+          "n_truncated": null,
+          "n_stop_unreported": null
         }
       },
       {
@@ -75,7 +77,9 @@
           "result_use_rate": 0.4,
           "composite": 1.0,
           "n_tasks": 5,
-          "n_turns": 10
+          "n_turns": 10,
+          "n_truncated": 0,
+          "n_stop_unreported": 0
         }
       },
       {
@@ -93,7 +97,9 @@
           "result_use_rate": 0.0,
           "composite": 1.0,
           "n_tasks": 5,
-          "n_turns": 10
+          "n_turns": 10,
+          "n_truncated": 0,
+          "n_stop_unreported": 0
         }
       },
       {
@@ -111,7 +117,9 @@
           "result_use_rate": 0.8,
           "composite": 0.0,
           "n_tasks": 5,
-          "n_turns": 10
+          "n_turns": 10,
+          "n_truncated": 0,
+          "n_stop_unreported": 0
         }
       }
     ]

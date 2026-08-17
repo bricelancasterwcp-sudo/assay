@@ -207,6 +207,15 @@ class Tools:
     composite: float | None       # per-task AND of the three T1 criteria
     n_tasks: int                  # T1 turns scored — the composite's n
     n_turns: int                  # every turn scored, T1 and T2
+    # Ambient facts of the readout, counted over the same scored turns
+    # and never fed into a rate: a "length" stop is a reply the token
+    # ceiling cut off; an unreported stop is a backend that never said.
+    # The rubric's reading of a truncated miss stands (see the module
+    # docstring) — these exist so a reader weighing a miss can SEE the
+    # ceiling beside it. Defaulted so a profile written before they
+    # existed parses as None — unmeasured, never a measured 0.
+    n_truncated: int | None = None      # scored turns with stop_reason "length"
+    n_stop_unreported: int | None = None  # scored turns with stop_reason None
 
 
 def canary(seed: int) -> str:
@@ -331,7 +340,7 @@ def probe_tools(
     """
     supported: bool | None = None
     scored_t1 = one_call = right_tool = valid_args = composite = called = 0
-    scored_t2 = result_used = 0
+    scored_t2 = result_used = truncated = unreported = 0
 
     for index, (_, expected_tool, expected_args) in enumerate(TASKS):
         t1_seed = seed_base + index
@@ -345,6 +354,8 @@ def probe_tools(
             break
         supported = True
         scored_t1 += 1
+        truncated += reply.stop_reason == "length"
+        unreported += reply.stop_reason is None
         did_call, exactly_one, correct, args_ok = _score_t1(
             reply, expected_tool, expected_args
         )
@@ -362,6 +373,8 @@ def probe_tools(
         except ToolsUnsupported:
             break
         scored_t2 += 1
+        truncated += reply.stop_reason == "length"
+        unreported += reply.stop_reason is None
         result_used += canary(t2_seed) in reply.text and not reply.tool_calls
 
     if scored_t1 == 0:
@@ -375,4 +388,6 @@ def probe_tools(
         composite=composite / scored_t1,
         n_tasks=scored_t1,
         n_turns=scored_t1 + scored_t2,
+        n_truncated=truncated,
+        n_stop_unreported=unreported,
     )

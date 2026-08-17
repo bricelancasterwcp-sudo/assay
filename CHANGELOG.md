@@ -5,6 +5,27 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
+## v0.8 (v1.6 fast-follow): the tools probe records its own ceiling
+
+The tools probe caps every reply at 256 generated tokens, and through
+v0.7 a reply that hit that ceiling was indistinguishable in the profile
+from one that stopped on its own — a result-use miss on a cut-off turn
+read exactly like a miss with headroom. The `tools` family now carries
+`n_truncated` (scored turns whose reply reported `stop_reason:
+"length"`) and `n_stop_unreported` (scored turns whose backend reported
+no stop reason at all), and the `tool_calling` lens repeats both beside
+the rates. The rates themselves DO NOT move: the rubric's reading of a
+truncated miss stands as pre-registered — a model told to quote the
+result token that rambles past the ceiling has still not quoted it.
+These are ambient facts of the readout, recorded so a reader weighing a
+miss can see the ceiling beside it. `0` is a measured zero (every
+scored turn was inspected; the unreported case has its own counter);
+`None` is a profile written before the counters existed, or a probe
+that never scored a turn. Profile schema is now **7** (package 0.8.0);
+the committed tools-anchor results gained both counters by replaying
+the committed transcripts through the updated probe. The version ledger
+also moved out of the README into this file in the same release.
+
 ## v0.7 (v1.6): tool calling, and what a model does with a rejected patch
 
 Through v1.5, every family that put a question to the model scored what
