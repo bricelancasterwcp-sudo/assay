@@ -32,6 +32,18 @@ _COMMITTED_PROFILES = sorted(
      if "assay_profile_version" in json.loads(path.read_text(encoding="utf-8"))),
     key=lambda p: (p.parent.name, p.name),
 )
+#: The 2026-08 campaign's v8 rows, kept SEPARATE from the corpus above
+#: on purpose. That one is the BACK-COMPAT corpus and is pinned to
+#: schema {1, 2, 3, 4} by its own guard, and its render pin asserts the
+#: three-grade codec block every profile of that era carries; a v8 row
+#: measures six json grades and would break both for the right reason.
+#: The reader-side claim still has to be made for the current schema,
+#: so it is made here against its own corpus.
+_CAMPAIGN_PROFILES = sorted(
+    (_REPO_ROOT / "docs/superpowers/evidence/tier-enthusiast-2026-08"
+     ).glob("*.json"),
+    key=lambda p: p.name,
+)
 _GRADES = ("tiny", "small", "medium")
 #: v1.7's json SHAPE grades. Measured for ``json_object`` only, so the
 #: matrix is no longer rectangular and the renderers cannot assume a
@@ -1235,6 +1247,42 @@ def test_every_committed_profile_parses_and_renders_both_views(path):
     assert f"assay profile v{payload['assay_profile_version']}" in table
     assert "<!doctype html" in html
     assert payload["model"]["name"] in html
+
+
+@pytest.mark.parametrize("path", _CAMPAIGN_PROFILES,
+                         ids=[p.stem for p in _CAMPAIGN_PROFILES])
+def test_every_campaign_profile_parses_and_renders_both_views(path):
+    """The same claim as above, for the schema this release writes.
+
+    The back-compat corpus stops at v4 by design, so without this the
+    fifteen profiles the published matrix is built from would reach
+    ``Profile.from_json`` in no test at all — the reader would be
+    exercised only against documents older than the writer.
+    """
+    from assay.report import render_report
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    profile = Profile.from_json(payload)
+    table = render_table(profile)
+    html = render_report([payload])
+
+    assert payload["model"]["name"] in table
+    assert f"assay profile v{payload['assay_profile_version']}" in table
+    assert "<!doctype html" in html
+    assert payload["model"]["name"] in html
+
+
+def test_the_campaign_corpus_is_the_fifteen_v8_rows_the_matrix_publishes():
+    # The guard on the parametrize above, in both directions: a pruned
+    # directory would silently narrow the coverage to whatever survived,
+    # and a profile written by an older instrument landing here would
+    # make the "current schema" claim false without failing anything.
+    payloads = [json.loads(p.read_text(encoding="utf-8"))
+                for p in _CAMPAIGN_PROFILES]
+    assert len(payloads) == 15
+    assert {p["assay_profile_version"] for p in payloads} == {PROFILE_VERSION}
+    assert {p["probe_version"] for p in payloads} == {"0.9.0"}
 
 
 def test_the_committed_corpus_spans_every_schema_version_ever_written():

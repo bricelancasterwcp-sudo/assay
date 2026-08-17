@@ -628,12 +628,19 @@ def test_cli_rejects_a_version_key_with_no_model_behind_it(tmp_path, capsys):
 
 def test_cli_still_loads_the_committed_evidence_profiles(tmp_path, capsys):
     """The guard must not reject the real thing: every committed profile
-    names its model, v1 included."""
+    names its model, v1 through v8.
+
+    The 2026-08 campaign directory is in the tuple because the guard is
+    about the CORPUS, not about the schema versions it happened to hold
+    when the guard was written: fifteen v8 profiles that no test loaded
+    would be exactly the gap this test exists to close.
+    """
     evidence = Path(__file__).resolve().parents[1] / "docs/superpowers/evidence"
     files = sorted(path
-                   for folder in ("live", "live-run2", "tier-enthusiast")
+                   for folder in ("live", "live-run2", "tier-enthusiast",
+                                  "tier-enthusiast-2026-08")
                    for path in (evidence / folder).glob("*.json"))
-    assert len(files) >= 20
+    assert len(files) >= 35
     out = tmp_path / "report.html"
     assert cli.main(["report", *[str(f) for f in files], "--out", str(out)]) == 0
     capsys.readouterr()
