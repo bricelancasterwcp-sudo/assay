@@ -39,17 +39,27 @@ _FINISHED = "2020-01-03T06:07:08Z"
 
 
 def write_profile(directory: Path, filename: str, *, model: str,
-                  probe_version: str = "0.9.0",
-                  started: str = _STARTED,
-                  finished: str = _FINISHED,
-                  tier: str = "enthusiast-16gb") -> dict:
+                  probe_version: str | None = "0.9.0",
+                  started: str | None = _STARTED,
+                  finished: str | None = _FINISHED,
+                  tier: str | None = "enthusiast-16gb") -> dict:
+    """One profile on disk. ``None`` DELETES the field rather than
+    writing a null — which is the state the committed evidence is
+    actually in: six of the twenty-three profiles in this repository
+    have no ``provenance.tier`` key at all."""
     directory.mkdir(parents=True, exist_ok=True)
     doc = json.loads(make_profile().to_json())
     doc["model"]["name"] = model
-    doc["probe_version"] = probe_version
-    doc["provenance"]["started"] = started
-    doc["provenance"]["finished"] = finished
-    doc["provenance"]["tier"] = tier
+    if probe_version is None:
+        doc.pop("probe_version")
+    else:
+        doc["probe_version"] = probe_version
+    for key, value in (("tier", tier), ("started", started),
+                       ("finished", finished)):
+        if value is None:
+            doc["provenance"].pop(key, None)
+        else:
+            doc["provenance"][key] = value
     (directory / filename).write_text(json.dumps(doc, indent=2),
                                       encoding="utf-8")
     return doc
@@ -134,6 +144,63 @@ def test_the_page_names_the_probe_version_of_every_row(tmp_path):
     # ...and the intro says the set spans two instruments, which is the
     # fact a reader needs before comparing one row against another.
     assert "0.5.0" in page.split('<table class="matrix">')[0]
+
+
+def test_the_provenance_sentence_counts_the_profiles_that_declare_nothing(
+        tmp_path):
+    """A mixed set is the normal case, not the edge one: six of the
+    twenty-three profiles committed in this repository carry no
+    ``provenance.tier``. Summarising only the profiles that DO carry a
+    field publishes a universal — "Hardware tier enthusiast-16gb" — over
+    a table whose own rows say ``undeclared`` and ``probe=—`` two inches
+    below. The count is what keeps the sentence true.
+    """
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_profile(profiles, "b.json", model="model-b", tier=None,
+                  probe_version=None, started=None, finished=None)
+
+    head = build(tmp_path).read_text(
+        encoding="utf-8").split('<table class="matrix">')[0]
+
+    assert "Hardware tier enthusiast-16gb (1 of 2 declare none)" in head
+    assert "Measured by probe version 0.9.0 (1 of 2 record none)" in head
+    assert "(1 of 2 record no date)" in head
+    # ...and the row the sentence is about says the same thing
+    page = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    assert "undeclared" in page and "probe=—" in page
+
+
+def test_a_set_where_every_profile_declares_everything_carries_no_count(
+        tmp_path):
+    """The counterpart, and the reason the clause is conditional: a
+    complete set is the campaign's goal, and a page that appended
+    "(0 of 15 declare none)" to every sentence would be noise standing
+    where a real gap should stand out."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_profile(profiles, "b.json", model="model-b")
+
+    head = build(tmp_path).read_text(
+        encoding="utf-8").split('<table class="matrix">')[0]
+
+    assert "Hardware tier enthusiast-16gb." in head
+    assert "of 2" not in head
+
+
+def test_a_set_where_nobody_declares_a_field_says_so_outright(tmp_path):
+    """Not "0 of 2 declared it" and not silence: no value to summarise is
+    its own statement, and the sentence makes it."""
+    write_profile(tmp_path / "profiles", "a.json", model="model-a",
+                  tier=None, probe_version=None, started=None, finished=None)
+
+    head = build(tmp_path).read_text(
+        encoding="utf-8").split('<table class="matrix">')[0]
+
+    assert "No profile here declares a hardware tier" in head
+    assert "No profile here records the probe version that measured it" in head
+    assert "No profile here records when it was captured" in head
+    assert "of 1" not in head
 
 
 def test_the_intro_carries_the_instructed_behaviour_caveat(tmp_path):

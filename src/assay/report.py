@@ -530,8 +530,14 @@ def _detail(profile: dict) -> str:
 
 def render_report(profiles: Iterable[dict], *, page_title: str | None = None,
                   intro_html: str | None = None) -> str:
-    """The page. ``None`` for both extras is the report every operator
-    already gets, to the byte.
+    """The page. ``None`` for both extras is this version's standard
+    report: neither parameter adds anything to it — no title change, no
+    intro, not even an empty wrapper.
+
+    It is NOT the v1.6 page to the byte, and the limit travels with the
+    claim: v1.7 deliberately added the per-row ``probe=`` field and the
+    intro's two CSS rules to the shared page, and nothing else about it
+    moved.
 
     **The escape contract, because the two parameters are not alike.**
     ``page_title`` is TEXT: it goes through ``_esc`` like every other

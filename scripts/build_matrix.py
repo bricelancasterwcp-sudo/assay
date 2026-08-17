@@ -124,31 +124,46 @@ def _unique(values) -> list[str]:
     return sorted({html.escape(str(value)) for value in values if value})
 
 
-def _dates(profiles: list[dict]) -> list[str]:
-    """The distinct capture days, sorted, from provenance timestamps.
+def _capture_days(profile: dict) -> list[str]:
+    """One profile's capture days, from its provenance timestamps.
 
     The date part only: a matrix says WHEN a campaign was measured, and
     an ISO second on a page that spans two days is precision nobody
-    asked for. Both ends of each run are read, because a run that
-    started before midnight and finished after it happened on both days.
+    asked for. Both ends of the run are read, because a run that started
+    before midnight and finished after it happened on both days.
     """
-    stamps = [(profile.get("provenance") or {}).get(end)
-              for profile in profiles for end in ("started", "finished")]
-    return sorted({html.escape(str(stamp)[:10]) for stamp in stamps if stamp})
+    prov = profile.get("provenance") or {}
+    return [html.escape(str(prov[end])[:10])
+            for end in ("started", "finished") if prov.get(end)]
 
 
-def _spans(items: list[str], one: str, many: str, none: str) -> str:
-    """One item, several, or none — said as itself in all three cases.
+def _field_phrase(values: list, one: str, many: str, none: str,
+                  absent: str) -> str:
+    """One field across the set: what was declared, and HOW MANY
+    PROFILES DECLARED NOTHING.
 
-    A set of one is not a range, a set of none is not a set of one, and
-    "probes 0.9.0" or a silently omitted clause would each be the page
-    guessing on the reader's behalf.
+    The count is the point. ``_unique`` drops the profiles that carry no
+    value, so a sentence built from the survivors alone reads as a
+    universal — "measured on hardware tier enthusiast-16gb" — over a
+    table whose own rows say ``undeclared`` and ``probe=—``. Six of the
+    twenty-three profiles committed today declare no tier, so this is
+    not a hypothetical: the intro would have been contradicted by the
+    matrix directly beneath it. A page may summarise what it has; it may
+    not summarise away what it hasn't.
+
+    One value, several, or none is said as itself for the same reason a
+    dash is not a zero — a set of one is not a range, and a set of none
+    is not a quiet omission.
     """
-    if not items:
+    present = _unique(values)
+    missing = sum(1 for value in values if not value)
+    if not present:
         return none
-    if len(items) == 1:
-        return one.format(items[0])
-    return many.format(", ".join(items))
+    phrase = (one.format(present[0]) if len(present) == 1
+              else many.format(", ".join(present)))
+    if not missing:
+        return phrase
+    return f"{phrase} {absent.format(missing, len(values))}"
 
 
 def _intro_html(profiles: list[dict]) -> str:
@@ -162,21 +177,30 @@ def _intro_html(profiles: list[dict]) -> str:
     misled by this page, and the sentence that prevents that has to
     travel with the numbers.
     """
-    tiers = _spans(_unique((p.get("provenance") or {}).get("tier")
-                           for p in profiles),
-                   "hardware tier {}", "hardware tiers {}",
-                   "an undeclared hardware tier")
-    probes = _spans(_unique(p.get("probe_version") for p in profiles),
-                    "probe version {}", "probe versions {}",
-                    "an unrecorded probe version")
+    tiers = _field_phrase(
+        [(p.get("provenance") or {}).get("tier") for p in profiles],
+        "Hardware tier {}", "Hardware tiers {}",
+        "No profile here declares a hardware tier",
+        "({0} of {1} declare none)")
+    probes = _field_phrase(
+        [p.get("probe_version") for p in profiles],
+        "Measured by probe version {}", "Measured by probe versions {}",
+        "No profile here records the probe version that measured it",
+        "({0} of {1} record none)")
     # The days are a SPAN, not a list: a fifteen-model campaign that ran
     # over two nights has a first day and a last one, and naming every
     # day between them would be a fact about scheduling, not about the
-    # measurements.
-    day_list = _dates(profiles)
-    days = ("on dates the profiles do not record" if not day_list
-            else f"on {day_list[0]}" if len(day_list) == 1
-            else f"between {day_list[0]} and {day_list[-1]}")
+    # measurements. The undated profiles are still counted — a span read
+    # off the profiles that carry stamps says nothing about the ones
+    # that do not, and must not appear to.
+    per_profile = [_capture_days(p) for p in profiles]
+    day_list = sorted({day for days in per_profile for day in days})
+    undated = sum(1 for days in per_profile if not days)
+    days = ("No profile here records when it was captured" if not day_list
+            else f"Captured on {day_list[0]}" if len(day_list) == 1
+            else f"Captured between {day_list[0]} and {day_list[-1]}")
+    if day_list and undated:
+        days += f" ({undated} of {len(profiles)} record no date)"
     return (
         "<p><strong>What this is.</strong> One row per locally-served "
         f"model, measured by <a href=\"{_REPO_URL}\">assay</a> and published "
@@ -193,8 +217,11 @@ def _intro_html(profiles: list[dict]) -> str:
         "that protocol when it is told to. Nothing on this page may be read "
         "as a model reaching for a tool on its own.</p>"
 
-        f"<p><strong>Provenance.</strong> Measured on {tiers} by {probes} "
-        f"{days}. Every row's detail block names the probe version that "
+        # Three sentences rather than one, so each fact carries its own
+        # missing count instead of hanging a single "(and N declare
+        # none)" off a clause nobody can tell it belongs to.
+        f"<p><strong>Provenance.</strong> {tiers}. {probes}. {days}. "
+        "Every row's detail block names the probe version that "
         "measured it, and the line under the heading names the schema "
         "version(s) the documents carry — a row measured by an older "
         "instrument is not comparable to its neighbour just because they "

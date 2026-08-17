@@ -674,8 +674,11 @@ def test_cli_report_writes_the_file(tmp_path):
 
 def test_page_title_and_intro_default_to_nothing_at_all():
     """The published matrix passes a title and an intro; every other
-    caller — ``assay report`` included — passes neither, and must get
-    exactly the page it got before the parameters existed.
+    caller — ``assay report`` included — passes neither, and must get a
+    page to which neither parameter contributed anything. (Not the v1.6
+    page: v1.7 also added the per-row ``probe=`` field to the shared
+    report. That change is pinned by its own tests below; this one pins
+    that the two new PARAMETERS are inert when unused.)
 
     The pin is the two call forms against each other plus the absence of
     the artifacts: a default that quietly rendered an empty
