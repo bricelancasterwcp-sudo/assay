@@ -602,6 +602,12 @@ def compute_verdicts(
     ``stats.VERDICT_LENS`` — the same entry ``codecs``' sequential stop
     test counts, so a cell can never stop on a lens its verdict ignores.
 
+    ``tool_calling`` (v1.6) is the one verdict with a fourth outcome:
+    ``unsupported``, for an endpoint that refused the tools parameter.
+    That is a measured capability and must not collapse into either
+    neighbour — "unmeasured" would hide a fact we established, and
+    "unusable" would blame a model that was never asked.
+
     Unmeasured inputs -> "unmeasured", never worse. ``geometry`` and
     ``envelope`` inform no verdict but are part of the stable signature.
     """

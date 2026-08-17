@@ -42,9 +42,11 @@ A reply can be neither: reading the file again is no recovery, and it is
 no doom loop either. Both rates are None when the error script never ran
 — unmeasured is not zero — and ``n_error_runs`` carries the denominator
 they are over, because a budget-truncated 1/1 and a full 5/5 both read
-1.0 and nothing else in the family tells them apart. Every turn of BOTH scripts is a scored turn of
-the one instrument: they share the action-fidelity, repeat and anchor
-denominators, which is why ``n_turns`` counts five turns per run.
+1.0 and nothing else in the family tells them apart.
+
+Every turn of BOTH scripts is a scored turn of the one instrument: they
+share the action-fidelity, repeat and anchor denominators, which is why
+``n_turns`` counts five turns per run.
 """
 
 from __future__ import annotations
