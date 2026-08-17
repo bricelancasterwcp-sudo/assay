@@ -1,4 +1,4 @@
-"""Native tool-calling probe (v1.6): the ``scripted-tools-v1`` instrument.
+"""Native tool-calling probe (v1.7): the ``scripted-tools-v2`` instrument.
 
 Every other family in assay measures what a model WRITES. This one
 measures what it CALLS — the protocol an agent harness actually runs on,
@@ -6,9 +6,9 @@ where a model that writes a beautiful patch is still useless if it
 cannot emit one well-formed function call. The two failures are not
 correlated by anything we can assume, so they are measured separately.
 
-The instrument is a SCRIPT, not a benchmark. Five heterogeneous tasks,
-each with one obviously-correct tool and (where the task names a file or
-a query verbatim) one exact expected argument value, so argument
+The instrument is a SCRIPT, not a benchmark. Twenty heterogeneous
+tasks, each with one obviously-correct tool and (where the task names a
+file or a query verbatim) one exact expected argument value, so argument
 checking is mechanical rather than semantic. Two turns per task, and
 NOTHING branches on what the model said:
 
@@ -24,6 +24,18 @@ NOTHING branches on what the model said:
   canary. Scored: the canary comes back in the text AND no further tool
   call is emitted. This is the half that catches a model which can call
   a tool but cannot read the answer.
+
+The pool is twenty rather than v1's five so that a bigger n can come
+from more TASKS: at the pinned temperature 0.2, re-running the same five
+tasks with fresh seeds measures sampler variance, not capability. Tasks
+0–4 are the v1 pool VERBATIM and in order, which is what keeps a
+five-task reading comparable across the version boundary and lets the
+committed tools-anchor replay byte-identically. The TOOLSET did NOT grow
+with the pool — its three schemas are frozen (``toolset-v1``), and it is
+the pool that the instrument name carries. The sequential look schedule
+that spends the extra fifteen tasks is not wired yet: ``probe_tools``
+scores the first five, exactly as v1 did, so today those tasks are
+authored and pinned rather than sampled.
 
 Honesty rules, the same ones every probe here follows:
 
@@ -76,7 +88,9 @@ Honesty rules, the same ones every probe here follows:
 
 Seeds: ``seed_base + i`` for task i's T1, ``seed_base + 100 + i`` for
 its T2. Distinct and deterministic, so a transcript replays exactly and
-no two turns of the instrument share a key.
+no two turns of the instrument share a key. The offset clears the whole
+pool rather than only the old five: at twenty tasks the T1 seeds run
+1400–1419 and the T2 seeds 1500–1519, still without touching.
 
 Meter charge per call: ``max(1, len(tools_key_material(messages,
 TOOLSET)) // 4)`` — the SAME canonical string ``assay.replay`` hashes
@@ -113,7 +127,7 @@ from assay.budget import BudgetMeter
 from assay.errors import BudgetExhausted
 from assay.replay import tools_key_material
 
-TOOLS_INSTRUMENT = "scripted-tools-v1"
+TOOLS_INSTRUMENT = "scripted-tools-v2"
 TOOLSET_NAME = "toolset-v1"
 
 TOOLSET = [
@@ -153,15 +167,61 @@ TASKS = (
      "read_file", {"path": "src/main.py"}),
     ("Look up `rate limiting` in the docs.",
      "search_docs", {"query": "rate limiting"}),
+    # --- v1.7 (scripted-tools-v2): fifteen more, same authoring law ---
+    ("Show me the contents of `Makefile`.",
+     "read_file", {"path": "Makefile"}),
+    ("What does the documentation say about `connection pooling`?",
+     "search_docs", {"query": "connection pooling"}),
+    ("Are the tests green right now?",
+     "run_tests", {}),
+    ("I need `docs/CHANGELOG.md` read out.",
+     "read_file", {"path": "docs/CHANGELOG.md"}),
+    ("Search the docs for `timeout defaults`.",
+     "search_docs", {"query": "timeout defaults"}),
+    ("What's in `pyproject.toml`?",
+     "read_file", {"path": "pyproject.toml"}),
+    ("Run the suite and tell me.",
+     "run_tests", {}),
+    ("I never remember what the docs say about `batch size`, so look it up.",
+     "search_docs", {"query": "batch size"}),
+    ("Pull up `docker-compose.yml` so I can see the service definitions.",
+     "read_file", {"path": "docker-compose.yml"}),
+    ("Is there anything in the documentation about `schema migration`?",
+     "search_docs", {"query": "schema migration"}),
+    ("Verify nothing is broken by running the tests.",
+     "run_tests", {}),
+    ("Print `.github/workflows/ci.yml` for me.",
+     "read_file", {"path": ".github/workflows/ci.yml"}),
+    ("The docs must cover `authentication tokens` somewhere; find it.",
+     "search_docs", {"query": "authentication tokens"}),
+    ("Before I edit it, let me see `src/db/session.py`.",
+     "read_file", {"path": "src/db/session.py"}),
+    ("Go ahead and run the project's tests.",
+     "run_tests", {}),
 )
 """(user message, expected tool, expected arguments or None).
 
-Heterogeneous on purpose: two tools appear twice with different
-arguments and one takes none at all, so a model that has learned to
-emit one memorised call shape scores differently from one that reads
-the request. Each message names its file or query VERBATIM — the
+Twenty tasks, of which the first five are the v1 pool VERBATIM and in
+order — the frozen prefix a five-task reading is scored on.
+
+Heterogeneous on purpose, including in every prefix a look can stop at:
+all three tools appear in the first five tasks, in the first ten and in
+all twenty. Over the POOL, each tool appears at least four times and the
+two argument-taking tools carry fifteen distinct pinned values between
+them, while ``run_tests`` takes none at all — so a model that has
+learned to emit one memorised call shape scores differently from one
+that reads the request. Its five no-argument tasks therefore differ by
+PHRASING (imperative, question, indirect) rather than by value, which is
+the only axis they have.
+
+Each message names its file or query VERBATIM, in backticks — the
 expected value is quoted from the user's own words, which is what makes
-argument checking mechanical rather than a judgement call.
+argument checking mechanical rather than a judgement call. A new task
+that broke that law would silently turn a pinned-argument check into a
+guess, so ``tests/test_tools.py`` checks it over the whole pool, and
+checks the messages stay ASCII with it: every prompt assay sends is
+ASCII today, and a stray dash would put an encoding and tokenization
+difference between two tasks that are otherwise asking the same thing.
 """
 
 _SYSTEM = (
@@ -331,7 +391,7 @@ def _ask(
 def probe_tools(
     backend: Backend, meter: BudgetMeter, *, seed_base: int = _SEED_BASE
 ) -> Tools:
-    """Run the five scripted tasks, two turns each, and score them.
+    """Run the first five scripted tasks, two turns each, and score them.
 
     Ten calls at full health. Fewer when the endpoint refuses tools (one)
     or the budget runs out mid-run (whatever it paid for), and the
@@ -342,7 +402,8 @@ def probe_tools(
     scored_t1 = one_call = right_tool = valid_args = composite = called = 0
     scored_t2 = result_used = truncated = unreported = 0
 
-    for index, (_, expected_tool, expected_args) in enumerate(TASKS):
+    # Task 2 replaces this constant with the look schedule.
+    for index, (_, expected_tool, expected_args) in enumerate(TASKS[:5]):
         t1_seed = seed_base + index
         try:
             reply = _ask(backend, meter, t1_messages(index), t1_seed)

@@ -424,7 +424,7 @@ def test_unmeasured_tools_is_unmeasured_with_a_lens_and_no_interval():
     assert entry["provisional"] is False
     assert entry["interval95"] is None
     lens = entry["lens"]
-    assert lens["instrument"] == TOOLS_INSTRUMENT == "scripted-tools-v1"
+    assert lens["instrument"] == TOOLS_INSTRUMENT == "scripted-tools-v2"
     assert lens["toolset"] == TOOLSET_NAME == "toolset-v1"
     assert lens["stopping_rule"] == "fixed-n"
     assert lens["temperature"] == 0.2

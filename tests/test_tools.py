@@ -1,4 +1,4 @@
-"""Native tool-calling probe (v1.6): the scripted-tools-v1 instrument."""
+"""Native tool-calling probe (v1.7): the scripted-tools-v2 instrument."""
 
 import json
 import pathlib
@@ -35,7 +35,7 @@ def _charge_for(messages) -> int:
 
 
 def task_index(messages) -> int:
-    """Which of the five tasks this transcript is, by its user message."""
+    """Which task of the pool this transcript is, by its user message."""
     user = next(m["content"] for m in messages if m["role"] == "user")
     return next(i for i, task in enumerate(TASKS) if task[0] == user)
 
@@ -153,7 +153,10 @@ def no_canary_t2(index, messages, seed):
 
 
 def test_instrument_and_toolset_are_named():
-    assert TOOLS_INSTRUMENT == "scripted-tools-v1"
+    # The POOL is part of the instrument's identity, so growing it 5 → 20
+    # renames the instrument. The TOOLSET is not: its three schemas are
+    # frozen verbatim across the boundary, and the name says so.
+    assert TOOLS_INSTRUMENT == "scripted-tools-v2"
     assert TOOLSET_NAME == "toolset-v1"
 
 
@@ -172,10 +175,89 @@ def test_every_task_pins_a_registered_tool_and_valid_arguments():
         t["function"]["name"]: t["function"]["parameters"]
         for t in TOOLSET
     }
-    assert len(TASKS) == 5
+    assert len(TASKS) == 20
     for message, name, arguments in TASKS:
         assert message and name in schemas
         assert set(arguments) == set(schemas[name]["required"])
+
+
+# --- the pool's authoring law (v1.7 §1) -------------------------------------
+#
+# The five v1 tasks, copied here as DATA rather than imported: this is the
+# only way the test can fail when the source pool is edited. Quick mode
+# scores exactly these five with the v1 seeds, so they are what makes a
+# v1.6 number and a v1.7 quick number comparable — and what makes the
+# committed tools-anchor replay byte-identically.
+
+V1_TASKS = (
+    ("Open the file `config.yaml` and show me what is in it.",
+     "read_file", {"path": "config.yaml"}),
+    ("Check whether the test suite passes right now.",
+     "run_tests", {}),
+    ("Find what the documentation says about `retry_policy`.",
+     "search_docs", {"query": "retry_policy"}),
+    ("Read `src/main.py` for me.",
+     "read_file", {"path": "src/main.py"}),
+    ("Look up `rate limiting` in the docs.",
+     "search_docs", {"query": "rate limiting"}),
+)
+
+
+def test_the_pool_is_twenty_tasks_and_the_v1_prefix_is_verbatim():
+    assert len(TASKS) == 20
+    assert TASKS[:5] == V1_TASKS
+
+
+def test_every_task_names_its_pinned_argument_verbatim():
+    # The authoring law that makes argument checking mechanical: every
+    # pinned string value appears verbatim in the task's user message.
+    for message, tool, arguments in TASKS:
+        assert tool in {"read_file", "run_tests", "search_docs"}
+        # Every prompt assay sends is ASCII: a task worded with a stray
+        # em dash would carry an encoding and tokenization difference no
+        # other task has, on an axis nothing here means to measure.
+        assert message.isascii(), message
+        for value in (arguments or {}).values():
+            assert value in message, message
+
+
+def test_the_pool_mixes_tools_and_argument_values():
+    # A memorised call shape must score differently from reading the
+    # request: every tool appears >= 4 times, and no two tasks that pin
+    # arguments pin the SAME (tool, arguments).
+    tools_used = [t for _, t, _ in TASKS]
+    assert all(tools_used.count(name) >= 4
+               for name in ("read_file", "run_tests", "search_docs"))
+    pinned = [(t, tuple(sorted(a.items()))) for _, t, a in TASKS if a]
+    assert len(set(pinned)) == len(pinned)
+    # `run_tests` takes no arguments, so its entries CANNOT differ by
+    # value — they differ by phrasing, which is the whole point of
+    # repeating it: several ways of asking for one call shape.
+    no_arg = [m for m, t, a in TASKS if t == "run_tests"]
+    assert len(set(no_arg)) == len(no_arg) >= 4
+    assert len(pinned) + len(no_arg) == 20  # every other task pins a value
+    assert len({m for m, _, _ in TASKS}) == 20  # no repeated message
+    # Every look the sequential schedule can stop at (v1.7 §1: 5, 10, 20)
+    # sees all three tools — a prefix that had gone lopsided would make
+    # the composite at that look mean something else.
+    for look in (5, 10, 20):
+        assert {t for _, t, _ in TASKS[:look]} == {
+            "read_file", "run_tests", "search_docs"}
+
+
+def test_the_seed_scheme_never_collides_across_twenty_tasks():
+    # T1 takes `seed_base + i`, T2 `seed_base + 100 + i`. The offset has
+    # to clear the POOL, not the old five: at 20 tasks the two ranges
+    # still do not touch, and one turn keyed like another would replay
+    # the wrong reply.
+    from assay.tools import _SEED_BASE, _T2_SEED_OFFSET
+
+    t1 = {_SEED_BASE + i for i in range(len(TASKS))}
+    t2 = {_SEED_BASE + _T2_SEED_OFFSET + i for i in range(len(TASKS))}
+    assert not (t1 & t2)
+    assert len(t1 | t2) == 2 * len(TASKS)
+    assert (min(t1), max(t1)) == (1400, 1419)
+    assert (min(t2), max(t2)) == (1500, 1519)
 
 
 # --- the golden path --------------------------------------------------------
@@ -615,7 +697,11 @@ def anchor_captures() -> list[dict]:
 def test_the_tools_anchor_capture_is_committed_whole():
     results = anchor_results()
     assert results["daemon"]["version"] == "0.32.13"
-    assert results["tools"]["instrument"] == TOOLS_INSTRUMENT
+    # The capture names the instrument it RAN under, and those bytes are
+    # frozen: `scripted-tools-v1`, the five-task pool that v1.7 kept
+    # verbatim as tasks 0–4. The TOOLSET did not move, so that half is
+    # still checked against the live constant.
+    assert results["tools"]["instrument"] == "scripted-tools-v1"
     assert results["tools"]["toolset"] == TOOLSET_NAME
 
     captures = anchor_captures()

@@ -140,7 +140,7 @@ class ScriptedBackend:
         seed: int,
         max_tokens: int,
     ) -> ToolReply:
-        """The scripted-tools-v1 transcript, answered by a model that has
+        """The scripted-tools transcript, answered by a model that has
         fully got it: turn 1 emits exactly the golden call, turn 2 answers
         in prose quoting the tool result (canary and all) and calls
         nothing further. Keyed on the SCRIPT — which task, which turn —
