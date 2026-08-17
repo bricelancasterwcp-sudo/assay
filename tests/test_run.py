@@ -866,6 +866,40 @@ def test_thorough_mode_buys_a_decidable_ready():
     assert profile.codecs["json_object"]["small"].n == 35
 
 
+# --- the wall-clock ceiling in provenance (v1.7) ---------------------------
+
+
+def test_a_run_with_no_seconds_ceiling_writes_no_seconds_at_all():
+    # `spent.seconds` is 0.0 on a clock-free run because the meter never
+    # asked the clock what time it is — a floor, not a measurement. A
+    # provenance that published it would report a run that took no time.
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000),
+        mode="quick", _backend_override=ScriptedBackend(),
+    )
+    assert "max_seconds" not in profile.provenance["budget"]
+    assert "seconds" not in profile.provenance["spent"]
+
+
+def test_a_granted_seconds_ceiling_travels_with_what_the_clock_measured():
+    backend = ScriptedBackend()
+    # Time passes when the endpoint is called: a tenth of a second per
+    # call, against a ceiling no quick run can reach.
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=200, max_prompt_tokens=200_000,
+                      max_seconds=10_000.0),
+        mode="quick", _backend_override=backend,
+        _clock=lambda: backend.calls * 0.1,
+    )
+    assert profile.provenance["budget"]["max_seconds"] == 10_000.0
+    # The elapsed reading at the LAST admitted charge, which is one call
+    # short of the run's total — the meter charges before it calls.
+    assert profile.provenance["spent"]["seconds"] == pytest.approx(
+        (_QUICK_CALLS_TOTAL - 1) * 0.1)
+
+
 # --- the declared worst-case cost table (v1.7) ----------------------------
 
 #: The clean full run tests/test_cli.py METERS end to end. The table is

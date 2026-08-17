@@ -13,6 +13,7 @@ partial-pretending-complete. If the budget dies before ANY family
 completed, BudgetExhausted propagates (the CLI maps it to exit 2).
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -264,6 +265,159 @@ def _codecs_were_cut_off(
                for codec, cell in cells)
 
 
+def _read_geometry(
+    active: Backend,
+    info,
+    calibration: Calibration | None,
+    window_cap: int | None,
+    dropped: list[str],
+):
+    """Plan the window from the SERVING state, and name it if it cannot be.
+
+    Geometry reads AFTER calibration's first live call (v1.1, live
+    validation finding 3): a cold model's weights are not yet resident,
+    so a pre-load VRAM reading double-counts them and reports
+    usable_window 0. Post-calibration, model_info's `loaded` flag and
+    the VRAM reading describe the serving state the probes actually ran
+    against. If calibration never ran, the pre-load info is used and the
+    weaker evidence is what it honestly is.
+
+    Shared by both orchestrators: the rule and its reason belong to the
+    measurement, not to one mode's call order.
+    """
+    geometry_info = active.model_info() if calibration is not None else info
+    geometry = plan_window(
+        geometry_info, vram_free_mib=free_vram_mib(), user_cap=window_cap
+    )
+    if geometry is None:
+        dropped.append(
+            "geometry: kv arithmetic or training_ctx unavailable "
+            f"(source={geometry_info.source})"
+        )
+    return geometry
+
+
+def _spend_payload(budget: Budget, meter: BudgetMeter) -> dict:
+    """What was granted and what was spent — seconds only when metered.
+
+    ``spent.seconds`` is 0.0 on a run with no ``max_seconds``, and that
+    zero is a FLOOR rather than a measurement: the meter never asked the
+    clock what time it is (assay.budget), so publishing it would report
+    a run that took no time. The key exists exactly when a ceiling was
+    granted — which is also exactly when the meter watched the clock, so
+    a run that was watched but never charged still reports its (zero)
+    reading rather than going silent about a ceiling it was held to.
+    """
+    granted = {
+        "max_calls": budget.max_calls,
+        "max_prompt_tokens": budget.max_prompt_tokens,
+    }
+    spent = {
+        "calls": meter.spent.calls,
+        "prompt_tokens": meter.spent.prompt_tokens,
+    }
+    if budget.max_seconds is not None:
+        granted["max_seconds"] = budget.max_seconds
+        spent["seconds"] = meter.spent.seconds
+    return {"budget": granted, "spent": spent}
+
+
+def _finish_profile(
+    *,
+    base_url: str,
+    kind: str,
+    autodetected: bool,
+    info,
+    mode: str,
+    params: ModeParams,
+    budget: Budget,
+    meter: BudgetMeter,
+    started: str,
+    directives: CodecDirectives | None,
+    tier: str | None,
+    emulated: bool | None,
+    calibration: Calibration | None,
+    geometry,
+    ceiling: Ceiling | None,
+    ceiling_shapes: tuple[ShapeCeiling, ...] | None,
+    envelope,
+    codecs: dict[str, dict[str, Landing]] | None,
+    speed: Speed | None,
+    loop: Loop | None,
+    long_output: LongOutput | None,
+    tools: Tools | None,
+    parallel: Parallel | None,
+    dropped: list[str],
+    budget_death: BudgetExhausted | None,
+) -> Profile:
+    """Assemble the Profile both orchestrators return — or refuse to.
+
+    The exit-2 guard first: a run whose budget died before ANY family
+    completed measured nothing, and a document full of Nones is not a
+    result the caller should be handed as one. The condition asks about
+    every family rather than the four v1 ones, and the two readings
+    agree on ``probe``'s order (a family after the ceiling cannot be
+    measured while the ceiling is None — a dead meter skips all of
+    them). Under budget mode's priority they do NOT agree: speed can be
+    the only family a tiny budget bought, and discarding it because the
+    ceiling never fit would throw away the run's only measurement.
+    """
+    measured = (geometry, ceiling, ceiling_shapes, envelope, codecs, speed,
+                loop, long_output, tools, parallel)
+    if budget_death is not None and all(value is None for value in measured):
+        raise budget_death  # nothing completed: the caller must know (exit 2)
+
+    presentation = "custom" if directives is not None else DEFAULT_PRESENTATION
+    return Profile(
+        assay_profile_version=PROFILE_VERSION,
+        probe_version=__version__,
+        endpoint={
+            "kind": kind,
+            "base_url": base_url,
+            "autodetected": autodetected,
+        },
+        model={
+            "name": info.name,
+            "quant": info.quant,
+            "weights_bytes": info.weights_bytes,
+            "training_ctx": info.training_ctx,
+        },
+        geometry=geometry,
+        ceiling=ceiling,
+        ceiling_shapes=ceiling_shapes,
+        envelope=envelope,
+        codecs=codecs,
+        speed=speed,
+        loop=loop,
+        long_output=long_output,
+        tools=tools,
+        # No verdict argument: parallel is measurement-only in v1.7.
+        parallel=parallel,
+        verdicts=compute_verdicts(
+            geometry, ceiling, envelope, codecs, speed, loop, long_output,
+            tools,
+            presentation=presentation,
+            stopping_rule=_stopping_rule(params.codec_look_schedule),
+            n_used=_codec_n_used(codecs),
+        ),
+        provenance={
+            "started": started,
+            "finished": _utc_now(),
+            "mode": mode,
+            "tier": tier,
+            "emulated": emulated,
+            "presentation": presentation,
+            "fixture_set": FIXTURE_SET,
+            "temperature": PROBE_TEMPERATURE,
+            "thinking": "disabled",
+            "seeds": list(params.seeds),
+            **_spend_payload(budget, meter),
+            "calibration": _calibration_payload(calibration),
+            "dropped": dropped,
+        },
+    )
+
+
 def probe(
     base_url: str,
     model: str,
@@ -277,6 +431,7 @@ def probe(
     tier: str | None = None,
     emulated: bool | None = None,
     _backend_override: Backend | None = None,
+    _clock: Callable[[], float] | None = None,
 ) -> Profile:
     """Run the full probe suite against one endpoint; return a Profile.
 
@@ -308,7 +463,11 @@ def probe(
     )
     kind = _endpoint_kind(live, backend)
     active: Backend = CallRecorder(live, Path(record)) if record is not None else live
-    meter = BudgetMeter(budget)
+    # ``_clock`` is the meter's clock seam, injected only by tests: a
+    # wall-clock ceiling that could only be exercised against real time
+    # would be pinned by a sleeping suite, which is no pin at all.
+    meter = (BudgetMeter(budget) if _clock is None
+             else BudgetMeter(budget, clock=_clock))
     dropped: list[str] = []
 
     info = active.model_info()  # InfrastructureError propagates (spec §3)
@@ -324,22 +483,7 @@ def probe(
     except BudgetExhausted as exc:
         budget_death = exc
 
-    # Geometry reads AFTER calibration's first live call (v1.1, live
-    # validation finding 3): a cold model's weights are not yet resident,
-    # so a pre-load VRAM reading double-counts them and reports
-    # usable_window 0. Post-calibration, model_info's `loaded` flag and
-    # the VRAM reading describe the serving state the probes actually
-    # ran against. If calibration never ran, the pre-load info is used
-    # and the weaker evidence is what it honestly is.
-    geometry_info = active.model_info() if calibration is not None else info
-    geometry = plan_window(
-        geometry_info, vram_free_mib=free_vram_mib(), user_cap=window_cap
-    )
-    if geometry is None:
-        dropped.append(
-            "geometry: kv arithmetic or training_ctx unavailable "
-            f"(source={geometry_info.source})"
-        )
+    geometry = _read_geometry(active, info, calibration, window_cap, dropped)
 
     try:
         if budget_death is not None:
@@ -515,29 +659,20 @@ def probe(
             tools = None
             dropped.append("tools: budget exhausted before any turn completed")
 
-    if (
-        budget_death is not None
-        and geometry is None
-        and ceiling is None
-        and envelope is None
-        and codecs is None
-    ):
-        raise budget_death  # nothing completed: the caller must know (exit 2)
-
-    return Profile(
-        assay_profile_version=PROFILE_VERSION,
-        probe_version=__version__,
-        endpoint={
-            "kind": kind,
-            "base_url": base_url,
-            "autodetected": autodetected,
-        },
-        model={
-            "name": info.name,
-            "quant": info.quant,
-            "weights_bytes": info.weights_bytes,
-            "training_ctx": info.training_ctx,
-        },
+    return _finish_profile(
+        base_url=base_url,
+        kind=kind,
+        autodetected=autodetected,
+        info=info,
+        mode=mode,
+        params=params,
+        budget=budget,
+        meter=meter,
+        started=started,
+        directives=directives,
+        tier=tier,
+        emulated=emulated,
+        calibration=calibration,
         geometry=geometry,
         ceiling=ceiling,
         ceiling_shapes=ceiling_shapes,
@@ -547,37 +682,7 @@ def probe(
         loop=loop,
         long_output=long_output,
         tools=tools,
-        # No verdict argument: parallel is measurement-only in v1.7.
         parallel=parallel,
-        verdicts=compute_verdicts(
-            geometry, ceiling, envelope, codecs, speed, loop, long_output,
-            tools,
-            presentation=("custom" if directives is not None
-                          else DEFAULT_PRESENTATION),
-            stopping_rule=_stopping_rule(params.codec_look_schedule),
-            n_used=_codec_n_used(codecs),
-        ),
-        provenance={
-            "started": started,
-            "finished": _utc_now(),
-            "mode": mode,
-            "tier": tier,
-            "emulated": emulated,
-            "presentation": ("custom" if directives is not None
-                             else DEFAULT_PRESENTATION),
-            "fixture_set": FIXTURE_SET,
-            "temperature": PROBE_TEMPERATURE,
-            "thinking": "disabled",
-            "seeds": list(params.seeds),
-            "budget": {
-                "max_calls": budget.max_calls,
-                "max_prompt_tokens": budget.max_prompt_tokens,
-            },
-            "spent": {
-                "calls": meter.spent.calls,
-                "prompt_tokens": meter.spent.prompt_tokens,
-            },
-            "calibration": _calibration_payload(calibration),
-            "dropped": dropped,
-        },
+        dropped=dropped,
+        budget_death=budget_death,
     )
