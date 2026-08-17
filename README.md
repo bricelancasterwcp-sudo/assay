@@ -31,8 +31,10 @@ same block. v1.6 measures both (package 0.7.0, schema v6).
   `scripted-loop-v2`. Every run now also plays a two-turn script in
   which the model's patch has **failed to apply**, and scores
   `recovery_rate` and `doom_loop_rate` over an explicit `n_error_runs`.
-  A measured recovery below 0.5 demotes `loop_discipline` off `ready`.
-  See [The scripted repair loop](#the-scripted-repair-loop).
+  Its turns join the shared action-fidelity, repeat and anchor
+  denominator, so `n_turns` goes 3 → 5 per run. A measured recovery
+  below 0.5 demotes `loop_discipline` off `ready`. See [The scripted
+  repair loop](#the-scripted-repair-loop).
 - **MoE-aware geometry** — `expert_count` / `expert_used_count` where
   the metadata states them, and `head_dim` now prefers the model file's
   stated `attention.key_length` over the embedding÷heads derivation,
@@ -289,7 +291,7 @@ a measurement, a `None` with a named reason, or provenance.
 | `envelope` | exact-format fidelity over N one-line probes, with failures classified (`prose` / `shape` / `refusal`) |
 | `codecs` | landing rate per codec (`search_replace`, `whole_file`, `json_object`) × size grade (`tiny`, `small`, `medium`), under both landing lenses, with the `n` each cell actually spent |
 | `speed` | `decode_tps` (chat usability) and `prefill_tps` (agent usability), their `evidence` class, and — new in v5 — the per-call `decode_samples` / `prefill_samples` a diff needs to tell noise from drift |
-| `loop` | scripted repair, two scripts: `action_fidelity`, `patch_rate`, `finish_rate`, `repeat_rate`, `anchor_violations` from the golden three turns, and — new in v6 — `recovery_rate` / `doom_loop_rate` over `n_error_runs` from the error script. Single-call probes cannot see loop failure |
+| `loop` | scripted repair over **two** scripts. `action_fidelity` and `repeat_rate` are rates over the shared `n_turns`, and `anchor_violations` a count over the same turns — all three span golden and error turns alike; `patch_rate` and `finish_rate` are golden-only, over `n_runs`; and — new in v6 — `recovery_rate` / `doom_loop_rate` are error-only, over `n_error_runs`. Single-call probes cannot see loop failure |
 | `long_output` | per-rung `target_tokens`, `generated_tokens`, `distinct_ratio`, `zlib_ratio`, `degenerate`, plus a `skipped` list naming why each unattempted rung did not run |
 | `tools` | native tool calling: `supported` (three-state), `call_rate`, `right_tool_rate`, `args_valid_rate`, `result_use_rate`, the `composite` the verdict ladders on, and `n_tasks` / `n_turns` — rates of **instructed** behavior, see [Native tool calling](#native-tool-calling) |
 | `verdicts` | `structured_extraction`, `patch_editing`, `long_context`, `loop_discipline`, `chat_speed`, `agent_speed`, `long_output`, `tool_calling` — each `ready` / `risky` / `unusable` / `unmeasured` (`long_output` may also read `degrades-at-N`; `tool_calling` may also read `unsupported`), each carrying its own lens |
@@ -390,9 +392,10 @@ the model said:
 - **T1** asks the task with the toolset offered, and scores three
   things: exactly one call was emitted, its name is the right tool, and
   its arguments are schema-valid **and** equal to the value the request
-  named verbatim (every task quotes its file or query from the user's
-  own words, which is what makes argument checking mechanical rather
-  than a judgement call). `composite` is the per-task AND of those
+  named verbatim (every task that names a file or a query quotes it from
+  the user's own words, which is what makes argument checking mechanical
+  rather than a judgement call; `run_tests` names neither and pins the
+  empty argument object). `composite` is the per-task AND of those
   three, and it is what the verdict ladders on — the right tool called
   with junk arguments has not done the job.
 - **T2** replays the same messages plus a **canned** golden call (never
@@ -443,11 +446,14 @@ a row of the other kind is a replay miss rather than a match. Both kinds
 also record the endpoint's own `error_raw`, so a replayed refusal is the
 refusal that happened, not a re-derived guess.
 
-So `tool_calling` is the one verdict with a fourth outcome:
-`ready` / `risky` / `unusable` on the composite, `unmeasured` when the
-family never ran, and `unsupported` for the refusal — which is neither
-of its neighbours. `unmeasured` would hide a fact we established, and
-`unusable` would blame a model that was never asked to do the task.
+So `tool_calling` reads `ready` / `risky` / `unusable` on the composite,
+`unmeasured` when the family never ran, and `unsupported` for the
+refusal. It is not the only verdict that extends the four common values
+— `long_output` adds `degrades-at-N` — but it is the only one whose
+extra value describes the **endpoint** rather than a rung the model
+reached, and `unsupported` is neither of its neighbours: `unmeasured`
+would hide a fact we established, and `unusable` would blame a model
+that was never asked to do the task.
 
 ## The scripted repair loop
 
@@ -459,10 +465,11 @@ discipline, repetition, anchor violations, or knowing when to stop.
 environment's side is canned, the model's replies are scored per turn,
 and no branching happens on what the model actually says.
 
-The **golden** script is three turns (read → patch → done) and scores
-action fidelity, patch landing under the same applies-and-parses lens
-the codecs use, finishing, verbatim repeats, and any attempt to patch
-the declared read-only test file.
+The **golden** script is three turns (read → patch → done). Two of the
+family's rates are its alone: **patch landing** (turn 2's payload, under
+the same applies-and-parses lens the codecs use) and **finishing**
+(turn 3, after being told the tests pass, is `done`), both over `n_runs`
+completed golden runs.
 
 The **error** script is the v1.6 half. The golden path only ever asks
 what a model does when everything works; the failure that actually ended
@@ -472,8 +479,16 @@ run also plays two turns in which the model's patch has failed: the
 canned failure is the measured qwen signature, the right target line
 with its indentation stripped, and it is built from the fixture's own
 lines rather than hand-typed, so a canned "failure" that would in fact
-apply cannot drift in (a test pins that it really does not). Two rates
-come out:
+apply cannot drift in (a test pins that it really does not).
+
+Its first turn is the golden first turn **character for character** —
+the model has been told nothing yet, so there is nothing to differ about
+— which makes the **seeds** the only thing keeping the two draws apart.
+Error runs are therefore seeded `seed_base + 50 + run` against the
+golden runs' `seed_base + run`: disjoint by construction, so the error
+script is a second measurement rather than a re-roll of the first. (At
+the default three runs and `seed_base` 800 the golden turns draw
+800/801/802 and the error turns 850/851/852.) Two rates come out:
 
 - **`recovery_rate`** — the next reply is a `patch` at the source file
   that applies and parses;
@@ -494,6 +509,21 @@ Both rates are `None` when the error script never ran — unmeasured is
 not zero — and `n_error_runs` carries the denominator in the family and
 in the verdict lens, because a budget-truncated 1/1 and a complete 5/5
 both read `1.0` and nothing else tells them apart.
+
+**The two scripts are two halves of one instrument, not two
+instruments,** and three of the family's numbers say so. Both
+`action_fidelity` and `repeat_rate` are rates over one shared
+denominator, and `anchor_violations` is a raw count over the same
+turns — all three are scored on **every** turn of **both** scripts,
+golden and error alike. `n_turns` is five per
+run — three golden, two error — and at the default three runs a model
+that emits a clean action line on every golden turn and then answers the
+rejected patch with prose scores `action_fidelity` **12/15 = 0.8**, not
+the 9/9 the golden script alone would have shown. The `loop_discipline`
+Wilson interval is computed over that same shared `n_turns`. An anchor
+violation counts wherever it happens — patching the read-only test file
+in answer to a rejection is the same sin as patching it on turn 2 — and
+repeats are looked for within each run.
 
 `loop_discipline` ladders on action fidelity and then demotes twice:
 `ready` with a patch rate below 0.5 becomes `risky` (follows the loop,
@@ -703,9 +733,11 @@ clean quick run spends 102 calls and 78,832 of the 220,000 tokens.
 
 Full and thorough stay at **500 calls / 1M tokens**. Full is sequential,
 so its worst case is the old thorough worst case — no codec cell decides
-early and every one runs to the 35-sample cap — and that case measures
-411 calls and 218,037 tokens even with the v1.6 families added. Still
-comfortable, so it does not move.
+early and every one runs to the 35-sample cap. A clean full run on the
+scripted suite measures 411 calls and 218,037 tokens even with the v1.6
+families added, and the worst case (a failing ceiling ladder adds its
+bisection calls on top) stays inside 500 / 1M. Still comfortable, so it
+does not move.
 
 The long-output ladder is the one family whose charge is dominated by
 **generation** rather than prompt: a 4096-token rung shares the context
