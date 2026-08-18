@@ -1297,6 +1297,55 @@ def test_the_campaign_corpus_is_the_fifteen_v8_rows_the_matrix_publishes():
     assert {p["probe_version"] for p in payloads} == {"0.9.0"}
 
 
+def test_every_campaign_lane_reads_ready_under_the_chosen_floors():
+    """The floors against the fifteen live rows that motivated them.
+
+    This is the sanity check the spec claims, made mechanical: the
+    2026-08 campaign's ninety lanes are re-laddered here on every run.
+    If a future edit moves a floor above the live cluster, this fails
+    with the model that broke rather than with a prose review nobody
+    ran. It does NOT rescore the committed profiles — they stay v8 and
+    carry no verdict cell; it reads their parallel MEASUREMENTS and
+    asks what today's ladder makes of them.
+    """
+    from assay.profile import _PARALLEL_READY_RATIO, _parallel_verdict
+    from assay.profile import _parallel_from
+
+    assert len(_CAMPAIGN_PROFILES) == 15, "the campaign corpus moved"
+    seen_ks, verdicts = set(), {}
+    for path in _CAMPAIGN_PROFILES:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        parallel = _parallel_from(payload.get("parallel"))
+        assert parallel is not None, f"{path.name}: no parallel family"
+        for row in parallel.rows:
+            seen_ks.add(row.k)
+            assert row.degradation_ratio >= _PARALLEL_READY_RATIO, (
+                f"{path.name} k={row.k}: {row.degradation_ratio} is below "
+                "the ready floor — the live cluster no longer clears it")
+        verdicts[path.name] = _parallel_verdict(parallel)["verdict"]
+
+    assert seen_ks == {2, 4}
+    assert set(verdicts.values()) == {"ready"}, verdicts
+
+
+def test_no_campaign_row_ever_read_serialized():
+    """The mode gate is UNEXERCISED by live data and the suite says so
+    out loud. CARRIED-DEBT item 16's condition for retiring the
+    tolerance flag is the same one that would exercise this gate: an
+    endpoint that actually serializes. This tier has not produced one,
+    and a test asserting the absence is how that stays honest instead
+    of being quietly forgotten.
+    """
+    from assay.profile import _parallel_from
+
+    modes = set()
+    for path in _CAMPAIGN_PROFILES:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        parallel = _parallel_from(payload.get("parallel"))
+        modes.update(row.mode for row in parallel.rows)
+    assert modes == {"parallel"}
+
+
 def test_the_committed_corpus_spans_every_schema_version_ever_written():
     # The guard on the parametrize above: it is only a v1-through-v4
     # test while the corpus actually holds those versions. If a future
