@@ -67,6 +67,28 @@ _CHAT_RISKY_TPS = 4.0
 _AGENT_READY_TPS = 200.0
 _AGENT_RISKY_TPS = 80.0
 
+#: The parallel family's degradation floors. CHOSEN, not derived, and
+#: the lens says so at every point of use — `OVERLAP_TOLERANCE_S`'s
+#: rule. The 2026-08 campaign's ninety lanes (15 models x k in {2, 4})
+#: all read between 0.995 and 1.007 across a 10x span of single-lane
+#: speed, so every live row sits far above both floors and NONE of them
+#: exercises either boundary. 0.5 is the arithmetic signature a k=2
+#: endpoint would show if serialization ever surfaced in the per-lane
+#: rate; 0.8 sits below the live cluster and above that signature.
+#: Retiring the provenance needs an endpoint that actually degrades.
+_PARALLEL_READY_RATIO = 0.8
+_PARALLEL_RISKY_RATIO = 0.5
+PARALLEL_FLOOR_PROVENANCE = "chosen-2026-08-17"
+
+#: Re-declared from `parallel._EVIDENCE_WEAKEST_FIRST` because that one
+#: is private. CARRIED-DEBT item 17 records the same duplication for
+#: the speed classes and the fix for both is one shared public tuple;
+#: not taken here to keep this wave's diff on the verdict.
+_PARALLEL_EVIDENCE_WEAKEST_FIRST = (
+    "unmeasured", "wall_clock_estimated", "wall_clock_counts",
+    "server_timings",
+)
+
 _HONEST_MODES = frozenset({"hard_error", "none_up_to_cap"})
 _LYING_MODES = frozenset({"silent_truncation", "missing_stats"})
 
@@ -499,6 +521,70 @@ def _long_output_verdict(long_output: LongOutput | None) -> dict:
             "provisional": (ladder_unfinished
                             or THRESHOLDS_PROVENANCE.startswith("assumed")),
             "lens": _long_output_lens(scorable)}
+
+
+def _parallel_lens(evidence: str) -> dict:
+    return {"metric": "degradation_ratio",
+            "floor_ready": _PARALLEL_READY_RATIO,
+            "floor_risky": _PARALLEL_RISKY_RATIO,
+            "floor_provenance": PARALLEL_FLOOR_PROVENANCE,
+            "evidence": evidence}
+
+
+def _parallel_verdict(parallel: Parallel | None) -> dict:
+    """Can this box run k agents at once? (v1.8)
+
+    v1.7 shipped this family measurement-only, on the stated ground
+    that a rung invented without a measured floor is the overclaim the
+    rest of the schema exists to refuse. Ninety live lanes later there
+    is a cluster to sanity-check a ladder against — but still no row
+    anywhere near a boundary, so the floors are CHOSEN and the lens
+    carries their provenance rather than pretending to a derivation.
+
+    Three rules, in order:
+
+    1. **A refused k, or a k with no ratio, means unmeasured.** The
+       question is whether the box holds up at the concurrency asked
+       for; answering it from the k that happened to survive is
+       inference, not measurement. `Parallel.skipped` already names
+       every refused k for exactly this reason.
+    2. **A `serialized` k caps the verdict at risky.** A queueing
+       endpoint's per-lane RATE is fine — each lane decodes at full
+       speed once it is its turn — so the ratio floors cannot see it.
+       The scheduling fact is the family's headline and it gates
+       first. It CAPS rather than sets: a serialized endpoint that is
+       also slow per lane stays unusable.
+    3. **Otherwise the WORST measured k decides.** A fleet claim is
+       only as good as the largest k it was tested at.
+    """
+    if parallel is None or not parallel.rows:
+        return {"verdict": "unmeasured", "lens": _parallel_lens("unmeasured")}
+    ratios = [row.degradation_ratio for row in parallel.rows]
+    evidence = _weakest_parallel_evidence(parallel.rows)
+    if parallel.skipped or any(ratio is None for ratio in ratios):
+        return {"verdict": "unmeasured", "lens": _parallel_lens(evidence)}
+    worst = min(ratios)
+    if worst >= _PARALLEL_READY_RATIO:
+        verdict = "ready"
+    elif worst >= _PARALLEL_RISKY_RATIO:
+        verdict = "risky"
+    else:
+        verdict = "unusable"
+    if verdict == "ready" and any(row.mode == "serialized"
+                                  for row in parallel.rows):
+        verdict = "risky"  # caps, never lifts
+    return {"verdict": verdict, "lens": _parallel_lens(evidence)}
+
+
+def _weakest_parallel_evidence(rows: tuple[ParallelRow, ...]) -> str:
+    """The weakest class any row reported — `parallel`'s own rule, one
+    level up. A verdict is discounted by its worst evidence, not by an
+    average of it."""
+    order = _PARALLEL_EVIDENCE_WEAKEST_FIRST
+    known = [row.evidence for row in rows if row.evidence in order]
+    if not known:
+        return "unmeasured"
+    return min(known, key=order.index)
 
 
 def _long_context(ceiling: Ceiling | None) -> str:

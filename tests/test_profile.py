@@ -1744,3 +1744,112 @@ def test_loop_verdict_downgrades_follow_without_advance():
     # so the lens string must change with it — a profile scored under
     # scripted-loop-v2 may never read as a scripted-loop-v1 measurement.
     assert verdicts["loop_discipline"]["lens"]["instrument"] == "scripted-loop-v2"
+
+
+# --- v1.8: the parallel ladder -----------------------------------------------
+
+
+def _prow(k=2, ratio=1.0, mode="parallel", errors=(), evidence="server_timings"):
+    """One parallel row. Defaults are a healthy lane: the tests vary
+    exactly the field under discussion."""
+    from assay.parallel import ParallelRow
+    return ParallelRow(k=k, per_lane_decode_tps=10.0,
+                       total_throughput_tps=10.0 * k,
+                       degradation_ratio=ratio, mode=mode, n_lanes_ok=k,
+                       lane_errors=tuple(errors), evidence=evidence)
+
+
+def _parallel(rows, skipped=()):
+    from assay.parallel import Parallel
+    return Parallel(rows=tuple(rows), baseline_decode_tps=10.0,
+                    tolerance_s=0.25, tolerance_provenance="chosen-2026-08-17",
+                    skipped=tuple(skipped))
+
+
+def test_parallel_verdict_truth_table():
+    """The ladder, ENUMERATED. Rules in order:
+
+    1. any skipped k, or any measured k with no ratio -> unmeasured
+    2. any k reading `serialized` -> risky at most
+    3. otherwise ladder the WORST measured k's degradation_ratio
+
+    Rule 2 exists because a QUEUEING endpoint's per-lane RATE still
+    reads ~1.0 — each lane decodes at full speed, it just waits its
+    turn — so the ratio floors alone cannot catch it. The scheduling
+    fact gates first, which is the whole reason `mode` is the family's
+    headline.
+    """
+    from assay.profile import _parallel_verdict
+
+    table = [
+        # (parallel, expected verdict, why)
+        (None, "unmeasured", "the family never ran"),
+        (_parallel([]), "unmeasured", "no k measured"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=0.99)]),
+         "ready", "both ks healthy — the live campaign's shape"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=0.85)]),
+         "ready", "worst k still clears the 0.8 floor"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=0.79)]),
+         "risky", "worst k falls below ready; the BEST k does not save it"),
+        (_parallel([_prow(ratio=0.60), _prow(k=4, ratio=0.99)]),
+         "risky", "the worst k decides, whichever k it is"),
+        (_parallel([_prow(ratio=0.49)]),
+         "unusable", "below the k=2 serialization signature"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, mode="serialized", ratio=1.0)]),
+         "risky", "a queueing endpoint caps at risky whatever the rate says"),
+        (_parallel([_prow(mode="serialized", ratio=0.30)]),
+         "unusable", "the mode CAPS at risky, it does not lift a worse rung"),
+        (_parallel([_prow(ratio=1.0)], skipped=["k=4: budget exhausted"]),
+         "unmeasured", "a refused k leaves the fleet question unanswered"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=None)]),
+         "unmeasured", "a k with no ratio measured no degradation"),
+        (_parallel([_prow(ratio=None)]),
+         "unmeasured", "no ratio at all"),
+    ]
+    for parallel, expected, why in table:
+        assert _parallel_verdict(parallel)["verdict"] == expected, why
+
+
+def test_parallel_verdict_boundaries_are_inclusive():
+    """The floor VALUES, pinned exactly. A ladder whose boundary drifts
+    by a rounding is a different instrument."""
+    from assay.profile import (_PARALLEL_READY_RATIO, _PARALLEL_RISKY_RATIO,
+                               _parallel_verdict)
+
+    assert (_PARALLEL_READY_RATIO, _PARALLEL_RISKY_RATIO) == (0.8, 0.5)
+    assert _parallel_verdict(
+        _parallel([_prow(ratio=0.8)]))["verdict"] == "ready"
+    assert _parallel_verdict(
+        _parallel([_prow(ratio=0.5)]))["verdict"] == "risky"
+
+
+def test_parallel_lens_carries_its_floors_and_says_they_were_chosen():
+    """A threshold nobody derived must say so at the point of use —
+    `OVERLAP_TOLERANCE_S`'s rule. No live row has ever crossed either
+    floor, so the provenance is the honest half of the claim."""
+    from assay.profile import _parallel_verdict
+
+    lens = _parallel_verdict(_parallel([_prow(ratio=1.0)]))["lens"]
+    assert lens["metric"] == "degradation_ratio"
+    assert lens["floor_ready"] == 0.8
+    assert lens["floor_risky"] == 0.5
+    assert lens["floor_provenance"] == "chosen-2026-08-17"
+    assert lens["evidence"] == "server_timings"
+
+
+def test_parallel_lens_reports_the_weakest_evidence_any_scored_k_produced():
+    """The family's own rule, applied one level up: a consumer
+    discounting the verdict needs the worst lane's evidence class, not
+    an average of them."""
+    from assay.profile import _parallel_verdict
+
+    lens = _parallel_verdict(_parallel([
+        _prow(ratio=1.0, evidence="server_timings"),
+        _prow(k=4, ratio=0.9, evidence="wall_clock_counts")]))["lens"]
+    assert lens["evidence"] == "wall_clock_counts"
+
+
+def test_parallel_verdict_unmeasured_lens_says_unmeasured():
+    from assay.profile import _parallel_verdict
+
+    assert _parallel_verdict(None)["lens"]["evidence"] == "unmeasured"
