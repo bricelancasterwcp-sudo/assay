@@ -327,6 +327,33 @@ def test_unmeasured_shape_mode_is_dropped_never_scored():
     assert "ceiling_shapes.shape:4096.failure_mode" in result.dropped
 
 
+def test_shape_present_on_only_one_side_but_wholly_unmeasured_is_not_dropped():
+    """I5: a shape's `shape` KEY can be present in the entries list
+    while nothing about it was measured — `failure_mode: "unmeasured"`,
+    `max_verified: null`. The other four comparators (`_exact`,
+    `_diff_codec_cell`, `_diff_speed_cell`, `_diff_verdicts`) all treat
+    "unmeasured on both sides" as no cell at all, never `dropped`
+    (`dropped` means measured on exactly one side — the rule v1.8's
+    exit 3 reads directly). `_diff_shapes` must keep the same rule even
+    when the unmeasured placeholder's key is present on only one side
+    and wholly absent on the other: the shape was still not measured
+    on either side, so it must not read as a comparison that happened
+    on one side and vanished on the other.
+
+    Not reachable through a real campaign today (every `MODE_PARAMS`
+    entry shares one `shape_probes` list and `run.py` normalizes an
+    all-unmeasured shape family to `None` before it ever reaches
+    `diff`), but the list is not CLI-exposed as fixed, and a future
+    configurable shape list turns this into a spurious dropped cell —
+    or a spurious exit 3 under `--gate`.
+    """
+    old = make_profile(shapes=[_shape(4096, None, "unmeasured")])
+    new = make_profile(shapes=None)
+    result = diff_profiles(old, new)
+    assert [c for c in result.changes if c.family == "ceiling_shapes"] == []
+    assert not any("4096" in name for name in result.dropped)
+
+
 # --- verdicts --------------------------------------------------------
 
 
@@ -1106,8 +1133,10 @@ def test_cli_diff_across_the_version_boundary_takes_the_documented_exits(
     is 3, not 1: the schema grew between v4 and the current shape, so
     tool_calling and the deep json grades were measured on the new side
     only, and under v1.8 that incompleteness outranks the real drift
-    this fixture's ceiling and speed values also carry (a cross-schema
-    pair reads 3 by construction — the instrument-changed rule enforcing
+    this fixture's ceiling and speed values also carry (this pair reads
+    3 because the newer schema actually measured cells — tool_calling,
+    the deep json grades — that the older side lacks, not merely
+    because the schemas differ; the instrument-changed rule enforcing
     itself). Never 2, which would mean the schema bump had broken the
     identity gate, and never 4, which would mean the current shape no
     longer parses as a profile document.
