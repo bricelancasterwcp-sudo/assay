@@ -388,14 +388,19 @@ def test_verdicts_unmeasured_on_both_sides_are_not_dropped():
     assert "verdict.long_context" not in result.within_noise
 
 
-def test_verdicts_absent_from_both_sides_are_not_dropped():
-    """The same rule for a key neither document carries: a verdict two
-    profiles both predate is not a cell that vanished between them."""
-    thin = make_verdicts()
-    del thin["patch_editing"]
-    result = diff_profiles(make_profile(verdicts=thin),
-                           make_profile(verdicts=json.loads(json.dumps(thin))))
+def test_verdicts_keyed_but_unmeasurable_on_both_sides_are_not_dropped():
+    """The same rule for a key BOTH documents carry with nothing in it.
+
+    `_verdict_of(None)` yields `(None, None)`, so this name does reach
+    the guard — unlike a key neither side carries, which never enters
+    the iteration at all and would pass this test for the wrong reason.
+    """
+    both = make_verdicts(patch_editing=None)
+    result = diff_profiles(make_profile(verdicts=both),
+                           make_profile(verdicts=json.loads(json.dumps(both))))
     assert result.dropped == ()
+    assert [c for c in result.changes if c.family == "verdict"] == []
+    assert "verdict.patch_editing" not in result.within_noise
 
 
 def _long_output(verdict):
