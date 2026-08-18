@@ -40,8 +40,14 @@ _COMMITTED_PROFILES = sorted(
 #: The reader-side claim still has to be made for the current schema,
 #: so it is made here against its own corpus.
 _CAMPAIGN_PROFILES = sorted(
-    (_REPO_ROOT / "docs/superpowers/evidence/tier-enthusiast-2026-08"
-     ).glob("*.json"),
+    (path
+     for path in (_REPO_ROOT / "docs/superpowers/evidence/tier-enthusiast-2026-08"
+                  ).glob("*.json")
+     # CARRIED-DEBT item 74: the version key is the filter, not the
+     # folder listing. This directory also holds diffs and read-outs,
+     # and a JSON that is not a profile must be SKIPPED rather than
+     # parsed and blamed — a KeyError names the wrong culprit.
+     if "assay_profile_version" in json.loads(path.read_text(encoding="utf-8"))),
     key=lambda p: p.name,
 )
 _GRADES = ("tiny", "small", "medium")
