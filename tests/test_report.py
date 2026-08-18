@@ -768,8 +768,16 @@ def test_a_v8_row_renders_the_parallel_cell_as_unmeasured():
     """The invariant the schema bump promised: a profile measured by
     the previous instrument may change on this page ONLY by gaining an
     explicitly-unmeasured cell. It must not borrow a rung it never
-    earned, and it must not vanish from the page."""
-    from assay.report import render_report
+    earned, and it must not vanish from the page.
+
+    Pinned as an exact count (M6, 2026-08-17 fix wave), not `>= 1`: the
+    fixture row already renders 8 unmeasured badges for the other
+    absent columns, so `>= 1` is satisfied whether or not `parallel`
+    is in `VERDICT_ORDER` at all and cannot catch it vanishing. The
+    parallel column header must also be on the page, not merely the
+    right badge count.
+    """
+    from assay.report import VERDICT_ORDER, render_report
 
     page = render_report([{
         "assay_profile_version": 8,
@@ -777,4 +785,10 @@ def test_a_v8_row_renders_the_parallel_cell_as_unmeasured():
         "verdicts": {"long_context": {"verdict": "ready", "lens": {}}},
     }])
     assert "v8-model" in page
-    assert page.count('class="badge b-unmeasured">unmeasured</span>') >= 1
+    assert "<th>parallel</th>" in page
+    # Exactly one verdict (long_context) is measured; every other
+    # column in VERDICT_ORDER — parallel included — must render
+    # unmeasured.
+    expected_unmeasured = len(VERDICT_ORDER) - 1
+    assert (page.count('class="badge b-unmeasured">unmeasured</span>')
+            == expected_unmeasured)
