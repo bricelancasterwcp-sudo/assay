@@ -1949,3 +1949,32 @@ def test_parallel_verdict_unmeasured_lens_says_unmeasured():
     from assay.profile import _parallel_verdict
 
     assert _parallel_verdict(None)["lens"]["evidence"] == "unmeasured"
+
+
+def test_the_three_grade_orderings_agree():
+    """CARRIED-DEBT item 8. `profile` follows the live GRADES;
+    `report` and `diff` freeze the triple. They agree today by
+    coincidence and nothing fails if they stop — so a reader comparing
+    a rendered page against a diff would see two different column
+    orders for the same measurement and have no way to tell which was
+    right. Equality, asserted once, over a DEEP fixture: the six-grade
+    json cell is where a frozen triple and a derived list part company.
+    """
+    from assay import diff as diff_mod
+    from assay import profile as profile_mod
+    from assay import report as report_mod
+
+    cell = {"lands": 1.0, "lands_applies": 1.0, "n": 5}
+    deep = {"json_object": {grade: cell
+                            for grade in ("tiny", "small", "medium",
+                                          "nested", "tabular", "constrained")}}
+    from_profile = profile_mod._grade_columns(deep)
+    from_report = report_mod._grade_columns(deep)
+    from_diff = diff_mod._ordered_grades(deep["json_object"],
+                                         deep["json_object"])
+    assert from_profile == from_report == from_diff, (
+        f"profile={from_profile} report={from_report} diff={from_diff}")
+    # The order itself, pinned: long-standing grades first in their
+    # declared order, then the v1.7 shape grades sorted.
+    assert from_profile == ["tiny", "small", "medium",
+                            "constrained", "nested", "tabular"]
