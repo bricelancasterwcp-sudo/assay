@@ -244,9 +244,9 @@ nobody notices the gate has never fired.
 **Item 17 (evidence-class strings re-declared) — now declared THREE
 times, not two, and the third copy is v1.8's.**
 `profile._parallel_verdict` needed the same weakest-first ranking
-`parallel._rank_evidence` already used, and
-`profile._PARALLEL_EVIDENCE_WEAKEST_FIRST` was added as a full
-re-declaration — confirmed byte-identical to
+`parallel._weakest` already used (against `parallel._EVIDENCE_WEAKEST_
+FIRST`), and `profile._PARALLEL_EVIDENCE_WEAKEST_FIRST` was added as a
+full re-declaration — confirmed byte-identical to
 `parallel._EVIDENCE_WEAKEST_FIRST` during Task 4's review. This is a
 regression in the literal sense: the fix (one shared public tuple) has
 been available and unscheduled since v1.7's close, and v1.8 added to
@@ -292,6 +292,33 @@ this.
      PRIORITY, which the code preserves; only the prose-vs-code
      ordering is cosmetic. **(T4)**
 
+**Item 112 (the 0.25s tolerance cliff is now load-bearing for a
+published rung) — recorded, not fixed, by the final fix wave
+(2026-08-17).** `classify_mode` calls a pair `serialized` unless
+consecutive lanes overlap by MORE than `OVERLAP_TOLERANCE_S`; for
+lanes launched together that means each lane must last longer than
+0.25s to be called `parallel`. Measured directly: 0.1s
+genuinely-concurrent lanes read `serialized`; 0.3s lanes read
+`parallel`. Consequences:
+
+- With `DECODE_MAX_TOKENS = 64`, the fastest live campaign model
+  (`qwen2.5-coder-1.5b-instruct-q8_0`, 288 tok/s) computes to a
+  **0.222s** pure-decode span against the 0.25s tolerance — it read
+  `parallel` only because prefill and HTTP pushed the wall span over.
+  A faster endpoint on this tier gets `risky` for the fleet question
+  while serving every lane at full rate.
+- The house fake takes the `serialized` branch on every full-mode run
+  — pinned by `test_full_mode_parallel_verdict_is_produced_and_reads_
+  risky_not_ready` (M10, the same fix wave): `ScriptedBackend`'s
+  in-process lanes return well under 0.25s, so `degradation_ratio`
+  reads ~1.0 while `mode` still reads `serialized`, and the verdict
+  caps at `risky`.
+- Direction of error is UNDER-claim, which is the safe side — but it
+  is still a wrong rung on a public page, driven by a constant this
+  file already records as unexercised by live data (item 16). This
+  shares item 16's retirement condition exactly: an endpoint that
+  actually serializes.
+
 ### Documentation
 
 110. **The v1.8 design spec's own arithmetic is imprecise: "0.995
@@ -306,6 +333,33 @@ this.
      k-readings**, comprising ninety lanes. Location:
      `docs/superpowers/specs/2026-08-17-assay-v1.8-gate-and-floors-design.md:165`.
      **(T8, ruling 7 amendment)**
+
+**Item 113 (the design spec's exit-3 claim is stronger than the
+instrument can guarantee) — erratum recorded by the final fix wave
+(I4, 2026-08-17).** Spec §2 states a cross-schema pair reads exit 3
+"by construction." `diff` has no version-aware machinery at all; exit
+3 is a consequence of which cells were actually measured. Verified: a
+v8-vs-v9 pair where the v9 side measured `parallel` drops
+`verdict.parallel` and reads exit 3, as the spec claims — but a v9
+pair whose `parallel` is `unmeasured` on the newer side too (quick
+mode, or full mode where `speed` went unmeasured so `run.py` drops the
+family by name) compares byte-clean and exits **0** even across the
+same schema bump. Cross-schema-ness alone does not decide it; whether
+the newer schema actually measured something new does. The spec is a
+committed design document and per this project's convention is not
+silently rewritten after the fact; this entry is the dated amendment
+sitting beside the original claim instead. Corrected statement (also
+applied to the four operator-facing surfaces — `cli.py`'s docstring,
+`README.md`, `CHANGELOG.md`, `tests/test_diff.py`'s comment — which
+are not spec text and were rewritten directly): a cross-schema pair
+reads exit 3 whenever the newer schema actually measured a cell the
+older one lacks, not merely because the schemas differ; the same
+correction applies to the budget-mode-vs-full-mode claim beside it.
+Location:
+`docs/superpowers/specs/2026-08-17-assay-v1.8-gate-and-floors-design.md`
+§2 (see also the `by construction` phrase repeated at plan
+`docs/superpowers/plans/2026-08-17-assay-v1.8-gate-and-floors.md:1068`
+and `:1098`, also left unedited as committed process record). **(I4)**
 
 ### Test hygiene
 
@@ -329,11 +383,23 @@ could silently take away. This is recorded the way item 16 is
 recorded: a guard kept and flagged, not retired on the strength of
 evidence that never exercised it. **(T11)**
 
-111. **`tests/test_campaign_script.py:29` asserts both `exists()` and
+~~111. **`tests/test_campaign_script.py:29` asserts both `exists()` and
      `is_dir()` on the same path**, where `is_dir()` alone already
      implies existence — harmless (the redundant check cannot itself
      produce a false pass), and its only effect is a slightly less
-     specific failure message if it ever fires. **(T1)**
+     specific failure message if it ever fires. **(T1)**~~ **CLOSED
+     by the final fix wave (I3, 2026-08-17): the redundancy turned out
+     to be the smaller problem.** The same three assertions —
+     `exists()`, `is_dir()`, and a check that
+     `src/assay/__init__.py` sits under the asserted `REPO` — pinned
+     this machine's own checkout path
+     (`/home/brice/workspace/assay`), which is the ONLY test in
+     `tests/` that touches a machine-specific filesystem path, against
+     a README that promises the suite "runs entirely from scripted
+     fakes and recorded transcripts." All three filesystem assertions
+     are removed; the test now pins only the portable property it
+     exists for — `.worktrees` never appears in the wrapper's `REPO=`
+     — on the string alone, with no filesystem access at all.
 
 ---
 
