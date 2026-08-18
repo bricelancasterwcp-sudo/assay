@@ -448,11 +448,10 @@ def _finish_profile(
         loop=loop,
         long_output=long_output,
         tools=tools,
-        # No verdict argument: parallel is measurement-only in v1.7.
         parallel=parallel,
         verdicts=compute_verdicts(
             geometry, ceiling, envelope, codecs, speed, loop, long_output,
-            tools,
+            tools, parallel,
             presentation=presentation,
             stopping_rule=_stopping_rule(params.codec_look_schedule),
             n_used=_codec_n_used(codecs),

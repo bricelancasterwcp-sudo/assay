@@ -38,11 +38,14 @@ reads. Each family is judged by the strongest evidence its cells carry:
 
 **None is never zero.** A cell measured on one side only goes to
 ``dropped`` and is never scored — as does a verdict that is
-``unmeasured`` on either side, and (same rule, extended from the spec's
-verdict clause) a ``failure_mode`` whose literal value is
-``"unmeasured"``. Absence is not a regression. ``unsupported`` is the
-one word that looks like absence and is not: the endpoint was asked and
-said no, so it ranks (bottom rung) instead of dropping.
+``unmeasured`` on exactly ONE side, and (same rule, extended from the
+spec's verdict clause) a ``failure_mode`` whose literal value is
+``"unmeasured"``. Absence is not a regression. Absence on BOTH sides
+is not even a drop: nothing was compared and nothing vanished, so
+``dropped`` means precisely "measured on exactly one side" — which is
+what v1.8's exit 3 reads. ``unsupported`` is the one word that looks
+like absence and is not: the endpoint was asked and said no, so it
+ranks (bottom rung) instead of dropping.
 """
 
 from __future__ import annotations
@@ -281,19 +284,43 @@ def _by_shape(entries: object) -> dict:
             if isinstance(entry, dict) and entry.get("shape") is not None}
 
 
+def _shape_measured(entry: dict) -> bool:
+    """A shape entry counts as measured when it carries a real value on
+    at least one axis — the same test `_measured_mode` applies to a
+    verdict. An entry that made it into the list with
+    ``failure_mode: "unmeasured"`` and ``max_verified: null`` was never
+    actually measured; the ``shape`` key's mere presence is not
+    evidence of that."""
+    return (entry.get("max_verified") is not None
+            or _measured_mode(entry.get("failure_mode")) is not None)
+
+
 def _diff_shapes(old: dict, new: dict) -> _Cells:
     """Shapes are matched by their ``shape`` value, never by position:
     a run that probed one fewer shape would otherwise silently compare
-    4096 against 8192."""
+    4096 against 8192.
+
+    A shape's key can be present in the entries list without the shape
+    being MEASURED — an unmeasured placeholder still carries a
+    ``shape`` field. Dropping on key presence alone, before looking at
+    the values, would call that "measured on one side", which is the
+    same invariant break `_exact`, `_diff_codec_cell`, `_diff_speed_cell`
+    and `_diff_verdicts` all refuse elsewhere in this module: a cell
+    unmeasured on both sides produces no cell, dropped or otherwise.
+    """
     old_shapes = _by_shape(old.get("ceiling_shapes"))
     new_shapes = _by_shape(new.get("ceiling_shapes"))
     parts = []
     for shape in sorted(set(old_shapes) | set(new_shapes)):
         cell = f"shape:{shape}"
-        if shape not in old_shapes or shape not in new_shapes:
+        old_entry, new_entry = old_shapes.get(shape), new_shapes.get(shape)
+        old_measured = old_entry is not None and _shape_measured(old_entry)
+        new_measured = new_entry is not None and _shape_measured(new_entry)
+        if not old_measured and not new_measured:
+            continue  # unmeasured (or absent) on both sides: no cell
+        if old_entry is None or new_entry is None:
             parts.append(_Cells(dropped=(f"ceiling_shapes.{cell}",)))
             continue
-        old_entry, new_entry = old_shapes[shape], new_shapes[shape]
         parts.append(_exact("ceiling_shapes", cell,
                             old_entry.get("max_verified"),
                             new_entry.get("max_verified"),
@@ -322,8 +349,16 @@ def _diff_verdicts(old: dict, new: dict) -> _Cells:
     for name in sorted(set(old_verdicts) | set(new_verdicts)):
         old_value, old_prov = _verdict_of(old_verdicts.get(name))
         new_value, new_prov = _verdict_of(new_verdicts.get(name))
-        if old_value is None or new_value is None or UNMEASURED in (
-                old_value, new_value):
+        old_measured = old_value is not None and old_value != UNMEASURED
+        new_measured = new_value is not None and new_value != UNMEASURED
+        if not old_measured and not new_measured:
+            # Absent (or unmeasured) on BOTH sides: nothing was
+            # compared and nothing vanished. `dropped` means measured
+            # on exactly one side — the rule `_exact`,
+            # `_diff_codec_cell` and `_diff_speed_cell` already keep,
+            # and the rule v1.8's exit 3 reads directly.
+            continue
+        if not (old_measured and new_measured):
             parts.append(_Cells(dropped=(f"verdict.{name}",)))
             continue
         scored = _exact("verdict", name, old_value, new_value,
@@ -520,5 +555,10 @@ def render_diff(result: DiffResult) -> str:
     if result.within_noise:
         lines.append("within noise: " + ", ".join(result.within_noise))
     if result.dropped:
+        # Said BEFORE the list, because the list alone reads as a
+        # footnote and this is the headline: part of the comparison
+        # did not happen. Exit 3 says the same thing to a machine.
+        lines.append(f"incomplete: {len(result.dropped)} cell(s)"
+                     " measured on one side only")
         lines.append("dropped: " + ", ".join(result.dropped))
     return "\n".join(lines)

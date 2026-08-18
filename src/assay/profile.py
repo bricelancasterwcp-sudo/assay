@@ -39,7 +39,7 @@ from assay.stats import ladder as _ladder
 from assay.stats import wilson95
 from assay.tools import TOOLS_INSTRUMENT, TOOLSET_NAME, Tools
 
-PROFILE_VERSION = 8
+PROFILE_VERSION = 9
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
              "speed", "loop", "long_output", "tools", "parallel")
@@ -67,6 +67,29 @@ _CHAT_RISKY_TPS = 4.0
 _AGENT_READY_TPS = 200.0
 _AGENT_RISKY_TPS = 80.0
 
+#: The parallel family's degradation floors. CHOSEN, not derived, and
+#: the lens says so at every point of use — `OVERLAP_TOLERANCE_S`'s
+#: rule. The 2026-08 campaign's thirty k-readings (15 models x k in
+#: {2, 4}, ninety lanes) all read `degradation_ratio` between 0.995 and
+#: 1.007 across a 10x span of single-lane speed, so every live row sits
+#: far above both floors and NONE of them exercises either boundary.
+#: 0.5 is the arithmetic signature a k=2 endpoint would show if
+#: serialization ever surfaced in the per-lane rate; 0.8 sits below
+#: the live cluster and above that signature.
+#: Retiring the provenance needs an endpoint that actually degrades.
+_PARALLEL_READY_RATIO = 0.8
+_PARALLEL_RISKY_RATIO = 0.5
+PARALLEL_FLOOR_PROVENANCE = "chosen-2026-08-17"
+
+#: Re-declared from `parallel._EVIDENCE_WEAKEST_FIRST` because that one
+#: is private. CARRIED-DEBT item 17 records the same duplication for
+#: the speed classes and the fix for both is one shared public tuple;
+#: not taken here to keep this wave's diff on the verdict.
+_PARALLEL_EVIDENCE_WEAKEST_FIRST = (
+    "unmeasured", "wall_clock_estimated", "wall_clock_counts",
+    "server_timings",
+)
+
 _HONEST_MODES = frozenset({"hard_error", "none_up_to_cap"})
 _LYING_MODES = frozenset({"silent_truncation", "missing_stats"})
 
@@ -86,10 +109,11 @@ class Profile:
     loop: Loop | None
     long_output: LongOutput | None
     tools: Tools | None
-    # Measurement-only (v1.7): what k concurrent requests do to one
-    # endpoint. No verdict reads it — there is no measured floor to
-    # ladder a degradation ratio against yet, and a rung invented for one
-    # would be the overclaim the rest of this schema exists to refuse.
+    # What k concurrent requests do to one endpoint (v1.7). Measurement-
+    # only through v1.7 — there was no measured floor to ladder a
+    # degradation ratio against yet, and a rung invented for one would
+    # have been the overclaim the rest of this schema exists to refuse.
+    # _parallel_verdict (v1.8) now reads it against CHOSEN floors.
     parallel: Parallel | None
     verdicts: dict[str, dict]
     provenance: dict  # started/finished/mode/seeds/budget/spent/calibration/dropped
@@ -501,6 +525,85 @@ def _long_output_verdict(long_output: LongOutput | None) -> dict:
             "lens": _long_output_lens(scorable)}
 
 
+def _parallel_lens(evidence: str) -> dict:
+    return {"metric": "degradation_ratio",
+            "floor_ready": _PARALLEL_READY_RATIO,
+            "floor_risky": _PARALLEL_RISKY_RATIO,
+            "floor_provenance": PARALLEL_FLOOR_PROVENANCE,
+            "evidence": evidence}
+
+
+def _parallel_verdict(parallel: Parallel | None) -> dict:
+    """Can this box run k agents at once? (v1.8)
+
+    v1.7 shipped this family measurement-only, on the stated ground
+    that a rung invented without a measured floor is the overclaim the
+    rest of the schema exists to refuse. Ninety live lanes later there
+    is a cluster to sanity-check a ladder against — but still no row
+    anywhere near a boundary, so the floors are CHOSEN and the lens
+    carries their provenance rather than pretending to a derivation.
+
+    Three rules, in order:
+
+    1. **A refused k, a k with no ratio, or a k whose lanes did not
+       all come back, means unmeasured.** The question is whether the
+       box holds up at the CONCURRENCY ASKED FOR; answering it from
+       whichever lanes happened to survive is inference, not
+       measurement. `Parallel.skipped` already names every refused k
+       for exactly this reason. `parallel._row` correctly excludes
+       errored lanes from the mean rather than zeroing them — that is
+       right for the mean, but it means a row's ratio can read
+       healthy on `n_lanes_ok` out of `k` lanes while the rest never
+       returned at all. Lanes that never returned are not evidence
+       that the ones that did represent the fleet, so any row with a
+       non-empty `lane_errors`, or with `n_lanes_ok < k`, is
+       unmeasured too. The same holds for `mode is None`: it means
+       the scheduling fact itself — the family's headline — could not
+       be established (`classify_mode` needs two lanes to compare),
+       and a rung with no headline is not a rung.
+    2. **A `serialized` k caps the verdict at risky.** A queueing
+       endpoint's per-lane RATE is fine — each lane decodes at full
+       speed once it is its turn — so the ratio floors cannot see it.
+       The scheduling fact is the family's headline and it gates
+       first. It CAPS rather than sets: a serialized endpoint that is
+       also slow per lane stays unusable.
+    3. **Otherwise the WORST measured k decides.** A fleet claim is
+       only as good as the largest k it was tested at.
+    """
+    if parallel is None or not parallel.rows:
+        return {"verdict": "unmeasured", "lens": _parallel_lens("unmeasured")}
+    ratios = [row.degradation_ratio for row in parallel.rows]
+    evidence = _weakest_parallel_evidence(parallel.rows)
+    if (parallel.skipped
+            or any(ratio is None for ratio in ratios)
+            or any(row.lane_errors for row in parallel.rows)
+            or any(row.n_lanes_ok < row.k for row in parallel.rows)
+            or any(row.mode is None for row in parallel.rows)):
+        return {"verdict": "unmeasured", "lens": _parallel_lens(evidence)}
+    worst = min(ratios)
+    if worst >= _PARALLEL_READY_RATIO:
+        verdict = "ready"
+    elif worst >= _PARALLEL_RISKY_RATIO:
+        verdict = "risky"
+    else:
+        verdict = "unusable"
+    if verdict == "ready" and any(row.mode == "serialized"
+                                  for row in parallel.rows):
+        verdict = "risky"  # caps, never lifts
+    return {"verdict": verdict, "lens": _parallel_lens(evidence)}
+
+
+def _weakest_parallel_evidence(rows: tuple[ParallelRow, ...]) -> str:
+    """The weakest class any row reported — `parallel`'s own rule, one
+    level up. A verdict is discounted by its worst evidence, not by an
+    average of it."""
+    order = _PARALLEL_EVIDENCE_WEAKEST_FIRST
+    known = [row.evidence for row in rows if row.evidence in order]
+    if not known:
+        return "unmeasured"
+    return min(known, key=order.index)
+
+
 def _long_context(ceiling: Ceiling | None) -> str:
     if ceiling is None:
         return "unmeasured"
@@ -611,6 +714,7 @@ def compute_verdicts(
     loop: Loop | None = None,
     long_output: LongOutput | None = None,
     tools: Tools | None = None,
+    parallel: Parallel | None = None,
     *,
     presentation: str = "default-v1",
     stopping_rule: str = "fixed-n",
@@ -645,6 +749,14 @@ def compute_verdicts(
     That is a measured capability and must not collapse into either
     neighbour — "unmeasured" would hide a fact we established, and
     "unusable" would blame a model that was never asked.
+
+    ``parallel`` (v1.8) is the fleet question: what k concurrent
+    requests do to this endpoint. Its floors are CHOSEN rather than
+    derived and the lens says so — the campaign's ninety lanes sit far
+    above both, so the cluster sanity-checks the ladder without
+    exercising either boundary. A refused k reads "unmeasured": the
+    claim is about the concurrency asked for, and the k that survived
+    cannot stand in for the one that did not.
 
     Unmeasured inputs -> "unmeasured", never worse. ``geometry`` and
     ``envelope`` inform no verdict but are part of the stable signature.
@@ -716,6 +828,7 @@ def compute_verdicts(
         },
         "long_output": _long_output_verdict(long_output),
         "tool_calling": _tool_calling_verdict(tools),
+        "parallel": _parallel_verdict(parallel),
     }
 
 

@@ -96,6 +96,7 @@ def test_full_pipeline_produces_complete_profile():
         "agent_speed": "ready",
         "long_output": "ready",
         "tool_calling": "ready",
+        "parallel": "unmeasured",
     }
     # The tools family ran, and ran LAST: five tasks, two turns each.
     assert profile.tools is not None
@@ -757,6 +758,41 @@ def test_full_mode_measures_parallel_against_this_run_s_own_baseline():
     assert profile.provenance["dropped"] == []
     # The family survives the document contract with the rest of them.
     assert Profile.from_json(json.loads(profile.to_json())) == profile
+
+
+def test_full_mode_parallel_verdict_is_produced_and_reads_risky_not_ready():
+    """M10: the only `probe()`-level assertion of the parallel VERDICT
+    cell was quick mode's `unmeasured`
+    (`test_quick_mode_drops_the_parallel_family_by_name` checks only
+    `profile.parallel is None`, never a verdict). Nothing end to end
+    pinned that `run.py` -> `compute_verdicts` ->
+    `verdicts["parallel"]` produces a verdict at all on a full run.
+
+    What this GENUINELY reads, and why: the house fake's lanes return
+    in-process, well under `OVERLAP_TOLERANCE_S` (0.25s) — nowhere near
+    the wall-clock span a real concurrent HTTP round trip takes — so
+    `classify_mode` reads `serialized` even though the lanes ran
+    genuinely concurrently and `degradation_ratio` is ~1.0 (no
+    degradation at all). Per `_parallel_verdict` rule 2, a `serialized`
+    mode CAPS the verdict at `risky` regardless of the ratio. This
+    pins what the instrument actually does against this fake — it does
+    NOT tune the fake to manufacture `ready`, which would hide the
+    tolerance cliff instead of pinning it (see CARRIED-DEBT.md, the
+    0.25s tolerance-cliff entry, v1.8).
+    """
+    profile = probe(
+        _URL, "fake-model",
+        budget=Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
+                      max_prompt_tokens=2_000_000),
+        mode="full", _backend_override=ScriptedBackend(),
+    )
+
+    assert profile.verdicts["parallel"]["verdict"] == "risky"
+    assert all(row.mode == "serialized" for row in profile.parallel.rows), (
+        "the house fake's lanes return too fast to clear "
+        "OVERLAP_TOLERANCE_S — if this ever reads 'parallel' the fake's "
+        "timing changed and the docstring above needs re-deriving")
+    assert all(row.degradation_ratio == 1.0 for row in profile.parallel.rows)
 
 
 def test_quick_mode_drops_the_parallel_family_by_name():

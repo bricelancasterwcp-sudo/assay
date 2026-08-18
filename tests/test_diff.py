@@ -327,6 +327,33 @@ def test_unmeasured_shape_mode_is_dropped_never_scored():
     assert "ceiling_shapes.shape:4096.failure_mode" in result.dropped
 
 
+def test_shape_present_on_only_one_side_but_wholly_unmeasured_is_not_dropped():
+    """I5: a shape's `shape` KEY can be present in the entries list
+    while nothing about it was measured — `failure_mode: "unmeasured"`,
+    `max_verified: null`. The other four comparators (`_exact`,
+    `_diff_codec_cell`, `_diff_speed_cell`, `_diff_verdicts`) all treat
+    "unmeasured on both sides" as no cell at all, never `dropped`
+    (`dropped` means measured on exactly one side — the rule v1.8's
+    exit 3 reads directly). `_diff_shapes` must keep the same rule even
+    when the unmeasured placeholder's key is present on only one side
+    and wholly absent on the other: the shape was still not measured
+    on either side, so it must not read as a comparison that happened
+    on one side and vanished on the other.
+
+    Not reachable through a real campaign today (every `MODE_PARAMS`
+    entry shares one `shape_probes` list and `run.py` normalizes an
+    all-unmeasured shape family to `None` before it ever reaches
+    `diff`), but the list is not CLI-exposed as fixed, and a future
+    configurable shape list turns this into a spurious dropped cell —
+    or a spurious exit 3 under `--gate`.
+    """
+    old = make_profile(shapes=[_shape(4096, None, "unmeasured")])
+    new = make_profile(shapes=None)
+    result = diff_profiles(old, new)
+    assert [c for c in result.changes if c.family == "ceiling_shapes"] == []
+    assert not any("4096" in name for name in result.dropped)
+
+
 # --- verdicts --------------------------------------------------------
 
 
@@ -366,6 +393,41 @@ def test_verdict_present_on_one_side_only_is_dropped():
     del thin["patch_editing"]
     result = diff_profiles(make_profile(verdicts=thin), make_profile())
     assert "verdict.patch_editing" in result.dropped
+
+
+def test_verdicts_unmeasured_on_both_sides_are_not_dropped():
+    """`dropped` means "measured on exactly one side" — the rule the
+    other four families already follow (`_exact`, `_diff_codec_cell`,
+    `_diff_speed_cell` all return no cell when both sides are absent).
+
+    Reproduced live against 0.9.0 by bloomery's drift watch: two
+    byte-equal profiles reported `dropped: verdict.long_context`.
+    Nothing vanished between them, and after v1.8 the exit code reads
+    `dropped` directly — so a display-layer lie here would become an
+    exit-code lie.
+    """
+    both = make_verdicts(long_context={"verdict": "unmeasured", "lens": {}})
+    result = diff_profiles(make_profile(verdicts=both),
+                           make_profile(verdicts=json.loads(json.dumps(both))))
+    assert result.dropped == ()
+    assert [c for c in result.changes if c.family == "verdict"] == []
+    # Not "checked and clean" either: an unmeasured cell was not checked.
+    assert "verdict.long_context" not in result.within_noise
+
+
+def test_verdicts_keyed_but_unmeasurable_on_both_sides_are_not_dropped():
+    """The same rule for a key BOTH documents carry with nothing in it.
+
+    `_verdict_of(None)` yields `(None, None)`, so this name does reach
+    the guard — unlike a key neither side carries, which never enters
+    the iteration at all and would pass this test for the wrong reason.
+    """
+    both = make_verdicts(patch_editing=None)
+    result = diff_profiles(make_profile(verdicts=both),
+                           make_profile(verdicts=json.loads(json.dumps(both))))
+    assert result.dropped == ()
+    assert [c for c in result.changes if c.family == "verdict"] == []
+    assert "verdict.patch_editing" not in result.within_noise
 
 
 def _long_output(verdict):
@@ -839,6 +901,18 @@ def test_render_lists_within_noise_and_dropped():
     assert "dropped: " in text and "speed.decode_tps" in text
 
 
+def test_render_names_the_incomplete_comparison(capsys):
+    """The prose and the exit code tell ONE story. A reader who sees
+    exit 3 must find the reason on the page without re-running with
+    --json."""
+    thin = make_verdicts()
+    del thin["patch_editing"]
+    result = diff_profiles(make_profile(verdicts=thin), make_profile())
+    page = render_diff(result)
+    assert "incomplete: 1 cell(s) measured on one side only" in page
+    assert "dropped: verdict.patch_editing" in page
+
+
 def test_render_of_an_incomparable_pair_says_why():
     text = render_diff(diff_profiles(make_profile(),
                                      make_profile(model_name="other-model")))
@@ -1050,16 +1124,22 @@ def test_current_shape_against_v4_renders_the_absent_cells_as_unmeasured():
 
 def test_cli_diff_across_the_version_boundary_takes_the_documented_exits(
         tmp_path, capsys):
-    """The three documented codes on this path, from the CLI docstring:
-    0 nothing moved beyond noise, 1 drift found, 2 not comparable.
+    """The documented codes on this path, from the CLI docstring:
+    0 nothing moved beyond noise, 1 drift found, 2 not comparable, 3
+    incomplete.
 
     The v4 file against itself is 0 — the version boundary alone
     manufactures nothing. Against a factory profile of the same model it
-    is 1, because cells both files measured really did move (this
-    fixture's ceiling and speed are not that model's recorded numbers);
-    never 2, which would mean the schema bump had broken the identity
-    gate, and never 4, which would mean the current shape no longer
-    parses as a profile document.
+    is 3, not 1: the schema grew between v4 and the current shape, so
+    tool_calling and the deep json grades were measured on the new side
+    only, and under v1.8 that incompleteness outranks the real drift
+    this fixture's ceiling and speed values also carry (this pair reads
+    3 because the newer schema actually measured cells — tool_calling,
+    the deep json grades — that the older side lacks, not merely
+    because the schemas differ; the instrument-changed rule enforcing
+    itself). Never 2, which would mean the schema bump had broken the
+    identity gate, and never 4, which would mean the current shape no
+    longer parses as a profile document.
     """
     from assay.cli import main
 
@@ -1076,11 +1156,13 @@ def test_cli_diff_across_the_version_boundary_takes_the_documented_exits(
     assert main(["diff", str(old_path), str(old_path)]) == 0
     assert "no drift beyond noise" in capsys.readouterr().out
 
-    assert main(["diff", str(old_path), str(new_path)]) == 1
+    assert main(["diff", str(old_path), str(new_path)]) == 3
     capsys.readouterr()
 
     # The identity gate is unchanged by the new families: a different
-    # model is still fatal, still reports nothing, still exits 2.
+    # model is still fatal, still reports nothing, still exits 2 — 2
+    # outranks 3, so this pair never even reaches the incompleteness
+    # question.
     assert main(["diff", str(old_path), str(other_path)]) == 2
     out = capsys.readouterr().out
     assert out.startswith("not comparable")

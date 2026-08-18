@@ -9,6 +9,7 @@ never falls through to live or to a canned value.
 
 import json
 import pathlib
+import threading
 
 import pytest
 
@@ -515,3 +516,58 @@ def test_the_committed_v15_anchor_transcript_still_replays():
     for row in rows:
         replayed = replayer.generate(_PROMPT, seed=row["seed"], max_tokens=4096)
         assert replayed.text == row["text"]
+
+
+def test_call_recorder_keeps_every_row_whole_under_concurrent_writers(tmp_path):
+    """CARRIED-DEBT item 101: the concurrency case the suite lacked.
+
+    `CallRecorder` takes a write lock, and the parallel family creates
+    exactly the configuration that would need one — k threads recording
+    into a single recorder. This test pins the property that matters to
+    a consumer: under concurrent writers every row is present and every
+    row is whole, because a half-written row is not a smaller
+    transcript, it is an unparseable one, and the transcript IS the
+    evidence.
+
+    What this test does NOT establish, measured rather than assumed:
+    the lock is not load-bearing here. `_write_row` does
+    open-append/write-one-row/close, and on Linux `write()` to a
+    regular file is atomic per-inode while `O_APPEND` makes the offset
+    update atomic, so rows cannot interleave with or without the lock —
+    confirmed at 100 B, 8 KB and 64 KB payloads, 8 threads, all six
+    configurations clean. The guard therefore earns its place against a
+    FUTURE write path (a long-lived handle, or a row assembled across
+    several writes), not against today's. The lock stays for the same
+    reason: it costs nothing and the property it protects is one a
+    refactor could silently take away.
+
+    The inner fake is deliberately STATELESS, so a missing or corrupt
+    row could only be the recorder's doing.
+    """
+    class _AlwaysReplies:
+        caps = CAPS
+        model = MODEL
+
+        def generate(self, prompt, *, seed, max_tokens, num_ctx=None):
+            return make_reply(f"reply to {prompt}")
+
+    path = tmp_path / "transcript.jsonl"
+    recorder = CallRecorder(_AlwaysReplies(), path)
+    n_threads, per_thread = 8, 25
+
+    def _write(worker):
+        for i in range(per_thread):
+            recorder.generate(f"w{worker} c{i}", seed=worker * 100 + i,
+                              max_tokens=16)
+
+    threads = [threading.Thread(target=_write, args=(w,))
+               for w in range(n_threads)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    rows = path.read_text(encoding="utf-8").splitlines()
+    assert len(rows) == n_threads * per_thread
+    for row in rows:
+        json.loads(row)  # every row whole, not merely present

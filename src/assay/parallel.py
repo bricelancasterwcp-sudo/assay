@@ -7,7 +7,9 @@ look nothing alike: an endpoint that BATCHES shares its throughput
 serializes (each lane's latency multiplied by k). For a consumer that
 is the headline, so the family reports it as `mode`.
 
-Measurement-only: no verdict this wave. Three honesty rules hold it up.
+Verdict as of v1.8 (`profile._parallel_verdict`): the worst measured k
+decides, a `serialized` k caps at risky, and a refused k leaves the
+cell unmeasured. Three honesty rules hold the MEASUREMENT up.
 
 **Rates come from the server, never from the client's clock.** Lane
 throughput is read out of the reply body by ``assay.speed``'s
@@ -296,6 +298,14 @@ def probe_parallel(
     refused or never asked for. Refusal before ANY k has run propagates
     ``BudgetExhausted`` so the caller drops the whole family by name.
     """
+    if baseline_decode_tps is None:
+        # Before the spend, not after: the ratio's divisor is the
+        # caller's obligation and a lane charged against a baseline
+        # that does not exist measures something nobody can express.
+        raise ValueError(
+            "probe_parallel needs a single-lane baseline_decode_tps from "
+            "the same run; the orchestrator drops the family by name "
+            "when speed is unmeasured")
     run = runner if runner is not None else _threaded_runner(clock)
     lane_tokens = max(1, len(DECODE_PROMPT) // 3)
     rows: list[ParallelRow] = []

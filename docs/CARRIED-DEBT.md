@@ -1,3 +1,477 @@
+# Carried debt — v1.8 (recorded 2026-08-17 at the wave's close)
+
+Known gaps deliberately carried out of v1.8, with the rulings that
+carried them. None blocks the release.
+
+**This file is self-contained.** Every deferred item and every ruling
+recorded during this wave is written out below; nothing is delegated
+to a pointer. The raw process record it was derived from is committed
+verbatim beside the plan at
+[`superpowers/plans/2026-08-17-assay-v1.8-gate-and-floors-ledger.md`](superpowers/plans/2026-08-17-assay-v1.8-gate-and-floors-ledger.md)
+— that is provenance for the derivation, not a place detail hides. The
+plan and the binding spec it implements are committed beside it too:
+[`plans/2026-08-17-assay-v1.8-gate-and-floors.md`](superpowers/plans/2026-08-17-assay-v1.8-gate-and-floors.md)
+and
+[`specs/2026-08-17-assay-v1.8-gate-and-floors-design.md`](superpowers/specs/2026-08-17-assay-v1.8-gate-and-floors-design.md).
+
+**Reading the entries.** An item ~~struck through~~ was **closed**
+during the wave, and the text that closed it follows in bold. An item
+left plain is **open**. Nothing is deleted: an item that was raised
+and closed is a different fact from one that was never raised, and a
+reader must be able to tell them apart. Item numbers are a single
+namespace shared with the v1.7 section below — several source files
+now cite them directly (e.g. `CARRIED-DEBT item 18`, `item 29`, `item
+74`, `item 101` in code comments and test docstrings) — so a v1.7 item
+closed or updated by v1.8 work is edited in place down there rather
+than renumbered, and new items pick up where v1.7 left off, at 107.
+The `(T<n>)` marks the task that raised it.
+
+---
+
+## What this slice settled
+
+v1.8 shipped two fixes to claims the instrument was making that it
+should not have been, and closed the opener v1.7 deliberately left
+open. **`diff` gained a fourth exit, `3` ("incomplete")**, firing
+whenever any cell was measured on exactly one side, in both plain and
+`--gate` mode, and outranking exit `1` at precedence `2 > 3 > 1 > 0` —
+a family that vanished between two profiles is not a measured drift,
+and exit `1`'s narrower claim (a number moved) could never speak for
+it. This came out of the field: bloomery's drift watch exited `0`
+under `--gate` on a v8-vs-v4 pair while five measured families went
+unmeasured on one side. Underneath it, the **display-layer bug that
+would have become an exit-code bug** is fixed — `_diff_verdicts` had
+been sending verdicts unmeasured on BOTH sides to `dropped`, so two
+byte-equal profiles reported a dropped cell. `dropped` now means
+precisely "measured on exactly one side" — the rule the other four
+families already kept — which is what makes it safe for the exit code
+to read directly. The order the two fixes shipped in was not
+incidental, and the wave's own evidence proves it (process lesson 1,
+below).
+
+**`verdict.parallel` joined the lens.** v1.7 shipped the family
+measurement-only on the ground that a rung invented without a measured
+floor is the overclaim the rest of the schema exists to refuse; the
+2026-08 campaign's fifteen live profiles removed that ground.
+`verdict.parallel` reads the WORST measured k: a refused k or a k with
+no ratio reads `unmeasured`; any `serialized` k CAPS the verdict at
+`risky`, because a queueing endpoint's per-lane rate looks fine and
+only the scheduling fact catches it; otherwise it ladders on
+`degradation_ratio` at 0.8 `ready` / 0.5 `risky`. The floors are
+**CHOSEN, not derived**, and the lens carries `floor_provenance`
+saying so — the `OVERLAP_TOLERANCE_S` idiom. The campaign's thirty
+k-readings all sit at 0.995-1.007, far above both floors, so the
+cluster sanity-checks the ladder without exercising either boundary
+(item 107, below).
+
+Profile schema **v9**, package **0.10.0**, zero new probe calls: the
+verdict derives from measurements `parallel` already made, so full and
+quick's cost budgets (610/130) are unchanged. The fifteen committed v8
+profiles were NOT rescored and the campaign was NOT re-run; the matrix
+gained a `parallel` column and the fifteen v8 rows read `unmeasured`
+in it, honestly. The campaign's own thirty committed k-readings are
+re-laddered by the suite on every run, so a floor that drifts above
+the live cluster fails a test rather than a review nobody ran.
+
+Six further hygiene fixes landed alongside the two headline changes:
+the campaign wrapper now points at the repo rather than a deleted
+v1.7 worktree; the campaign corpus glob is filtered by version key so
+a non-profile JSON in that directory is skipped rather than
+mis-blamed (item 74, closed); `probe_parallel` refuses a missing
+baseline before spending rather than after (item 18, closed); the
+three grade-ordering surfaces (`profile`, `report`, `diff`) are now
+pinned to agree by test, not coincidence (item 8, closed); the token
+meter's honest partial — a family admitted on calls that still dies
+mid-run on tokens — has a test (item 29, closed); and `CallRecorder`'s
+concurrent-writer case has one too, with an honest finding about what
+it does and does not prove (item 101, partially closed — see below).
+
+Twelve tasks, fourteen commits, 986 → 1009 tests.
+
+---
+
+## Standing rulings (do not re-litigate without a recorded amendment)
+
+Every ruling made during the wave, in the order made.
+
+1. **A worktree-durability assertion replaces a checkout-equality one.**
+   Task 1's brief asserted `Path(REPO).resolve() == _REPO_ROOT`, where
+   `_REPO_ROOT` derives from the test file's own location — under SDD
+   that location is the worktree, so the assertion failed there and
+   would only pass post-merge. The property actually wanted is "the
+   script points at a durable repo root, not an ephemeral worktree,"
+   which the equality check does not express. Replacement: `REPO` is
+   not under `.worktrees`, exists, is a directory, and contains
+   `src/assay/__init__.py`. Cost if wrong: a `REPO` pointing at some
+   *other* valid assay checkout would pass, but the worktree
+   regression this exists to catch would still fail it. **(T1)**
+2. **`REPO` itself stays the canonical `/home/brice/workspace/assay`**,
+   unchanged by which checkout happens to be editing the script — that
+   is the correct value for a durable script regardless of where the
+   edit is made. **(T1)**
+3. **The two exit-3 fixture updates and the two schema-8 pins were
+   pre-authorized and named in advance**, rather than left for the
+   implementer to discover under a rule that forbids loosening the new
+   invariant. Removes the only ambiguity a "some tests must legitimately
+   fail" mandate creates. **(T3/T5)**
+4. **The Task 8 cost-verification step is advisory, not a gate.** The
+   brief's `MODES` symbol does not exist (`run.py` defines
+   `MODE_PARAMS`); the implementer was told to read the real
+   mode-params mapping and complete the comparison rather than treat
+   the mismatch as a block, because the step exists to falsify the
+   CHANGELOG's "no family costs a call more" claim and any correct
+   route to that comparison serves. **(T8)**
+5. **A reviewer's "weak second test" minor was upgraded to a fix-loop
+   finding**, against the skill's default that minors never re-enter
+   the loop. `test_verdicts_keyed_but_unmeasurable_on_both_sides_are_
+   not_dropped`, as originally written, deleted the verdict key from
+   both sides — the comparison loop never reached the guard it claimed
+   to cover, so it passed against the UNFIXED code. The replacement
+   uses a key BOTH sides carry with `None` inside it, which does reach
+   the guard. This is process lesson 2's second instance. **(T2)**
+6. **998 is the correct post-Task-4 test count, not 999.** The plan's
+   arithmetic counted two test helpers (`_prow`, `_parallel`) as tests
+   alongside the five real ones. The implementer flagged the
+   discrepancy instead of inventing a sixth test to hit the predicted
+   number. **(T4)**
+7. **"Ninety lanes (15 models × k in {2, 4})" is arithmetically wrong**
+   — the parenthetical computes to 30, not 90 — and the correct
+   phrasing everywhere is *thirty k-readings comprising ninety lanes*
+   (k=2 contributes 2 lanes, k=4 contributes 4, so 6 lanes/model × 15
+   models). This is a **regression of CARRIED-DEBT item 84**, which
+   this project already closed once. It shipped from the controller's
+   own spec and Task 8 draft into `src/assay/profile.py:72`, into the
+   design spec (item 110, below — recorded as an erratum, not
+   rewritten, per this project's convention for committed design
+   docs), and into `docs/CARRIED-DEBT.md`'s own item-15 closing text —
+   the very file item 84's closure credits with getting this right.
+   Closed a second time by a repo-wide grep sweep with a per-hit
+   verdict at four sites, so a fifth instance could not hide behind a
+   fix that only touched the site a reviewer happened to find. Process
+   lesson 4 covers the mechanism. **(T7/T8)**
+8. **Task 7's first dispatch attempt failed by editing the wrong repo.**
+   A cheaper-tier implementer edited `/home/brice/workspace/assay`
+   (the MAIN repo, on `master`) instead of the worktree, then reported
+   BLOCKED citing "HEAD is 91adfbe" — master's HEAD, not the
+   worktree's. Inspection found both new tests defined TWICE in the
+   stray edit (the second pair would have silently shadowed the
+   first). The stray edit was discarded with `git checkout --` in the
+   main repo and master verified clean at 91adfbe; nothing of value
+   was lost, since the canonical test code lived in the brief.
+   Re-dispatched on a stronger model with an explicit cd-and-verify
+   preamble — the 128-tool-call, no-commit failure mode is what the
+   model-selection guidance warns cheap tiers do on multi-step work.
+   **(T7)**
+9. **The baseline-guard test's brief fixture was wrong; the corrected
+   one is what shipped.** `PinnedSpans([])` trips the fake's own
+   length assertion before the probe ever reaches the baseline
+   arithmetic, and `LaneFake({})` returns lanes with no timings, so
+   `per_lane is None` short-circuits the `baseline_decode_tps > 0`
+   check and produces a silent `degradation_ratio=None` rather than
+   any error. Item 18's actual defect needs lanes that DO report
+   timings; verified live, that fixture reaches `TypeError: '>' not
+   supported between instances of 'NoneType' and 'int'` with
+   `meter.spent.calls == 2` pre-fix, and `ValueError` with
+   `meter.spent.calls == 0` post-fix — the second assertion is the
+   whole point, since "before the spend" is the property, not merely
+   "raises." **(T9)**
+10. **The `CallRecorder` concurrency fixture was wrong twice over in
+    the brief.** `tests.fakes.ScriptedBackend` rejects any prompt it
+    does not recognize, so it cannot drive 200 synthetic calls;
+    `test_replay.py`'s own local `ScriptedBackend` pops from a shared
+    list and is not thread-safe, so it would fail a concurrency test
+    for the wrong reason. The fixture that shipped is a small,
+    deliberately STATELESS fake defined inline in the test — no shared
+    mutable state, so any lost or corrupt row is unambiguously the
+    recorder's fault. **(T11)**
+11. **Tasks 10 and 11 were batched into one dispatch** — both small,
+    independent, test-only additions touching disjoint files with no
+    shared state, saving a full dispatch-and-review cycle. **(T10/T11)**
+12. **The recorder-lock test stays; its docstring stops claiming to
+    prove the lock.** The implementer honestly reported the
+    concurrency test passing with the lock removed. A controller sweep
+    at 100 B / 8 KB / 64 KB payloads, with and without the lock, 8
+    threads × 15 rows, confirmed it: 120/120 rows, 0 unparseable, all
+    six configurations. `CallRecorder._write_row` opens, writes one
+    row, and closes per call; on Linux, `write()` to a regular file is
+    atomic per-inode and `O_APPEND` makes the offset update atomic, so
+    the lock is genuinely redundant for THIS write pattern on THIS
+    platform. Decision: keep the test (it pins a real property — every
+    row present and whole under concurrency — and would catch a FUTURE
+    write-path change, such as a long-lived handle or a row built
+    incrementally); fix the docstring so it does not overclaim; record
+    item 101 as only PARTIALLY closed. Same shape as
+    `OVERLAP_TOLERANCE_S` / item 16 — a guard kept and flagged, not
+    retired on evidence that never exercised it. **(T11)**
+
+---
+
+## Deferred, by area
+
+### Carried forward from v1.7, still open
+
+Restated here in full, as the wave's own record of what remained
+untouched or unresolved, per this file's self-containment rule. Full
+text and any earlier history live at their original item numbers in
+the v1.7 section below; nothing here supersedes that text, and nothing
+there was struck through unless closed above. (Presented as labelled
+paragraphs rather than a renumbered list, deliberately: these item
+numbers are non-sequential cross-references, and a native ordered
+list here would auto-renumber them to 1-4 on render and silently break
+every citation.)
+
+**Item 1 (pool-to-35) — still priced and not taken.** `ready` remains
+unreachable non-provisionally under looks {5, 10, 20}: a perfect 20/20
+reads `ready` provisional at Wilson lower 0.8389 against the 0.9
+floor, and n = 35 is the smallest n at which a perfect cell clears
+`ready` undisputed. Brice deferred it again for v1.8, on the same
+terms as v1.7: +30 calls on full (15 tasks × 2 turns) over today's 40,
+for a rung of decisiveness the schedule does not otherwise reach.
+Untouched by any v1.8 task.
+
+**Item 16 (`OVERLAP_TOLERANCE_S`) — still stands on a sanity check,
+not a derivation, and it now blocks TWO things instead of one.** The
+endpoint that would retire it — one that actually serializes — still
+does not exist: fifteen campaign profiles at both k = 2 and k = 4 show
+full `n_lanes_ok`, empty `lane_errors`, empty `skipped`, throughout.
+The same missing endpoint now ALSO leaves `verdict.parallel`'s new
+`serialized` gate unexercised by live data — a rule with a real branch
+and zero rows that have ever taken it. `test_no_campaign_row_ever_
+read_serialized` pins that absence as a fact the suite states out
+loud, rather than one that quietly erodes as campaigns accumulate and
+nobody notices the gate has never fired.
+
+**Item 17 (evidence-class strings re-declared) — now declared THREE
+times, not two, and the third copy is v1.8's.**
+`profile._parallel_verdict` needed the same weakest-first ranking
+`parallel._weakest` already used (against `parallel._EVIDENCE_WEAKEST_
+FIRST`), and `profile._PARALLEL_EVIDENCE_WEAKEST_FIRST` was added as a
+full re-declaration — confirmed byte-identical to
+`parallel._EVIDENCE_WEAKEST_FIRST` during Task 4's review. This is a
+regression in the literal sense: the fix (one shared public tuple) has
+been available and unscheduled since v1.7's close, and v1.8 added to
+the duplication it was already carrying rather than resolving it.
+
+**Item 106 (multi-turn chains) — remains untouched.** Every family
+through v1.8 still scores a single request/reply or a two-turn tool
+exchange. Whether a model holds a plan across N turns — and where it
+stops holding it — is a different measurement with its own cost curve
+and failure taxonomy, and it needs its own spec. No v1.8 task touched
+this.
+
+### Parallel
+
+107. **The parallel floors are CHOSEN and no live row exercises either
+     boundary.** Every one of the campaign's thirty k-readings sits at
+     `degradation_ratio` 0.995–1.007 against floors of 0.8 (`ready`)
+     and 0.5 (`risky`) — a 10× span of single-lane speed (28 → 288
+     tok/s) and every reading clears `ready` by a wide margin. The
+     condition for deriving rather than choosing them is the same
+     missing serialized endpoint item 16 already names: nothing in the
+     live cluster has ever approached either number, so the floors are
+     a sanity check against the cluster's shape, not a measurement of
+     where degradation actually begins. `floor_provenance =
+     "chosen-2026-08-17"` says so at every point of use, matching the
+     `OVERLAP_TOLERANCE_S` idiom deliberately. **(T4)**
+108. **`probe_parallel`'s `baseline_decode_tps` parameter is typed
+     `float`, not `float | None`**, although item 18's fix means a
+     `None` is now runtime-guarded (raises `ValueError` before any
+     spend) rather than reaching a bare `TypeError`. The type hint
+     still promises a value the guard proves callers cannot rely on
+     being there. Pre-existing since the parameter's introduction; no
+     type-checker is configured anywhere in this repo, so nothing
+     currently catches the mismatch mechanically. **(T9)**
+109. **`_parallel_verdict`'s mode-cap is applied textually AFTER the
+     ratio ladder, while its docstring narrates "mode gates first."**
+     The Task 4 reviewer proved behavioural equivalence across all six
+     truth-table rows by hand, and by mutation: replacing the
+     conditional cap with an unconditional assignment makes the
+     `serialized` + ratio-0.30 row fail (`'risky' != 'unusable'`),
+     confirming the suite genuinely catches the cap-vs-assign bug
+     class regardless of source order. The docstring describes rule
+     PRIORITY, which the code preserves; only the prose-vs-code
+     ordering is cosmetic. **(T4)**
+
+**Item 112 (the 0.25s tolerance cliff is now load-bearing for a
+published rung) — recorded, not fixed, by the final fix wave
+(2026-08-17).** `classify_mode` calls a pair `serialized` unless
+consecutive lanes overlap by MORE than `OVERLAP_TOLERANCE_S`; for
+lanes launched together that means each lane must last longer than
+0.25s to be called `parallel`. Measured directly: 0.1s
+genuinely-concurrent lanes read `serialized`; 0.3s lanes read
+`parallel`. Consequences:
+
+- With `DECODE_MAX_TOKENS = 64`, the fastest live campaign model
+  (`qwen2.5-coder-1.5b-instruct-q8_0`, 288 tok/s) computes to a
+  **0.222s** pure-decode span against the 0.25s tolerance — it read
+  `parallel` only because prefill and HTTP pushed the wall span over.
+  A faster endpoint on this tier gets `risky` for the fleet question
+  while serving every lane at full rate.
+- The house fake takes the `serialized` branch on every full-mode run
+  — pinned by `test_full_mode_parallel_verdict_is_produced_and_reads_
+  risky_not_ready` (M10, the same fix wave): `ScriptedBackend`'s
+  in-process lanes return well under 0.25s, so `degradation_ratio`
+  reads ~1.0 while `mode` still reads `serialized`, and the verdict
+  caps at `risky`.
+- Direction of error is UNDER-claim, which is the safe side — but it
+  is still a wrong rung on a public page, driven by a constant this
+  file already records as unexercised by live data (item 16). This
+  shares item 16's retirement condition exactly: an endpoint that
+  actually serializes.
+
+### Documentation
+
+110. **The v1.8 design spec's own arithmetic is imprecise: "0.995
+     minimum over ninety lanes."** `degradation_ratio` is one value
+     per k-reading, and the campaign's minimum (0.99526) is the
+     minimum over the thirty k-readings, not the ninety lanes — the
+     same conflation item 84 closed once and this wave regressed
+     (ruling 7). The spec is a committed design document, and per this
+     project's convention it is not silently rewritten after the fact;
+     this entry is the dated amendment sitting beside the original
+     text instead. Correct figure: 0.995 minimum over **thirty
+     k-readings**, comprising ninety lanes. Location:
+     `docs/superpowers/specs/2026-08-17-assay-v1.8-gate-and-floors-design.md:165`.
+     **(T8, ruling 7 amendment)**
+
+**Item 113 (the design spec's exit-3 claim is stronger than the
+instrument can guarantee) — erratum recorded by the final fix wave
+(I4, 2026-08-17).** Spec §2 states a cross-schema pair reads exit 3
+"by construction." `diff` has no version-aware machinery at all; exit
+3 is a consequence of which cells were actually measured. Verified: a
+v8-vs-v9 pair where the v9 side measured `parallel` drops
+`verdict.parallel` and reads exit 3, as the spec claims — but a v9
+pair whose `parallel` is `unmeasured` on the newer side too (quick
+mode, or full mode where `speed` went unmeasured so `run.py` drops the
+family by name) compares byte-clean and exits **0** even across the
+same schema bump. Cross-schema-ness alone does not decide it; whether
+the newer schema actually measured something new does. The spec is a
+committed design document and per this project's convention is not
+silently rewritten after the fact; this entry is the dated amendment
+sitting beside the original claim instead. Corrected statement (also
+applied to the four operator-facing surfaces — `cli.py`'s docstring,
+`README.md`, `CHANGELOG.md`, `tests/test_diff.py`'s comment — which
+are not spec text and were rewritten directly): a cross-schema pair
+reads exit 3 whenever the newer schema actually measured a cell the
+older one lacks, not merely because the schemas differ; the same
+correction applies to the budget-mode-vs-full-mode claim beside it.
+Location:
+`docs/superpowers/specs/2026-08-17-assay-v1.8-gate-and-floors-design.md`
+§2 (see also the `by construction` phrase repeated at plan
+`docs/superpowers/plans/2026-08-17-assay-v1.8-gate-and-floors.md:1068`
+and `:1098`, also left unedited as committed process record). **(I4)**
+
+### Test hygiene
+
+**Item 101 (`CallRecorder`'s write lock), updated — full text at its
+original number in the v1.7 section below.** The write lock is
+exercised by a concurrency test now
+(`test_call_recorder_keeps_every_row_whole_under_concurrent_writers`),
+but the test's own finding is that the lock is NOT load-bearing for
+today's write pattern: `_write_row` does open-append-one-row-close per
+call, and on Linux `write()` to a regular file is atomic per-inode
+while `O_APPEND` makes the offset update atomic, so rows cannot
+interleave with or without the application-level lock. Confirmed at
+100 B / 8 KB / 64 KB payloads × 8 threads, with and without the lock:
+120/120 rows, 0 unparseable, in all six configurations. The test and
+the lock BOTH stay (ruling 12): the test pins a property worth pinning
+(every row present and whole under concurrent writers) and would catch
+a FUTURE write-path change — a long-lived handle held across calls, or
+a row assembled across several writes — that would make the lock
+load-bearing; the lock costs nothing and guards a property a refactor
+could silently take away. This is recorded the way item 16 is
+recorded: a guard kept and flagged, not retired on the strength of
+evidence that never exercised it. **(T11)**
+
+~~111. **`tests/test_campaign_script.py:29` asserts both `exists()` and
+     `is_dir()` on the same path**, where `is_dir()` alone already
+     implies existence — harmless (the redundant check cannot itself
+     produce a false pass), and its only effect is a slightly less
+     specific failure message if it ever fires. **(T1)**~~ **CLOSED
+     by the final fix wave (I3, 2026-08-17): the redundancy turned out
+     to be the smaller problem.** The same three assertions —
+     `exists()`, `is_dir()`, and a check that
+     `src/assay/__init__.py` sits under the asserted `REPO` — pinned
+     this machine's own checkout path
+     (`/home/brice/workspace/assay`), which is the ONLY test in
+     `tests/` that touches a machine-specific filesystem path, against
+     a README that promises the suite "runs entirely from scripted
+     fakes and recorded transcripts." All three filesystem assertions
+     are removed; the test now pins only the portable property it
+     exists for — `.worktrees` never appears in the wrapper's `REPO=`
+     — on the string alone, with no filesystem access at all.
+
+---
+
+## Process lessons
+
+1. **Sequencing a display-layer fix before the contract that reads
+   it.** The false-drop fix (in `_diff_verdicts`) had to land before
+   exit 3 could be safe to ship, and the wave's own evidence proves the
+   ordering mattered rather than merely sounding prudent: a committed
+   live-rerun profile pair
+   (`docs/superpowers/evidence/live/granite-code-8b-instruct-q8_0-
+   quick.json` against its `live-run2` counterpart) had, pre-fix, a
+   `dropped` of exactly `('verdict.long_context',)` — the false drop,
+   both sides byte-equal `unmeasured` — and post-fix, `dropped == ()`.
+   In the reverse shipping order, this exact pair would have exited 3
+   on a comparison that was actually complete: the false positive the
+   ordering existed to prevent, demonstrated on real committed
+   evidence rather than only a synthetic fixture. The controller's own
+   preflight probe got half of this wrong before the Task 3 implementer
+   caught it (it had claimed neither exit-3 fixture survived the
+   false-drop fix; only one needed to change) — the correction is filed
+   as an erratum in the raw ledger, not smoothed over.
+2. **A test that cannot fail is worse than no test.** Three tests this
+   wave were written, run, and found to pass against code that did NOT
+   yet have the property they claimed to guard: the both-sides-absent
+   drop test (`test_verdicts_keyed_but_unmeasurable_on_both_sides_are_
+   not_dropped`, whose original brief deleted the key from both sides
+   so the comparison loop never reached the guard at all — ruling 5),
+   the parallel-baseline guard test (whose original brief fixtures
+   either tripped an unrelated assertion first or produced a silent
+   `None` result that never raised — ruling 9), and the recorder lock
+   test (found twice: once for using a fixture that could not drive
+   200 synthetic calls or was not thread-safe — ruling 10 — and once,
+   even after fixing the fixture, for a docstring that overclaimed the
+   lock was proven load-bearing when the test's own evidence said the
+   opposite — ruling 12). Every one was caught by demanding a
+   demonstration of failure against the unfixed code or an explicit
+   payload-and-thread sweep, never by reading the test's text.
+3. **A grep for a literal cannot find a semantic reference.** The
+   schema bump's preflight probe searched for the literal `== 8` and
+   predicted exactly two test updates; five were needed, plus two
+   files the grep's own scope never covered
+   (`src/assay/__init__.py`'s `__version__`, and a README schema
+   string). The one instance the grep could never have found compared
+   a frozen campaign corpus against the SYMBOLIC `PROFILE_VERSION`
+   rather than a literal number, and had been passing only because
+   that constant happened to still equal 8 — it would have silently
+   validated a tampered corpus the moment the constant moved to 9. The
+   fix pins the frozen corpus to the literal `8` forever, the same way
+   the older `_COMMITTED_PROFILES` corpus is pinned to `{1, 2, 3, 4}` —
+   a frozen corpus must be pinned to its own permanent schema, never to
+   a moving constant, no matter how the pin happens to read today.
+4. **A closed wording defect regressed and had to be closed a second
+   time, at four sites, because it kept propagating from one document
+   into the next.** Item 84's conflation — "ninety lanes (15 models ×
+   k in {2, 4})," which computes to 30 — re-entered through the
+   controller's own v1.8 design spec, was faithfully transcribed by an
+   implementer into `src/assay/profile.py:72`, reached the CHANGELOG
+   draft, and then reached `docs/CARRIED-DEBT.md`'s own item-15 closing
+   text — the very entry that credits this project with having fixed
+   this once already. Three of the four sites were found by three
+   different readers (a reviewer, the controller's own audit, and a
+   second controller audit that only found the fourth because the
+   third had not existed yet at the time of the first sweep) rather
+   than by one exhaustive pass. The fix that actually closed it was not
+   a series of one-off edits at whichever site a reader happened to
+   flag — it was a repo-wide grep with a per-hit verdict, so a fifth
+   site could not hide behind a fix that only ever looked where the
+   last reader had pointed.
+
+---
+
 # Carried debt — v1.7 (recorded 2026-08-17 at the wave's close)
 
 Known gaps deliberately carried out of v1.7, with the rulings that
@@ -174,10 +648,16 @@ was recorded for each at the time and is preserved where it bites.
 
 ### Codecs and fixtures
 
-8. **Three grade-ordering surfaces agree only by coincidence** —
+8. ~~**Three grade-ordering surfaces agree only by coincidence** —
    `profile.py` follows the live `GRADES`; `report.py` and `diff.py`
    freeze the triple. The fix is a cross-surface equality test over a
-   deep fixture; nothing fails today if they diverge. **(T4)**
+   deep fixture; nothing fails today if they diverge.~~ **CLOSED in
+   v1.8** — `test_the_three_grade_orderings_agree` pins the equality
+   over a deep six-grade fixture and pins the order itself (`tiny,
+   small, medium, constrained, nested, tabular`). Guard, not a fix:
+   nothing was reordered, and nothing failed at the time it was
+   written — but a future divergence between the three surfaces now
+   fails a test instead of only a review. **(T4/T10)**
 9. `PATCH_CODECS` is defined **negatively**, so a future codec joins the
    patch set silently. **(T8)**
 10. The subset-order and subset-seed invariants are documented but
@@ -195,13 +675,19 @@ was recorded for each at the time and is preserved where it bites.
 
 ### Parallel
 
-15. **No verdict floors — and they are now derivable.** v1.7 shipped
+15. ~~**No verdict floors — and they are now derivable.** v1.7 shipped
     `parallel` as measurement-only on the stated ground that a rung
     invented without a measured floor is the overclaim the rest of the
     schema exists to refuse. That ground is gone: fifteen live rows now
     exist, all reading `mode: parallel` at both k = 2 and k = 4, with
     `degradation_ratio` between 0.995 and 1.007 across a 10× span of
-    single-lane speed (28 → 288 tok/s). **The natural v1.8 opener.**
+    single-lane speed (28 → 288 tok/s). **The natural v1.8 opener.**~~
+    **CLOSED in v1.8** — `verdict.parallel` ladders the worst measured
+    k, mode-gated, at chosen floors 0.8/0.5 carrying
+    `floor_provenance`. "Derivable" was the optimistic word: the
+    cluster sanity-checks a ladder without exercising a boundary, so
+    the floors are chosen and say so. The thirty k-readings are
+    re-laddered by the suite on every run.
 16. **The overlap tolerance sanity check ran, and the flag stands.**
     `OVERLAP_TOLERANCE_S` is 0.25 s; every campaign profile records
     `tolerance_provenance: "chosen-2026-08-17"`. **No real endpoint in
@@ -211,11 +697,34 @@ was recorded for each at the time and is preserved where it bites.
     its edge by none of them**, which is a weaker claim than a derived
     threshold. Retiring the flag needs an endpoint that actually
     serializes; this tier has not produced one.
+
+    *v1.8 note: the same missing endpoint leaves the new verdict's
+    `serialized` gate unexercised by live data too. Both are pinned by
+    `test_no_campaign_row_ever_read_serialized`, which asserts the
+    absence rather than letting it be forgotten.*
 17. Evidence-class strings are re-declared here against `speed.py`'s
     inline literals; the fix is a shared tuple in `speed.py`
     (scope-blocked at the time). **(T5)**
-18. The `baseline is None` guard is missing — a `TypeError` after spend,
-    rather than a clean error. **(T5)**
+
+    *v1.8 note: this got WORSE, not better. `profile._parallel_verdict`
+    needed the same weakest-first ordering to rank a k's evidence class
+    and added a THIRD copy, `profile._PARALLEL_EVIDENCE_WEAKEST_FIRST`
+    — confirmed byte-identical to `parallel._EVIDENCE_WEAKEST_FIRST` by
+    the T4 reviewer. Two duplicates scope-blocked at v1.7's close; v1.8
+    added a third rather than collapsing any of them. The fix is still
+    the same one shared public tuple, still not taken. (T4)*
+18. ~~The `baseline is None` guard is missing — a `TypeError` after
+    spend, rather than a clean error.~~ **CLOSED in v1.8** —
+    `probe_parallel` raises `ValueError` before any lane runs.
+    Non-vacuity shown as a contrast: pre-fix, timed lanes reach
+    `TypeError: '>' not supported between instances of 'NoneType' and
+    'int'` with `meter.spent.calls == 2` (the spend the guard exists to
+    prevent); post-fix, `ValueError` fires with `meter.spent.calls ==
+    0`. The brief's first fixture (`LaneFake({})` / `PinnedSpans([])`)
+    would not have shown this — timing-free lanes make `per_lane is
+    None`, which short-circuits the comparison and hides the defect
+    behind a silent `degradation_ratio=None` — so the test uses lanes
+    that report timings instead. **(T5/T9)**
 19. The 0.0-baseline branch is untested. **(T5)**
 20. The runner's `None`-filter would renumber lanes if it ever fired.
     **(T5)**
@@ -244,11 +753,17 @@ was recorded for each at the time and is preserved where it bites.
     roughly 50% on small-context models. Deliberate: a preflight must
     reserve the worst case it *declares*, and reserving against the
     narrowing would admit a family it could not always pay for. **(T8/T9)**
-29. **"What starts, finishes" is a CALL-meter guarantee only**, and
+29. ~~**"What starts, finishes" is a CALL-meter guarantee only**, and
     **no test exercises the honest partial**: an admitted family can
     still die on the token meter mid-run and keep what it measured. The
     docstring says so (ruling 14 fixed the README and CHANGELOG); the
-    test does not exist. **(T9)**
+    test does not exist.~~ **CLOSED in v1.8** —
+    `test_a_family_admitted_on_calls_can_still_die_on_the_token_meter`
+    pins the derived charges (38 + target tokens per rung: 550 / 1612 /
+    3698 cumulative over the first three rungs) and asserts a
+    2000-token budget cuts at the `2048` rung — named in `skipped`, not
+    inferred from an absent row — while `max_calls` stays far out of
+    reach, so the cut is unambiguously the token meter's. **(T9/T11)**
 30. An asymmetric codec-half drop would leave unnamed placeholders —
     latent only because both halves cost 30 by accident. **(T9)**
 31. `--max-calls` is silently overridden by `--budget-calls` — an idiom
@@ -387,10 +902,15 @@ Detail and evidence:
     unnamed. **(T12)**
 72. One README link uses the old slug convention (both resolve). **(T12)**
 73. `ASSAY_COMMIT` merges stderr into its value on failure. **(T12)**
-74. The campaign corpus glob in `tests/test_profile.py` lacks the
+74. ~~The campaign corpus glob in `tests/test_profile.py` lacks the
     version-key filter its sibling corpus has, so a non-profile JSON
     landing in that directory would `KeyError` rather than fail a named
-    assertion. **(T14)**
+    assertion.~~ **CLOSED in v1.8** — `_CAMPAIGN_PROFILES` now filters
+    on `"assay_profile_version" in payload`, the same rule
+    `_COMMITTED_PROFILES` already used. Confirmed non-narrowing: 15
+    filtered, 15 unfiltered, all three campaign-corpus-dependent
+    assertions (including Task 7's `len(_CAMPAIGN_PROFILES) == 15`)
+    still pass. **(T14/T9)**
 75. ~~The "idle daemon" precondition is actually implemented as **make
     idle**, undocumented in the wrapper's deliberately-absent block.~~
     **CLOSED at T14** — `scripts/campaign-2026-08.sh`'s header now
@@ -470,8 +990,17 @@ Detail and evidence:
 99. A duplicate `>= 4` assertion. **(T1)**
 100. The task-7 phrasing echoes another entry, and the task-11 phrasing
      is the least natural in the pool (both brief-supplied). **(T1)**
-101. `CallRecorder`'s write lock is untested — `test_replay` has no
-     concurrency case. **(T6)**
+101. ~~`CallRecorder`'s write lock is untested — `test_replay` has no
+     concurrency case.~~ **PARTIALLY CLOSED in v1.8** — the concurrency
+     case now exists
+     (`test_call_recorder_keeps_every_row_whole_under_concurrent_writers`,
+     8 threads × 25 calls against a stateless fake, 200/200 rows
+     present and parseable) but does NOT prove the lock is load-bearing
+     — it passed identically with the lock removed, swept at 100 B /
+     8 KB / 64 KB payloads × 8 threads, with and without the lock:
+     120/120 rows, 0 unparseable, all six configurations. See the v1.8
+     section (item 101 update) for the full finding and why the test
+     and the lock both stay anyway. **(T6/T11)**
 102. The report escape-totality test covers the `mode` cell but not the
      `evidence` cell. **(T6)**
 103. ~~`tests/test_run.py:29` carries a stale 546 comment.~~ **CLOSED at
@@ -574,7 +1103,7 @@ bloomery `docs/superpowers/evidence/2026-08-17-drift-watch-live.md`,
 PR #12). Recorded here because they are assay-instrument facts, not
 bloomery defects; v1.8 candidates.
 
-1. **`diff --gate` exits 0 ("no drift beyond noise") on a v8-vs-v4
+1. ~~**`diff --gate` exits 0 ("no drift beyond noise") on a v8-vs-v4
    pair while five measured families vanish** (`long_output`,
    `tool_calling`, three deep `json_object` cells go unmeasured-on-one-
    side). Literally true under the gate's rules — vanished families are
@@ -582,11 +1111,17 @@ bloomery defects; v1.8 candidates.
    reads "nothing changed" across an instrument boundary. bloomery
    guards it with a version precheck that refuses to run the diff at
    all; assay's own gate could rank wholesale family disappearance as
-   at least reportable (a distinct exit, or gating on it).
-2. **`diff` prose falsely reports `dropped: verdict.long_context` for
+   at least reportable (a distinct exit, or gating on it).~~ **CLOSED
+   in v1.8** — exit 3 ("incomplete") fires whenever a cell was measured
+   on exactly one side, in both plain and gate mode, and outranks exit
+   1. The consumer reading exit codes alone is now told the truth.
+2. ~~**`diff` prose falsely reports `dropped: verdict.long_context` for
    equal objects** (reproduced twice, both sides byte-equal on that
    verdict). Prose-only — the gate's exit code is unaffected — but the
-   display layer misnames an unchanged field.
+   display layer misnames an unchanged field.~~ **CLOSED in v1.8** —
+   `_diff_verdicts` adopted the sibling families' rule. It stopped
+   being cosmetic the moment exit 3 read `dropped`, which is why it
+   landed first.
 3. **assay 0.5.0 has no `diff` subcommand; its argparse exits 2**,
    which a consumer maps to "not comparable" — an accidental
    right-answer-for-the-wrong-reason edge, unreachable behind a version

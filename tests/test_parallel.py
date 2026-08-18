@@ -17,6 +17,7 @@ from assay.budget import Budget, BudgetMeter
 from assay.errors import BudgetExhausted, InfrastructureError
 from assay.parallel import (
     OVERLAP_TOLERANCE_S,
+    PARALLEL_SEED_BASE,
     TOLERANCE_PROVENANCE,
     Parallel,
     ParallelRow,
@@ -417,6 +418,27 @@ def test_budget_exhausted_before_any_k_propagates():
             runner=PinnedSpans(((0.0, 1.0), (0.1, 1.1))),
         )
     assert dead.spent.calls == 0
+
+
+def test_probe_parallel_refuses_a_missing_baseline_before_spending():
+    """CARRIED-DEBT item 18. `degradation_ratio` divides by the
+    baseline, so a None reached the division as a TypeError AFTER the
+    lanes were charged and run — the caller paid for a measurement it
+    could not express. The family's own contract says the baseline is
+    the caller's obligation; a contract worth stating is worth
+    enforcing before the spend.
+
+    The lanes here REPORT timings deliberately: with timing-free lanes
+    `per_lane` is None, which short-circuits the comparison and hides
+    the defect behind a silent `degradation_ratio=None`.
+    """
+    seeds = {PARALLEL_SEED_BASE + 2 * 10 + lane: timed_reply(50.0)
+             for lane in range(2)}
+    m = meter()
+    with pytest.raises(ValueError, match="baseline"):
+        probe_parallel(LaneFake(seeds), m, baseline_decode_tps=None, ks=(2,),
+                       runner=PinnedSpans([(0.0, 1.0), (0.0, 1.0)]))
+    assert m.spent.calls == 0, "the guard must fire before any lane is charged"
 
 
 # --- the request shape mirrors the serial speed probe -----------------------

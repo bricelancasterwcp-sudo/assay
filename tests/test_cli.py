@@ -58,7 +58,7 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
 
     assert code == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
-    assert payload["assay_profile_version"] == 8
+    assert payload["assay_profile_version"] == 9
     assert payload["ceiling"]["failure_mode"] == "none_up_to_cap"
     assert payload["verdicts"]["long_context"]["verdict"] == "ready"
     # The documented quick default budget was applied...
@@ -419,6 +419,66 @@ def test_cli_diff_exit_codes(tmp_path, capsys):
     # regression: nothing was subtracted, so nothing is reported.
     assert cli.main(["diff", old, other]) == 2
     assert "not comparable" in capsys.readouterr().out
+
+
+def test_cli_diff_exit_code_table(tmp_path):
+    """The exit contract, ENUMERATED — v1.7's process lesson 2: a claim
+    about what a rule decides is answered by enumerating the rule, not
+    by describing it. Three of this project's defects (the "clearly
+    risky pools can decide" claim, cli.py's hand-counted bisection
+    tail, the TASKS per-prefix docstring) passed prose review and died
+    to an enumeration.
+
+    Rows: (changes, dropped) x (gate on/off). Precedence 2 > 3 > 1 > 0
+    is covered by the last row, where a real regression rides along
+    with an incomplete comparison and the INCOMPLETENESS wins: exit 1
+    asserts a measured number moved, which is a smaller claim than
+    "part of this comparison never happened".
+    """
+    base = _diff_payload(verdicts={
+        "structured_extraction": {"verdict": "ready", "lens": {}}})
+    old = _write_profile(tmp_path / "old.json", base)
+    clean = _write_profile(tmp_path / "clean.json", dict(base))
+    # A cell measured on the NEW side only: the vanishing-family shape.
+    partial = _write_profile(tmp_path / "partial.json", _diff_payload(
+        verdicts={"structured_extraction": {"verdict": "ready", "lens": {}},
+                  "tool_calling": {"verdict": "ready", "lens": {}}}))
+    # A regression AND a one-sided cell in the same pair.
+    both = _write_profile(tmp_path / "both.json", _diff_payload(
+        verdicts={"structured_extraction": {"verdict": "risky", "lens": {}},
+                  "tool_calling": {"verdict": "ready", "lens": {}}}))
+    regression = _write_profile(tmp_path / "regression.json", _diff_payload(
+        verdicts={"structured_extraction": {"verdict": "risky", "lens": {}}}))
+
+    table = [
+        # (new profile, gate, expected exit, why)
+        (clean,      False, 0, "nothing moved, nothing missing"),
+        (clean,      True,  0, "nothing moved, nothing missing"),
+        (regression, False, 1, "a measured verdict fell"),
+        (regression, True,  1, "a measured verdict fell"),
+        (partial,    False, 3, "a cell was measured on one side only"),
+        (partial,    True,  3, "incomplete, even with no regression"),
+        (both,       False, 3, "incompleteness outranks measured drift"),
+        (both,       True,  3, "incompleteness outranks a regression"),
+    ]
+    for new, gate, expected, why in table:
+        argv = ["diff", old, new] + (["--gate"] if gate else [])
+        assert cli.main(argv) == expected, f"{argv}: {why}"
+
+
+def test_cli_diff_not_comparable_outranks_incomplete(tmp_path):
+    """2 > 3. A different model is not a partial comparison, it is the
+    absence of one — nothing was subtracted, so the one-sided cells
+    were never even reached."""
+    old = _write_profile(tmp_path / "old.json", _diff_payload(
+        verdicts={"structured_extraction": {"verdict": "ready", "lens": {}}}))
+    other = _write_profile(tmp_path / "other.json", _diff_payload(
+        model={"name": "other-model", "quant": "Q8_0",
+               "weights_bytes": 8_000_000_000},
+        verdicts={"structured_extraction": {"verdict": "ready", "lens": {}},
+                  "tool_calling": {"verdict": "ready", "lens": {}}}))
+    assert cli.main(["diff", old, other]) == 2
+    assert cli.main(["diff", old, other, "--gate"]) == 2
 
 
 def test_cli_diff_gate_fails_only_on_regressions(tmp_path, capsys):

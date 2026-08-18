@@ -47,7 +47,7 @@
 
 set -u
 
-REPO=/home/brice/workspace/assay/.worktrees/v17
+REPO=/home/brice/workspace/assay
 # The repo's own venv, not a session scratch dir: /tmp is wiped on reboot and
 # belongs to whichever session created it, so a campaign launched days from now
 # must not depend on one. This is an EDITABLE install pointing at $REPO/src, so

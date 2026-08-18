@@ -40,8 +40,14 @@ _COMMITTED_PROFILES = sorted(
 #: The reader-side claim still has to be made for the current schema,
 #: so it is made here against its own corpus.
 _CAMPAIGN_PROFILES = sorted(
-    (_REPO_ROOT / "docs/superpowers/evidence/tier-enthusiast-2026-08"
-     ).glob("*.json"),
+    (path
+     for path in (_REPO_ROOT / "docs/superpowers/evidence/tier-enthusiast-2026-08"
+                  ).glob("*.json")
+     # CARRIED-DEBT item 74: the version key is the filter, not the
+     # folder listing. This directory also holds diffs and read-outs,
+     # and a JSON that is not a profile must be SKIPPED rather than
+     # parsed and blamed — a KeyError names the wrong culprit.
+     if "assay_profile_version" in json.loads(path.read_text(encoding="utf-8"))),
     key=lambda p: p.name,
 )
 _GRADES = ("tiny", "small", "medium")
@@ -841,13 +847,15 @@ def test_a_parallel_payload_predating_the_skipped_list_parses_as_empty():
     assert _parallel_from(payload).skipped == ()
 
 
-def test_the_parallel_family_carries_no_verdict():
-    # Measurement-only in v1.7: the degradation numbers are reported and
-    # no rung is claimed from them. A verdict here would need a floor,
-    # and there is no measured floor to put one on yet.
+def test_the_parallel_family_verdict_arrived_in_v1_8():
+    # v1.7 shipped this family measurement-only: the degradation numbers
+    # were reported and no rung was claimed from them, because there was
+    # no measured floor to put one on. v1.8 wires an actual verdict in
+    # (see test_schema_v9_names_the_parallel_verdict for the standing
+    # invariant) — this test is the historical marker for that flip.
     verdicts = compute_verdicts(None, None, None, None)
 
-    assert not any("parallel" in name for name in verdicts)
+    assert "parallel" in verdicts
 
 
 # --- schema v6: the loop error script in the schema and the verdict --------
@@ -955,12 +963,12 @@ def test_the_recovery_demotion_never_promotes():
 
 def test_schema_version_and_package_version_move_together():
     # The schema and the distribution version are one release, not two:
-    # a profile that says v8 must have been written by a 0.9.0 probe.
+    # a profile that says v9 must have been written by a 0.10.0 probe.
     import assay
 
-    assert PROFILE_VERSION == 8
-    assert assay.__version__ == "0.9.0"
-    assert 'version = "0.9.0"' in (
+    assert PROFILE_VERSION == 9
+    assert assay.__version__ == "0.10.0"
+    assert 'version = "0.10.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite
@@ -1276,13 +1284,72 @@ def test_every_campaign_profile_parses_and_renders_both_views(path):
 def test_the_campaign_corpus_is_the_fifteen_v8_rows_the_matrix_publishes():
     # The guard on the parametrize above, in both directions: a pruned
     # directory would silently narrow the coverage to whatever survived,
-    # and a profile written by an older instrument landing here would
-    # make the "current schema" claim false without failing anything.
+    # and a profile written by a DIFFERENT instrument landing here would
+    # make the "one campaign, one instrument" claim false without
+    # failing anything.
+    #
+    # v9 (Task 5, 2026-08-17): this pin moved from symbolic
+    # (`PROFILE_VERSION`) to the literal 8. The campaign is not re-run
+    # for every schema bump (an explicit non-goal — see task-5-brief.md)
+    # and this corpus is read-only evidence, so it stays v8 forever now,
+    # the same way `_COMMITTED_PROFILES` stays pinned to {1, 2, 3, 4}. A
+    # symbolic comparison against the live `PROFILE_VERSION` would fail
+    # at every future bump for a reason that has nothing to do with this
+    # corpus going stale.
     payloads = [json.loads(p.read_text(encoding="utf-8"))
                 for p in _CAMPAIGN_PROFILES]
     assert len(payloads) == 15
-    assert {p["assay_profile_version"] for p in payloads} == {PROFILE_VERSION}
+    assert {p["assay_profile_version"] for p in payloads} == {8}
     assert {p["probe_version"] for p in payloads} == {"0.9.0"}
+
+
+def test_every_campaign_k_reading_reads_ready_under_the_chosen_floors():
+    """The floors against the fifteen live rows that motivated them.
+
+    This is the sanity check the spec claims, made mechanical: the
+    2026-08 campaign's thirty k-readings (15 models x k in {2, 4}) are
+    re-laddered here on every run. If a future edit moves a floor above
+    the live cluster, this fails with the model that broke rather than
+    with a prose review nobody ran. It does NOT rescore the committed
+    profiles — they stay v8 and carry no verdict cell; it reads their
+    parallel MEASUREMENTS and asks what today's ladder makes of them.
+    """
+    from assay.profile import _PARALLEL_READY_RATIO, _parallel_verdict
+    from assay.profile import _parallel_from
+
+    assert len(_CAMPAIGN_PROFILES) == 15, "the campaign corpus moved"
+    seen_ks, verdicts = set(), {}
+    for path in _CAMPAIGN_PROFILES:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        parallel = _parallel_from(payload.get("parallel"))
+        assert parallel is not None, f"{path.name}: no parallel family"
+        for row in parallel.rows:
+            seen_ks.add(row.k)
+            assert row.degradation_ratio >= _PARALLEL_READY_RATIO, (
+                f"{path.name} k={row.k}: {row.degradation_ratio} is below "
+                "the ready floor — the live cluster no longer clears it")
+        verdicts[path.name] = _parallel_verdict(parallel)["verdict"]
+
+    assert seen_ks == {2, 4}
+    assert set(verdicts.values()) == {"ready"}, verdicts
+
+
+def test_no_campaign_row_ever_read_serialized():
+    """The mode gate is UNEXERCISED by live data and the suite says so
+    out loud. CARRIED-DEBT item 16's condition for retiring the
+    tolerance flag is the same one that would exercise this gate: an
+    endpoint that actually serializes. This tier has not produced one,
+    and a test asserting the absence is how that stays honest instead
+    of being quietly forgotten.
+    """
+    from assay.profile import _parallel_from
+
+    modes = set()
+    for path in _CAMPAIGN_PROFILES:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        parallel = _parallel_from(payload.get("parallel"))
+        modes.update(row.mode for row in parallel.rows)
+    assert modes == {"parallel"}
 
 
 def test_the_committed_corpus_spans_every_schema_version_ever_written():
@@ -1379,6 +1446,7 @@ def test_unmeasured_inputs_yield_unmeasured_not_unusable():
         "agent_speed": "unmeasured",
         "long_output": "unmeasured",
         "tool_calling": "unmeasured",
+        "parallel": "unmeasured",
     }
     # v1.1: every verdict names its lens, even when unmeasured.
     for entry in verdicts.values():
@@ -1744,3 +1812,198 @@ def test_loop_verdict_downgrades_follow_without_advance():
     # so the lens string must change with it — a profile scored under
     # scripted-loop-v2 may never read as a scripted-loop-v1 measurement.
     assert verdicts["loop_discipline"]["lens"]["instrument"] == "scripted-loop-v2"
+
+
+# --- v1.8: the parallel ladder -----------------------------------------------
+
+
+def _prow(k=2, ratio=1.0, mode="parallel", errors=(), evidence="server_timings",
+          n_lanes_ok=None):
+    """One parallel row. Defaults are a healthy lane: the tests vary
+    exactly the field under discussion. ``n_lanes_ok`` defaults to
+    ``k`` (every lane came back) so existing rows are unaffected."""
+    from assay.parallel import ParallelRow
+    return ParallelRow(k=k, per_lane_decode_tps=10.0,
+                       total_throughput_tps=10.0 * k,
+                       degradation_ratio=ratio, mode=mode,
+                       n_lanes_ok=k if n_lanes_ok is None else n_lanes_ok,
+                       lane_errors=tuple(errors), evidence=evidence)
+
+
+def _parallel(rows, skipped=()):
+    from assay.parallel import Parallel
+    return Parallel(rows=tuple(rows), baseline_decode_tps=10.0,
+                    tolerance_s=0.25, tolerance_provenance="chosen-2026-08-17",
+                    skipped=tuple(skipped))
+
+
+def test_parallel_verdict_truth_table():
+    """The ladder, ENUMERATED. Rules in order:
+
+    1. any skipped k, any measured k with no ratio, any row with
+       `lane_errors`, any row where `n_lanes_ok < k`, or any row with
+       `mode is None` -> unmeasured
+    2. any k reading `serialized` -> risky at most
+    3. otherwise ladder the WORST measured k's degradation_ratio
+
+    Rule 2 exists because a QUEUEING endpoint's per-lane RATE still
+    reads ~1.0 — each lane decodes at full speed, it just waits its
+    turn — so the ratio floors alone cannot catch it. The scheduling
+    fact gates first, which is the whole reason `mode` is the family's
+    headline.
+
+    Rule 1's lane-level checks (C1, 2026-08-17 fix wave) exist because
+    `parallel._row` correctly EXCLUDES errored lanes from the mean
+    instead of zeroing them — right for the mean, but it means a
+    PARTIALLY refused k can still produce a healthy-looking ratio on
+    whatever lanes survived. A fleet claim is about the concurrency
+    asked for, not the concurrency that happened to answer.
+    """
+    from assay.profile import _parallel_verdict
+
+    table = [
+        # (parallel, expected verdict, why)
+        (None, "unmeasured", "the family never ran"),
+        (_parallel([]), "unmeasured", "no k measured"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=0.99)]),
+         "ready", "both ks healthy — the live campaign's shape"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=0.85)]),
+         "ready", "worst k still clears the 0.8 floor"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=0.79)]),
+         "risky", "worst k falls below ready; the BEST k does not save it"),
+        (_parallel([_prow(ratio=0.60), _prow(k=4, ratio=0.99)]),
+         "risky", "the worst k decides, whichever k it is"),
+        (_parallel([_prow(ratio=0.49)]),
+         "unusable", "below the k=2 serialization signature"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, mode="serialized", ratio=1.0)]),
+         "risky", "a queueing endpoint caps at risky whatever the rate says"),
+        (_parallel([_prow(mode="serialized", ratio=0.30)]),
+         "unusable", "the mode CAPS at risky, it does not lift a worse rung"),
+        (_parallel([_prow(ratio=1.0)], skipped=["k=4: budget exhausted"]),
+         "unmeasured", "a refused k leaves the fleet question unanswered"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=None)]),
+         "unmeasured", "a k with no ratio measured no degradation"),
+        (_parallel([_prow(ratio=None)]),
+         "unmeasured", "no ratio at all"),
+        (_parallel([_prow(ratio=1.0),
+                    _prow(k=4, ratio=1.0, errors=("lane 3: connection reset",),
+                          n_lanes_ok=3)]),
+         "unmeasured",
+         "C1: partial lane failure with an otherwise-healthy ratio must "
+         "not publish ready — n_lanes_ok=2 of k=4 is not evidence for k=4"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=1.0, n_lanes_ok=3)]),
+         "unmeasured",
+         "C1: n_lanes_ok < k alone (no lane_errors named) still means "
+         "not every lane at this k came back"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=1.0, mode=None)]),
+         "unmeasured",
+         "C1: mode=None means the scheduling fact — the family's "
+         "headline — was never established; one lane's ratio does not "
+         "answer whether k=4 overlapped at all"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=0.99)]),
+         "ready", "all-healthy row still passes — the gate is not always-on"),
+    ]
+    for parallel, expected, why in table:
+        assert _parallel_verdict(parallel)["verdict"] == expected, why
+
+
+def test_parallel_verdict_boundaries_are_inclusive():
+    """The floor VALUES, pinned exactly. A ladder whose boundary drifts
+    by a rounding is a different instrument."""
+    from assay.profile import (_PARALLEL_READY_RATIO, _PARALLEL_RISKY_RATIO,
+                               _parallel_verdict)
+
+    assert (_PARALLEL_READY_RATIO, _PARALLEL_RISKY_RATIO) == (0.8, 0.5)
+    assert _parallel_verdict(
+        _parallel([_prow(ratio=0.8)]))["verdict"] == "ready"
+    assert _parallel_verdict(
+        _parallel([_prow(ratio=0.5)]))["verdict"] == "risky"
+
+
+def test_parallel_lens_carries_its_floors_and_says_they_were_chosen():
+    """A threshold nobody derived must say so at the point of use —
+    `OVERLAP_TOLERANCE_S`'s rule. No live row has ever crossed either
+    floor, so the provenance is the honest half of the claim."""
+    from assay.profile import _parallel_verdict
+
+    lens = _parallel_verdict(_parallel([_prow(ratio=1.0)]))["lens"]
+    assert lens["metric"] == "degradation_ratio"
+    assert lens["floor_ready"] == 0.8
+    assert lens["floor_risky"] == 0.5
+    assert lens["floor_provenance"] == "chosen-2026-08-17"
+    assert lens["evidence"] == "server_timings"
+
+
+def test_compute_verdicts_carries_the_parallel_cell():
+    from assay.profile import compute_verdicts
+
+    entry = compute_verdicts(None, None, None, None,
+                             parallel=_parallel([_prow(ratio=1.0),
+                                                 _prow(k=4, ratio=0.99)]))["parallel"]
+    assert entry["verdict"] == "ready"
+    assert entry["lens"]["floor_provenance"] == "chosen-2026-08-17"
+
+
+def test_compute_verdicts_parallel_defaults_to_unmeasured():
+    """Quick mode never runs the family, and an unmeasured input reads
+    unmeasured — never worse. `compute_verdicts`' standing rule."""
+    from assay.profile import compute_verdicts
+
+    assert compute_verdicts(None, None, None,
+                            None)["parallel"]["verdict"] == "unmeasured"
+
+
+def test_schema_v9_names_the_parallel_verdict():
+    """The bump exists FOR this cell. A v9 document that does not carry
+    it is not a v9 document."""
+    from assay.profile import PROFILE_VERSION, compute_verdicts
+
+    assert PROFILE_VERSION == 9
+    assert "parallel" in compute_verdicts(None, None, None, None)
+
+
+def test_parallel_lens_reports_the_weakest_evidence_any_scored_k_produced():
+    """The family's own rule, applied one level up: a consumer
+    discounting the verdict needs the worst lane's evidence class, not
+    an average of them."""
+    from assay.profile import _parallel_verdict
+
+    lens = _parallel_verdict(_parallel([
+        _prow(ratio=1.0, evidence="server_timings"),
+        _prow(k=4, ratio=0.9, evidence="wall_clock_counts")]))["lens"]
+    assert lens["evidence"] == "wall_clock_counts"
+
+
+def test_parallel_verdict_unmeasured_lens_says_unmeasured():
+    from assay.profile import _parallel_verdict
+
+    assert _parallel_verdict(None)["lens"]["evidence"] == "unmeasured"
+
+
+def test_the_three_grade_orderings_agree():
+    """CARRIED-DEBT item 8. `profile` follows the live GRADES;
+    `report` and `diff` freeze the triple. They agree today by
+    coincidence and nothing fails if they stop — so a reader comparing
+    a rendered page against a diff would see two different column
+    orders for the same measurement and have no way to tell which was
+    right. Equality, asserted once, over a DEEP fixture: the six-grade
+    json cell is where a frozen triple and a derived list part company.
+    """
+    from assay import diff as diff_mod
+    from assay import profile as profile_mod
+    from assay import report as report_mod
+
+    cell = {"lands": 1.0, "lands_applies": 1.0, "n": 5}
+    deep = {"json_object": {grade: cell
+                            for grade in ("tiny", "small", "medium",
+                                          "nested", "tabular", "constrained")}}
+    from_profile = profile_mod._grade_columns(deep)
+    from_report = report_mod._grade_columns(deep)
+    from_diff = diff_mod._ordered_grades(deep["json_object"],
+                                         deep["json_object"])
+    assert from_profile == from_report == from_diff, (
+        f"profile={from_profile} report={from_report} diff={from_diff}")
+    # The order itself, pinned: long-standing grades first in their
+    # declared order, then the v1.7 shape grades sorted.
+    assert from_profile == ["tiny", "small", "medium",
+                            "constrained", "nested", "tabular"]

@@ -5,6 +5,60 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
+## v0.10 (v1.8): the honest gate and the parallel verdict
+
+Two claims this instrument was making that it should not have been.
+
+**`diff` no longer calls an incomplete comparison a clean one.** A new
+exit `3` fires whenever a cell was measured on exactly one side, in
+both plain and `--gate` mode, and outranks exit `1` — a family that
+vanished is not a measured move, and exit `1`'s narrower claim (a
+number moved) is exactly why it could never carry this. The precedence
+is `2 > 3 > 1 > 0`. Two consequences are intended and worth stating: a
+pair spanning a schema bump reads `3` whenever the newer schema
+actually measured a cell the older one lacks — not merely because the
+schemas differ — which is the instrument-changed rule enforcing
+itself, and a budget-mode profile compared against a full one reads
+`3` under the same rule, whenever the full run measured a cell the
+budget run skipped. This came out of the field —
+bloomery's drift watch passed a `--gate` on a v8-vs-v4 pair while five
+families went unmeasured.
+
+Underneath it, a **display-layer bug is fixed that would have become an
+exit-code bug**: `_diff_verdicts` sent verdicts that were unmeasured on
+BOTH sides to `dropped`, so two byte-equal profiles reported a dropped
+cell. `dropped` now means precisely "measured on exactly one side" —
+the rule the other four families already kept — which is what makes it
+safe to read as an exit code.
+
+**`parallel` has a verdict.** v1.7 shipped the family
+measurement-only because a rung invented without a measured floor is
+an overclaim. The 2026-08 campaign then produced thirty k-readings (15
+models x k in {2, 4}, ninety lanes) reading `degradation_ratio`
+0.995-1.007 across a 10x span of single-lane speed, which is a cluster
+a ladder can be sanity-checked against. `verdict.parallel` reads the
+WORST measured k: a refused k or a k with no ratio leaves it
+`unmeasured` (the fleet question is about the concurrency you asked
+for, and the k that survived cannot answer for the one that did not);
+any `serialized` k CAPS it at `risky`, because a queueing endpoint's
+per-lane rate looks fine and only the scheduling fact catches it;
+otherwise it ladders on degradation at **0.8 ready / 0.5 risky**.
+
+Those floors are **CHOSEN, not derived**, and the lens carries
+`floor_provenance` saying so — the `OVERLAP_TOLERANCE_S` idiom. Every
+live row sits far above both and **none exercises either boundary**,
+which is a weaker claim than a derived threshold and is recorded as
+one. The suite re-ladders all thirty committed k-readings on every
+run, so a floor that drifts above the live cluster fails a test rather
+than a review.
+
+Profile schema **v9**. No family costs a call more than it did in
+v1.7: the verdict derives from measurements `parallel` already made,
+so the budget defaults (610 full / 130 quick) are untouched. The
+fifteen committed v8 profiles were NOT rescored and the campaign was
+not re-run — they gain an explicitly `unmeasured` cell on the matrix
+and nothing else.
+
 ## v0.9 (v1.7): consumers and the matrix
 
 The first three waves built an instrument an operator runs. This one

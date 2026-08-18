@@ -132,7 +132,7 @@ probe, taking its ceilings from the `Budget` itself (`max_calls`, and
 
 ## The profile
 
-One versioned JSON document (`assay_profile_version: 8`). Every field is
+One versioned JSON document (`assay_profile_version: 9`). Every field is
 a measurement, a `None` with a named reason, or provenance.
 
 | Field | What it says |
@@ -148,8 +148,8 @@ a measurement, a `None` with a named reason, or provenance.
 | `loop` | scripted repair over **two** scripts. `action_fidelity` and `repeat_rate` are rates over the shared `n_turns`, and `anchor_violations` a count over the same turns — all three span golden and error turns alike; `patch_rate` and `finish_rate` are golden-only, over `n_runs`; and — new in v6 — `recovery_rate` / `doom_loop_rate` are error-only, over `n_error_runs`. Single-call probes cannot see loop failure |
 | `long_output` | per-rung `target_tokens`, `generated_tokens`, `distinct_ratio`, `zlib_ratio`, `degenerate`, plus a `skipped` list naming why each unattempted rung did not run |
 | `tools` | native tool calling over a **20-task** pool (`scripted-tools-v2`): `supported` (three-state), `call_rate`, `right_tool_rate`, `args_valid_rate`, `result_use_rate`, the `composite` the verdict ladders on, and `n_tasks` / `n_turns` — rates of **instructed** behavior, see [Native tool calling](#native-tool-calling); `n_truncated` / `n_stop_unreported` (new in v7), the scored turns the token ceiling cut off and the ones whose backend never said how they stopped (recorded beside the rates, never fed into them); and — new in v8 — `stopping_rule`, because full mode now samples the pool **sequentially** at looks {5, 10, 20} while `--quick` keeps the frozen five |
-| `parallel` | **measurement-only** (no verdict, full mode only): one `rows` entry per k ∈ {2, 4} — `per_lane_decode_tps`, `total_throughput_tps`, `degradation_ratio` against the same run's single-lane `speed.decode_tps`, the `mode` (`parallel` / `serialized`) the whole family exists to report, `n_lanes_ok`, `lane_errors`, `evidence` — beside the `baseline_decode_tps` it divided by, the `tolerance_s` the overlap test used with its `tolerance_provenance` (**chosen**, not derived), and a `skipped` list naming every k the budget refused |
-| `verdicts` | `structured_extraction`, `patch_editing`, `long_context`, `loop_discipline`, `chat_speed`, `agent_speed`, `long_output`, `tool_calling` — each `ready` / `risky` / `unusable` / `unmeasured` (`long_output` may also read `degrades-at-N`; `tool_calling` may also read `unsupported`), each carrying its own lens |
+| `parallel` | full mode only: one `rows` entry per k ∈ {2, 4} — `per_lane_decode_tps`, `total_throughput_tps`, `degradation_ratio` against the same run's single-lane `speed.decode_tps`, the `mode` (`parallel` / `serialized`) the whole family exists to report, `n_lanes_ok`, `lane_errors`, `evidence` — beside the `baseline_decode_tps` it divided by, the `tolerance_s` the overlap test used with its `tolerance_provenance` (**chosen**, not derived), and a `skipped` list naming every k the budget refused. Measurement-only through v1.7; `verdicts.parallel` ladders it starting v1.8 (schema v9), on **chosen** (not derived) floors |
+| `verdicts` | `structured_extraction`, `patch_editing`, `long_context`, `loop_discipline`, `chat_speed`, `agent_speed`, `long_output`, `tool_calling`, `parallel` — each `ready` / `risky` / `unusable` / `unmeasured` (`long_output` may also read `degrades-at-N`; `tool_calling` may also read `unsupported`), each carrying its own lens |
 | `provenance` | started/finished, mode, seeds, budget granted vs spent, calibration, and `dropped`. The seconds pair appears only when a wall clock was actually granted — `spent.seconds: 0.0` on an unmetered run would read as a run that took no time |
 
 No probe uses grammar/JSON forcing: constrained generation deforms
@@ -667,11 +667,20 @@ carries an answer:
 | `0` | comparable, nothing moved beyond noise (with `--gate`: nothing moved in the regression direction) |
 | `1` | drift found (with `--gate`: a **regression** was found; an improvement alone still exits 0) |
 | `2` | not comparable — a different model, quant, weight size, or hardware tier, **or** a tier/emulated marking recorded on only one side |
+| `3` | **incomplete** — at least one cell was measured on exactly one side, so part of the comparison never happened. Outranks `1`: a family that vanished is not a measured move. A pair spanning a schema bump reads `3` whenever the newer schema actually measured a cell the older one lacks — not merely because the schemas differ — and a budget-mode profile compared against a full one reads `3` under the same rule, whenever the full run measured a cell the budget run skipped |
 | `4` | a profile file could not be read or parsed. Never `1`: exit 1 claims a measured change, and an unreadable file measured nothing |
 
 `--gate` is the CI shape: a model that got *faster* should not fail a
 build, so only worsening drift exits 1. `--json PATH` writes the full
 result for machine consumption.
+
+Exit `3` is why a green `assay diff --gate` can be trusted. Before
+v1.8 a pair whose newer profile simply stopped measuring five families
+exited `0` — "no drift beyond noise" — because a vanished family is
+unmeasured rather than worse. It was measured in the field: a v8
+profile compared against a v4 one passed the gate while `long_output`,
+`tool_calling` and three deep JSON cells went unmeasured on one side.
+The rule now is that an incomplete comparison says so.
 
 ## The None-vs-zero rule
 
