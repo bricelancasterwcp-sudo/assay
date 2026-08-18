@@ -1303,7 +1303,7 @@ def test_the_campaign_corpus_is_the_fifteen_v8_rows_the_matrix_publishes():
     assert {p["probe_version"] for p in payloads} == {"0.9.0"}
 
 
-def test_every_campaign_lane_reads_ready_under_the_chosen_floors():
+def test_every_campaign_k_reading_reads_ready_under_the_chosen_floors():
     """The floors against the fifteen live rows that motivated them.
 
     This is the sanity check the spec claims, made mechanical: the
@@ -1817,13 +1817,16 @@ def test_loop_verdict_downgrades_follow_without_advance():
 # --- v1.8: the parallel ladder -----------------------------------------------
 
 
-def _prow(k=2, ratio=1.0, mode="parallel", errors=(), evidence="server_timings"):
+def _prow(k=2, ratio=1.0, mode="parallel", errors=(), evidence="server_timings",
+          n_lanes_ok=None):
     """One parallel row. Defaults are a healthy lane: the tests vary
-    exactly the field under discussion."""
+    exactly the field under discussion. ``n_lanes_ok`` defaults to
+    ``k`` (every lane came back) so existing rows are unaffected."""
     from assay.parallel import ParallelRow
     return ParallelRow(k=k, per_lane_decode_tps=10.0,
                        total_throughput_tps=10.0 * k,
-                       degradation_ratio=ratio, mode=mode, n_lanes_ok=k,
+                       degradation_ratio=ratio, mode=mode,
+                       n_lanes_ok=k if n_lanes_ok is None else n_lanes_ok,
                        lane_errors=tuple(errors), evidence=evidence)
 
 
@@ -1837,7 +1840,9 @@ def _parallel(rows, skipped=()):
 def test_parallel_verdict_truth_table():
     """The ladder, ENUMERATED. Rules in order:
 
-    1. any skipped k, or any measured k with no ratio -> unmeasured
+    1. any skipped k, any measured k with no ratio, any row with
+       `lane_errors`, any row where `n_lanes_ok < k`, or any row with
+       `mode is None` -> unmeasured
     2. any k reading `serialized` -> risky at most
     3. otherwise ladder the WORST measured k's degradation_ratio
 
@@ -1846,6 +1851,13 @@ def test_parallel_verdict_truth_table():
     turn — so the ratio floors alone cannot catch it. The scheduling
     fact gates first, which is the whole reason `mode` is the family's
     headline.
+
+    Rule 1's lane-level checks (C1, 2026-08-17 fix wave) exist because
+    `parallel._row` correctly EXCLUDES errored lanes from the mean
+    instead of zeroing them — right for the mean, but it means a
+    PARTIALLY refused k can still produce a healthy-looking ratio on
+    whatever lanes survived. A fleet claim is about the concurrency
+    asked for, not the concurrency that happened to answer.
     """
     from assay.profile import _parallel_verdict
 
@@ -1873,6 +1885,23 @@ def test_parallel_verdict_truth_table():
          "unmeasured", "a k with no ratio measured no degradation"),
         (_parallel([_prow(ratio=None)]),
          "unmeasured", "no ratio at all"),
+        (_parallel([_prow(ratio=1.0),
+                    _prow(k=4, ratio=1.0, errors=("lane 3: connection reset",),
+                          n_lanes_ok=3)]),
+         "unmeasured",
+         "C1: partial lane failure with an otherwise-healthy ratio must "
+         "not publish ready — n_lanes_ok=2 of k=4 is not evidence for k=4"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=1.0, n_lanes_ok=3)]),
+         "unmeasured",
+         "C1: n_lanes_ok < k alone (no lane_errors named) still means "
+         "not every lane at this k came back"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=1.0, mode=None)]),
+         "unmeasured",
+         "C1: mode=None means the scheduling fact — the family's "
+         "headline — was never established; one lane's ratio does not "
+         "answer whether k=4 overlapped at all"),
+        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=0.99)]),
+         "ready", "all-healthy row still passes — the gate is not always-on"),
     ]
     for parallel, expected, why in table:
         assert _parallel_verdict(parallel)["verdict"] == expected, why

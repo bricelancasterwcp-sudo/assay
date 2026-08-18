@@ -545,11 +545,22 @@ def _parallel_verdict(parallel: Parallel | None) -> dict:
 
     Three rules, in order:
 
-    1. **A refused k, or a k with no ratio, means unmeasured.** The
-       question is whether the box holds up at the concurrency asked
-       for; answering it from the k that happened to survive is
-       inference, not measurement. `Parallel.skipped` already names
-       every refused k for exactly this reason.
+    1. **A refused k, a k with no ratio, or a k whose lanes did not
+       all come back, means unmeasured.** The question is whether the
+       box holds up at the CONCURRENCY ASKED FOR; answering it from
+       whichever lanes happened to survive is inference, not
+       measurement. `Parallel.skipped` already names every refused k
+       for exactly this reason. `parallel._row` correctly excludes
+       errored lanes from the mean rather than zeroing them — that is
+       right for the mean, but it means a row's ratio can read
+       healthy on `n_lanes_ok` out of `k` lanes while the rest never
+       returned at all. Lanes that never returned are not evidence
+       that the ones that did represent the fleet, so any row with a
+       non-empty `lane_errors`, or with `n_lanes_ok < k`, is
+       unmeasured too. The same holds for `mode is None`: it means
+       the scheduling fact itself — the family's headline — could not
+       be established (`classify_mode` needs two lanes to compare),
+       and a rung with no headline is not a rung.
     2. **A `serialized` k caps the verdict at risky.** A queueing
        endpoint's per-lane RATE is fine — each lane decodes at full
        speed once it is its turn — so the ratio floors cannot see it.
@@ -563,7 +574,11 @@ def _parallel_verdict(parallel: Parallel | None) -> dict:
         return {"verdict": "unmeasured", "lens": _parallel_lens("unmeasured")}
     ratios = [row.degradation_ratio for row in parallel.rows]
     evidence = _weakest_parallel_evidence(parallel.rows)
-    if parallel.skipped or any(ratio is None for ratio in ratios):
+    if (parallel.skipped
+            or any(ratio is None for ratio in ratios)
+            or any(row.lane_errors for row in parallel.rows)
+            or any(row.n_lanes_ok < row.k for row in parallel.rows)
+            or any(row.mode is None for row in parallel.rows)):
         return {"verdict": "unmeasured", "lens": _parallel_lens(evidence)}
     worst = min(ratios)
     if worst >= _PARALLEL_READY_RATIO:
