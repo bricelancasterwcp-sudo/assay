@@ -753,3 +753,28 @@ def test_a_document_with_no_probe_version_dashes_it_rather_than_saying_none():
 
     assert "probe=—" in html
     assert "probe=None" not in html
+
+
+def test_the_matrix_has_a_parallel_column():
+    """The fleet question reaches the published page. It sits after
+    agent_speed, at the end of the row: the two speed columns answer
+    "how fast for one caller" and this one answers "and for four"."""
+    from assay.report import VERDICT_ORDER
+
+    assert VERDICT_ORDER[-1] == "parallel"
+
+
+def test_a_v8_row_renders_the_parallel_cell_as_unmeasured():
+    """The invariant the schema bump promised: a profile measured by
+    the previous instrument may change on this page ONLY by gaining an
+    explicitly-unmeasured cell. It must not borrow a rung it never
+    earned, and it must not vanish from the page."""
+    from assay.report import render_report
+
+    page = render_report([{
+        "assay_profile_version": 8,
+        "model": {"name": "v8-model"},
+        "verdicts": {"long_context": {"verdict": "ready", "lens": {}}},
+    }])
+    assert "v8-model" in page
+    assert page.count('class="badge b-unmeasured">unmeasured</span>') >= 1

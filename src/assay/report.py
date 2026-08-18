@@ -31,6 +31,11 @@ VERDICT_ORDER = (
     # into an agent needs both at once.
     "tool_calling",
     "long_context", "long_output", "chat_speed", "agent_speed",
+    # v1.8, last and beside the speed pair on purpose: those two answer
+    # "how fast for one caller", this one answers "and what happens
+    # with four". A v8 row has no such cell and renders unmeasured
+    # rather than borrowing a rung it never earned.
+    "parallel",
 )
 
 #: The four colours the stylesheet actually defines. Any other verdict
