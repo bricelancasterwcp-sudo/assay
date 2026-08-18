@@ -15,9 +15,12 @@ both plain and `--gate` mode, and outranks exit `1` — a family that
 vanished is not a measured move, and exit `1`'s narrower claim (a
 number moved) is exactly why it could never carry this. The precedence
 is `2 > 3 > 1 > 0`. Two consequences are intended and worth stating: a
-pair spanning a schema bump reads `3` by construction, which is the
-instrument-changed rule enforcing itself, and so does a budget-mode
-profile compared against a full one. This came out of the field —
+pair spanning a schema bump reads `3` whenever the newer schema
+actually measured a cell the older one lacks — not merely because the
+schemas differ — which is the instrument-changed rule enforcing
+itself, and a budget-mode profile compared against a full one reads
+`3` under the same rule, whenever the full run measured a cell the
+budget run skipped. This came out of the field —
 bloomery's drift watch passed a `--gate` on a v8-vs-v4 pair while five
 families went unmeasured.
 

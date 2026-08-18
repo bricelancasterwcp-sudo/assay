@@ -26,9 +26,12 @@ unused by every other subcommand — carries its answer:
      hardware tier, so nothing was subtracted and nothing is reported
   3  incomplete — at least one cell was measured on exactly one side,
      so part of the comparison never happened. Outranks 1: a vanished
-     family is not a measured move. A cross-schema pair reads 3 by
-     construction (the instrument-changed rule enforcing itself), and
-     so does a budget-mode profile against a full one
+     family is not a measured move. A cross-schema pair reads 3
+     whenever the newer schema actually measured a cell the older one
+     lacks — not merely because the schemas differ — which is the
+     instrument-changed rule enforcing itself; a budget-mode profile
+     against a full one reads 3 under the same rule, whenever the full
+     run measured a cell the budget run skipped
   4  a profile file could not be read or parsed. Never 1: exit 1 from
      this command claims a measured change, and an unreadable file
      measured nothing
@@ -275,7 +278,7 @@ def _build_parser() -> argparse.ArgumentParser:
     diff = subparsers.add_parser(
         _DIFF_COMMAND,
         help="compare two profile JSONs: what moved beyond noise "
-             "(exit 1 = drift, 2 = not comparable)")
+             "(exit 1 = drift, 2 = not comparable, 3 = incomplete)")
     diff.add_argument("old", type=Path, help="the earlier profile JSON")
     diff.add_argument("new", type=Path, help="the later profile JSON")
     diff.add_argument(

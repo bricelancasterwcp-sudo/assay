@@ -667,7 +667,7 @@ carries an answer:
 | `0` | comparable, nothing moved beyond noise (with `--gate`: nothing moved in the regression direction) |
 | `1` | drift found (with `--gate`: a **regression** was found; an improvement alone still exits 0) |
 | `2` | not comparable — a different model, quant, weight size, or hardware tier, **or** a tier/emulated marking recorded on only one side |
-| `3` | **incomplete** — at least one cell was measured on exactly one side, so part of the comparison never happened. Outranks `1`: a family that vanished is not a measured move. A pair spanning a schema bump reads `3` by construction, and so does a budget-mode profile compared against a full one |
+| `3` | **incomplete** — at least one cell was measured on exactly one side, so part of the comparison never happened. Outranks `1`: a family that vanished is not a measured move. A pair spanning a schema bump reads `3` whenever the newer schema actually measured a cell the older one lacks — not merely because the schemas differ — and a budget-mode profile compared against a full one reads `3` under the same rule, whenever the full run measured a cell the budget run skipped |
 | `4` | a profile file could not be read or parsed. Never `1`: exit 1 claims a measured change, and an unreadable file measured nothing |
 
 `--gate` is the CI shape: a model that got *faster* should not fail a
