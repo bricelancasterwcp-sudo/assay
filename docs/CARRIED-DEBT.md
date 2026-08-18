@@ -206,8 +206,8 @@ was recorded for each at the time and is preserved where it bites.
     k, mode-gated, at chosen floors 0.8/0.5 carrying
     `floor_provenance`. "Derivable" was the optimistic word: the
     cluster sanity-checks a ladder without exercising a boundary, so
-    the floors are chosen and say so. The ninety lanes are re-laddered
-    by the suite on every run.
+    the floors are chosen and say so. The thirty k-readings are
+    re-laddered by the suite on every run.
 16. **The overlap tolerance sanity check ran, and the flag stands.**
     `OVERLAP_TOLERANCE_S` is 0.25 s; every campaign profile records
     `tolerance_provenance: "chosen-2026-08-17"`. **No real endpoint in
