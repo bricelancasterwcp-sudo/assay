@@ -738,3 +738,29 @@ def test_the_house_fake_answers_the_real_prompt():
     assert len(out.rungs) == len(RUNGS)
     assert out.skipped == ()
     assert all(r.degenerate is False for r in out.rungs)
+
+
+def test_a_family_admitted_on_calls_can_still_die_on_the_token_meter():
+    """CARRIED-DEBT item 29. "What starts, finishes" is a CALL-meter
+    guarantee — the README, the CHANGELOG and `run.py`'s docstring all
+    say so after ruling 14 qualified them — and nothing tested the
+    other half: an admitted family CAN still be cut mid-run by the
+    token meter, and when it is, it keeps what it measured.
+
+    A claim three documents make and no test exercises is a claim, not
+    a property. The charges here are derived, not guessed: each rung
+    costs `38 + target` tokens, so 550 / 1612 / 3698 cumulative over
+    the first three rungs, and a 2000-token budget cuts at 2048 while
+    `max_calls` stays far out of reach — the cut is the TOKEN meter's.
+    """
+    meter = BudgetMeter(Budget(max_calls=99, max_prompt_tokens=2000))
+    result = probe_long_output(ScriptedBackend(), meter, ceiling_max=None)
+
+    measured = [rung.target_tokens for rung in result.rungs]
+    assert measured == [512, 1024], "the rungs it paid for must survive"
+    assert any("2048" in entry for entry in result.skipped), (
+        "the cut is NAMED, not inferred from an absent row")
+    assert any("4096" in entry for entry in result.skipped)
+    # Nothing was recorded for a call that never launched.
+    assert meter.spent.prompt_tokens == 1612
+    assert meter.spent.calls == 2

@@ -9,6 +9,7 @@ never falls through to live or to a canned value.
 
 import json
 import pathlib
+import threading
 
 import pytest
 
@@ -515,3 +516,44 @@ def test_the_committed_v15_anchor_transcript_still_replays():
     for row in rows:
         replayed = replayer.generate(_PROMPT, seed=row["seed"], max_tokens=4096)
         assert replayed.text == row["text"]
+
+
+def test_call_recorder_write_lock_holds_under_concurrent_writers(tmp_path):
+    """CARRIED-DEBT item 101. `CallRecorder` takes a write lock and the
+    suite had no concurrency case — which is exactly the configuration
+    the parallel family creates: k threads recording into one recorder.
+    A half-written row is not a smaller transcript, it is an
+    unparseable one, and the transcript IS the evidence.
+
+    The inner fake is deliberately STATELESS: it shares nothing between
+    threads, so a missing or corrupt row can only be the recorder's
+    doing. `test_replay`'s scripted fake pops from a list and would
+    fail this test for its own reasons.
+    """
+    class _AlwaysReplies:
+        caps = CAPS
+        model = MODEL
+
+        def generate(self, prompt, *, seed, max_tokens, num_ctx=None):
+            return make_reply(f"reply to {prompt}")
+
+    path = tmp_path / "transcript.jsonl"
+    recorder = CallRecorder(_AlwaysReplies(), path)
+    n_threads, per_thread = 8, 25
+
+    def _write(worker):
+        for i in range(per_thread):
+            recorder.generate(f"w{worker} c{i}", seed=worker * 100 + i,
+                              max_tokens=16)
+
+    threads = [threading.Thread(target=_write, args=(w,))
+               for w in range(n_threads)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    rows = path.read_text(encoding="utf-8").splitlines()
+    assert len(rows) == n_threads * per_thread
+    for row in rows:
+        json.loads(row)  # every row whole, not merely present
