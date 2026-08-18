@@ -22,12 +22,19 @@ def _assignment(name: str) -> str:
 
 
 def test_the_wrapper_points_at_the_repository_not_a_worktree():
+    """Pins the property that matters, not the operator's checkout.
+
+    The script's `REPO=` must not name a `.worktrees` path — a wave's
+    worktree is removed when the wave closes, so a committed script
+    that depends on one dies at its own preflight on the very next
+    rerun. This is asserted on the string alone; it must hold on any
+    clone, so it does not inspect the filesystem for a path that only
+    exists on the machine that authored the script.
+    """
     repo = _assignment("REPO")
     assert ".worktrees" not in repo, (
         "a committed script must not depend on a worktree: worktrees are "
         "removed at the close of the wave that made them")
-    assert pathlib.Path(repo).exists() and pathlib.Path(repo).is_dir()
-    assert (pathlib.Path(repo) / "src/assay/__init__.py").exists()
 
 
 def test_the_wrapper_uses_the_repo_venv():
