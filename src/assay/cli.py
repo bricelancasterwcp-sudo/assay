@@ -24,9 +24,14 @@ unused by every other subcommand — carries its answer:
      improvement alone still exits 0)
   2  not comparable — a different model, quant, weight size, or
      hardware tier, so nothing was subtracted and nothing is reported
+  3  incomplete — at least one cell was measured on exactly one side,
+     so part of the comparison never happened. Outranks 1: a vanished
+     family is not a measured move. A cross-schema pair reads 3 by
+     construction (the instrument-changed rule enforcing itself), and
+     so does a budget-mode profile against a full one
   4  a profile file could not be read or parsed. Never 1: exit 1 from
      this command claims a measured change, and an unreadable file
-     measured nothing.
+     measured nothing
 
 The CLI supplies documented budget defaults (the default full mode: 610
 calls / 1M prompt tokens; quick: 130 / 220k); the library requires an
@@ -358,9 +363,25 @@ def _load_profile(path: Path) -> dict:
 
 def _diff_exit_code(result: DiffResult, *, gate: bool) -> int:
     """Not comparable outranks everything: it is not a clean run and it
-    is not a regression, it is the absence of a comparison."""
+    is not a regression, it is the absence of a comparison.
+
+    Incomplete (3) is the PARTIAL form of that same fact and outranks
+    the measured classes for the same reason. A pair where five
+    families vanish and nothing else moves is not "no drift beyond
+    noise" — it is a comparison that mostly did not happen, and a
+    consumer reading exit codes alone was being told the opposite.
+    Measured live by bloomery's drift watch against a v8-vs-v4 pair,
+    which exited 0 under --gate while long_output, tool_calling and
+    three deep json cells went unmeasured on one side.
+
+    Precedence 2 > 3 > 1 > 0. Exit 1 keeps its precise claim — a
+    measured number moved — which is why a vanished family could never
+    ride on it.
+    """
     if not result.comparable:
         return 2
+    if result.dropped:
+        return 3
     if gate:
         return 1 if any(change.direction == "regression"
                         for change in result.changes) else 0

@@ -531,5 +531,10 @@ def render_diff(result: DiffResult) -> str:
     if result.within_noise:
         lines.append("within noise: " + ", ".join(result.within_noise))
     if result.dropped:
+        # Said BEFORE the list, because the list alone reads as a
+        # footnote and this is the headline: part of the comparison
+        # did not happen. Exit 3 says the same thing to a machine.
+        lines.append(f"incomplete: {len(result.dropped)} cell(s)"
+                     " measured on one side only")
         lines.append("dropped: " + ", ".join(result.dropped))
     return "\n".join(lines)
