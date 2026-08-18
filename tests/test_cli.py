@@ -58,7 +58,7 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
 
     assert code == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
-    assert payload["assay_profile_version"] == 8
+    assert payload["assay_profile_version"] == 9
     assert payload["ceiling"]["failure_mode"] == "none_up_to_cap"
     assert payload["verdicts"]["long_context"]["verdict"] == "ready"
     # The documented quick default budget was applied...

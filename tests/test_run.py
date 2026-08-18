@@ -96,6 +96,7 @@ def test_full_pipeline_produces_complete_profile():
         "agent_speed": "ready",
         "long_output": "ready",
         "tool_calling": "ready",
+        "parallel": "unmeasured",
     }
     # The tools family ran, and ran LAST: five tasks, two turns each.
     assert profile.tools is not None

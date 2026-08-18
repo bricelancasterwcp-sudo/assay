@@ -39,7 +39,7 @@ from assay.stats import ladder as _ladder
 from assay.stats import wilson95
 from assay.tools import TOOLS_INSTRUMENT, TOOLSET_NAME, Tools
 
-PROFILE_VERSION = 8
+PROFILE_VERSION = 9
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
              "speed", "loop", "long_output", "tools", "parallel")
@@ -697,6 +697,7 @@ def compute_verdicts(
     loop: Loop | None = None,
     long_output: LongOutput | None = None,
     tools: Tools | None = None,
+    parallel: Parallel | None = None,
     *,
     presentation: str = "default-v1",
     stopping_rule: str = "fixed-n",
@@ -731,6 +732,14 @@ def compute_verdicts(
     That is a measured capability and must not collapse into either
     neighbour — "unmeasured" would hide a fact we established, and
     "unusable" would blame a model that was never asked.
+
+    ``parallel`` (v1.8) is the fleet question: what k concurrent
+    requests do to this endpoint. Its floors are CHOSEN rather than
+    derived and the lens says so — the campaign's ninety lanes sit far
+    above both, so the cluster sanity-checks the ladder without
+    exercising either boundary. A refused k reads "unmeasured": the
+    claim is about the concurrency asked for, and the k that survived
+    cannot stand in for the one that did not.
 
     Unmeasured inputs -> "unmeasured", never worse. ``geometry`` and
     ``envelope`` inform no verdict but are part of the stable signature.
@@ -802,6 +811,7 @@ def compute_verdicts(
         },
         "long_output": _long_output_verdict(long_output),
         "tool_calling": _tool_calling_verdict(tools),
+        "parallel": _parallel_verdict(parallel),
     }
 
 

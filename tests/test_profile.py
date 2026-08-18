@@ -841,13 +841,15 @@ def test_a_parallel_payload_predating_the_skipped_list_parses_as_empty():
     assert _parallel_from(payload).skipped == ()
 
 
-def test_the_parallel_family_carries_no_verdict():
-    # Measurement-only in v1.7: the degradation numbers are reported and
-    # no rung is claimed from them. A verdict here would need a floor,
-    # and there is no measured floor to put one on yet.
+def test_the_parallel_family_verdict_arrived_in_v1_8():
+    # v1.7 shipped this family measurement-only: the degradation numbers
+    # were reported and no rung was claimed from them, because there was
+    # no measured floor to put one on. v1.8 wires an actual verdict in
+    # (see test_schema_v9_names_the_parallel_verdict for the standing
+    # invariant) — this test is the historical marker for that flip.
     verdicts = compute_verdicts(None, None, None, None)
 
-    assert not any("parallel" in name for name in verdicts)
+    assert "parallel" in verdicts
 
 
 # --- schema v6: the loop error script in the schema and the verdict --------
@@ -955,12 +957,12 @@ def test_the_recovery_demotion_never_promotes():
 
 def test_schema_version_and_package_version_move_together():
     # The schema and the distribution version are one release, not two:
-    # a profile that says v8 must have been written by a 0.9.0 probe.
+    # a profile that says v9 must have been written by a 0.10.0 probe.
     import assay
 
-    assert PROFILE_VERSION == 8
-    assert assay.__version__ == "0.9.0"
-    assert 'version = "0.9.0"' in (
+    assert PROFILE_VERSION == 9
+    assert assay.__version__ == "0.10.0"
+    assert 'version = "0.10.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite
@@ -1276,12 +1278,22 @@ def test_every_campaign_profile_parses_and_renders_both_views(path):
 def test_the_campaign_corpus_is_the_fifteen_v8_rows_the_matrix_publishes():
     # The guard on the parametrize above, in both directions: a pruned
     # directory would silently narrow the coverage to whatever survived,
-    # and a profile written by an older instrument landing here would
-    # make the "current schema" claim false without failing anything.
+    # and a profile written by a DIFFERENT instrument landing here would
+    # make the "one campaign, one instrument" claim false without
+    # failing anything.
+    #
+    # v9 (Task 5, 2026-08-17): this pin moved from symbolic
+    # (`PROFILE_VERSION`) to the literal 8. The campaign is not re-run
+    # for every schema bump (an explicit non-goal — see task-5-brief.md)
+    # and this corpus is read-only evidence, so it stays v8 forever now,
+    # the same way `_COMMITTED_PROFILES` stays pinned to {1, 2, 3, 4}. A
+    # symbolic comparison against the live `PROFILE_VERSION` would fail
+    # at every future bump for a reason that has nothing to do with this
+    # corpus going stale.
     payloads = [json.loads(p.read_text(encoding="utf-8"))
                 for p in _CAMPAIGN_PROFILES]
     assert len(payloads) == 15
-    assert {p["assay_profile_version"] for p in payloads} == {PROFILE_VERSION}
+    assert {p["assay_profile_version"] for p in payloads} == {8}
     assert {p["probe_version"] for p in payloads} == {"0.9.0"}
 
 
@@ -1379,6 +1391,7 @@ def test_unmeasured_inputs_yield_unmeasured_not_unusable():
         "agent_speed": "unmeasured",
         "long_output": "unmeasured",
         "tool_calling": "unmeasured",
+        "parallel": "unmeasured",
     }
     # v1.1: every verdict names its lens, even when unmeasured.
     for entry in verdicts.values():
@@ -1835,6 +1848,34 @@ def test_parallel_lens_carries_its_floors_and_says_they_were_chosen():
     assert lens["floor_risky"] == 0.5
     assert lens["floor_provenance"] == "chosen-2026-08-17"
     assert lens["evidence"] == "server_timings"
+
+
+def test_compute_verdicts_carries_the_parallel_cell():
+    from assay.profile import compute_verdicts
+
+    entry = compute_verdicts(None, None, None, None,
+                             parallel=_parallel([_prow(ratio=1.0),
+                                                 _prow(k=4, ratio=0.99)]))["parallel"]
+    assert entry["verdict"] == "ready"
+    assert entry["lens"]["floor_provenance"] == "chosen-2026-08-17"
+
+
+def test_compute_verdicts_parallel_defaults_to_unmeasured():
+    """Quick mode never runs the family, and an unmeasured input reads
+    unmeasured — never worse. `compute_verdicts`' standing rule."""
+    from assay.profile import compute_verdicts
+
+    assert compute_verdicts(None, None, None,
+                            None)["parallel"]["verdict"] == "unmeasured"
+
+
+def test_schema_v9_names_the_parallel_verdict():
+    """The bump exists FOR this cell. A v9 document that does not carry
+    it is not a v9 document."""
+    from assay.profile import PROFILE_VERSION, compute_verdicts
+
+    assert PROFILE_VERSION == 9
+    assert "parallel" in compute_verdicts(None, None, None, None)
 
 
 def test_parallel_lens_reports_the_weakest_evidence_any_scored_k_produced():
