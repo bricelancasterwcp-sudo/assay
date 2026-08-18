@@ -368,6 +368,36 @@ def test_verdict_present_on_one_side_only_is_dropped():
     assert "verdict.patch_editing" in result.dropped
 
 
+def test_verdicts_unmeasured_on_both_sides_are_not_dropped():
+    """`dropped` means "measured on exactly one side" — the rule the
+    other four families already follow (`_exact`, `_diff_codec_cell`,
+    `_diff_speed_cell` all return no cell when both sides are absent).
+
+    Reproduced live against 0.9.0 by bloomery's drift watch: two
+    byte-equal profiles reported `dropped: verdict.long_context`.
+    Nothing vanished between them, and after v1.8 the exit code reads
+    `dropped` directly — so a display-layer lie here would become an
+    exit-code lie.
+    """
+    both = make_verdicts(long_context={"verdict": "unmeasured", "lens": {}})
+    result = diff_profiles(make_profile(verdicts=both),
+                           make_profile(verdicts=json.loads(json.dumps(both))))
+    assert result.dropped == ()
+    assert [c for c in result.changes if c.family == "verdict"] == []
+    # Not "checked and clean" either: an unmeasured cell was not checked.
+    assert "verdict.long_context" not in result.within_noise
+
+
+def test_verdicts_absent_from_both_sides_are_not_dropped():
+    """The same rule for a key neither document carries: a verdict two
+    profiles both predate is not a cell that vanished between them."""
+    thin = make_verdicts()
+    del thin["patch_editing"]
+    result = diff_profiles(make_profile(verdicts=thin),
+                           make_profile(verdicts=json.loads(json.dumps(thin))))
+    assert result.dropped == ()
+
+
 def _long_output(verdict):
     return {"verdict": verdict, "provisional": True, "lens": {}}
 

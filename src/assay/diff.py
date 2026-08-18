@@ -38,11 +38,14 @@ reads. Each family is judged by the strongest evidence its cells carry:
 
 **None is never zero.** A cell measured on one side only goes to
 ``dropped`` and is never scored — as does a verdict that is
-``unmeasured`` on either side, and (same rule, extended from the spec's
-verdict clause) a ``failure_mode`` whose literal value is
-``"unmeasured"``. Absence is not a regression. ``unsupported`` is the
-one word that looks like absence and is not: the endpoint was asked and
-said no, so it ranks (bottom rung) instead of dropping.
+``unmeasured`` on exactly ONE side, and (same rule, extended from the
+spec's verdict clause) a ``failure_mode`` whose literal value is
+``"unmeasured"``. Absence is not a regression. Absence on BOTH sides
+is not even a drop: nothing was compared and nothing vanished, so
+``dropped`` means precisely "measured on exactly one side" — which is
+what v1.8's exit 3 reads. ``unsupported`` is the one word that looks
+like absence and is not: the endpoint was asked and said no, so it
+ranks (bottom rung) instead of dropping.
 """
 
 from __future__ import annotations
@@ -322,8 +325,16 @@ def _diff_verdicts(old: dict, new: dict) -> _Cells:
     for name in sorted(set(old_verdicts) | set(new_verdicts)):
         old_value, old_prov = _verdict_of(old_verdicts.get(name))
         new_value, new_prov = _verdict_of(new_verdicts.get(name))
-        if old_value is None or new_value is None or UNMEASURED in (
-                old_value, new_value):
+        old_measured = old_value is not None and old_value != UNMEASURED
+        new_measured = new_value is not None and new_value != UNMEASURED
+        if not old_measured and not new_measured:
+            # Absent (or unmeasured) on BOTH sides: nothing was
+            # compared and nothing vanished. `dropped` means measured
+            # on exactly one side — the rule `_exact`,
+            # `_diff_codec_cell` and `_diff_speed_cell` already keep,
+            # and the rule v1.8's exit 3 reads directly.
+            continue
+        if not (old_measured and new_measured):
             parts.append(_Cells(dropped=(f"verdict.{name}",)))
             continue
         scored = _exact("verdict", name, old_value, new_value,
