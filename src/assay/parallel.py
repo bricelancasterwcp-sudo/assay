@@ -7,7 +7,9 @@ look nothing alike: an endpoint that BATCHES shares its throughput
 serializes (each lane's latency multiplied by k). For a consumer that
 is the headline, so the family reports it as `mode`.
 
-Measurement-only: no verdict this wave. Three honesty rules hold it up.
+Verdict as of v1.8 (`profile._parallel_verdict`): the worst measured k
+decides, a `serialized` k caps at risky, and a refused k leaves the
+cell unmeasured. Three honesty rules hold the MEASUREMENT up.
 
 **Rates come from the server, never from the client's clock.** Lane
 throughput is read out of the reply body by ``assay.speed``'s

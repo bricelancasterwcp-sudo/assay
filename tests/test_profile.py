@@ -1301,12 +1301,12 @@ def test_every_campaign_lane_reads_ready_under_the_chosen_floors():
     """The floors against the fifteen live rows that motivated them.
 
     This is the sanity check the spec claims, made mechanical: the
-    2026-08 campaign's ninety lanes are re-laddered here on every run.
-    If a future edit moves a floor above the live cluster, this fails
-    with the model that broke rather than with a prose review nobody
-    ran. It does NOT rescore the committed profiles — they stay v8 and
-    carry no verdict cell; it reads their parallel MEASUREMENTS and
-    asks what today's ladder makes of them.
+    2026-08 campaign's thirty k-readings (15 models x k in {2, 4}) are
+    re-laddered here on every run. If a future edit moves a floor above
+    the live cluster, this fails with the model that broke rather than
+    with a prose review nobody ran. It does NOT rescore the committed
+    profiles — they stay v8 and carry no verdict cell; it reads their
+    parallel MEASUREMENTS and asks what today's ladder makes of them.
     """
     from assay.profile import _PARALLEL_READY_RATIO, _parallel_verdict
     from assay.profile import _parallel_from

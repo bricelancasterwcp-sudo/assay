@@ -667,11 +667,20 @@ carries an answer:
 | `0` | comparable, nothing moved beyond noise (with `--gate`: nothing moved in the regression direction) |
 | `1` | drift found (with `--gate`: a **regression** was found; an improvement alone still exits 0) |
 | `2` | not comparable — a different model, quant, weight size, or hardware tier, **or** a tier/emulated marking recorded on only one side |
+| `3` | **incomplete** — at least one cell was measured on exactly one side, so part of the comparison never happened. Outranks `1`: a family that vanished is not a measured move. A pair spanning a schema bump reads `3` by construction, and so does a budget-mode profile compared against a full one |
 | `4` | a profile file could not be read or parsed. Never `1`: exit 1 claims a measured change, and an unreadable file measured nothing |
 
 `--gate` is the CI shape: a model that got *faster* should not fail a
 build, so only worsening drift exits 1. `--json PATH` writes the full
 result for machine consumption.
+
+Exit `3` is why a green `assay diff --gate` can be trusted. Before
+v1.8 a pair whose newer profile simply stopped measuring five families
+exited `0` — "no drift beyond noise" — because a vanished family is
+unmeasured rather than worse. It was measured in the field: a v8
+profile compared against a v4 one passed the gate while `long_output`,
+`tool_calling` and three deep JSON cells went unmeasured on one side.
+The rule now is that an incomplete comparison says so.
 
 ## The None-vs-zero rule
 

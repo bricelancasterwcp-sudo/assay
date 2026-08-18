@@ -195,13 +195,19 @@ was recorded for each at the time and is preserved where it bites.
 
 ### Parallel
 
-15. **No verdict floors — and they are now derivable.** v1.7 shipped
+15. ~~**No verdict floors — and they are now derivable.** v1.7 shipped
     `parallel` as measurement-only on the stated ground that a rung
     invented without a measured floor is the overclaim the rest of the
     schema exists to refuse. That ground is gone: fifteen live rows now
     exist, all reading `mode: parallel` at both k = 2 and k = 4, with
     `degradation_ratio` between 0.995 and 1.007 across a 10× span of
-    single-lane speed (28 → 288 tok/s). **The natural v1.8 opener.**
+    single-lane speed (28 → 288 tok/s). **The natural v1.8 opener.**~~
+    **CLOSED in v1.8** — `verdict.parallel` ladders the worst measured
+    k, mode-gated, at chosen floors 0.8/0.5 carrying
+    `floor_provenance`. "Derivable" was the optimistic word: the
+    cluster sanity-checks a ladder without exercising a boundary, so
+    the floors are chosen and say so. The ninety lanes are re-laddered
+    by the suite on every run.
 16. **The overlap tolerance sanity check ran, and the flag stands.**
     `OVERLAP_TOLERANCE_S` is 0.25 s; every campaign profile records
     `tolerance_provenance: "chosen-2026-08-17"`. **No real endpoint in
@@ -211,6 +217,11 @@ was recorded for each at the time and is preserved where it bites.
     its edge by none of them**, which is a weaker claim than a derived
     threshold. Retiring the flag needs an endpoint that actually
     serializes; this tier has not produced one.
+
+    *v1.8 note: the same missing endpoint leaves the new verdict's
+    `serialized` gate unexercised by live data too. Both are pinned by
+    `test_no_campaign_row_ever_read_serialized`, which asserts the
+    absence rather than letting it be forgotten.*
 17. Evidence-class strings are re-declared here against `speed.py`'s
     inline literals; the fix is a shared tuple in `speed.py`
     (scope-blocked at the time). **(T5)**
@@ -574,7 +585,7 @@ bloomery `docs/superpowers/evidence/2026-08-17-drift-watch-live.md`,
 PR #12). Recorded here because they are assay-instrument facts, not
 bloomery defects; v1.8 candidates.
 
-1. **`diff --gate` exits 0 ("no drift beyond noise") on a v8-vs-v4
+1. ~~**`diff --gate` exits 0 ("no drift beyond noise") on a v8-vs-v4
    pair while five measured families vanish** (`long_output`,
    `tool_calling`, three deep `json_object` cells go unmeasured-on-one-
    side). Literally true under the gate's rules — vanished families are
@@ -582,11 +593,17 @@ bloomery defects; v1.8 candidates.
    reads "nothing changed" across an instrument boundary. bloomery
    guards it with a version precheck that refuses to run the diff at
    all; assay's own gate could rank wholesale family disappearance as
-   at least reportable (a distinct exit, or gating on it).
-2. **`diff` prose falsely reports `dropped: verdict.long_context` for
+   at least reportable (a distinct exit, or gating on it).~~ **CLOSED
+   in v1.8** — exit 3 ("incomplete") fires whenever a cell was measured
+   on exactly one side, in both plain and gate mode, and outranks exit
+   1. The consumer reading exit codes alone is now told the truth.
+2. ~~**`diff` prose falsely reports `dropped: verdict.long_context` for
    equal objects** (reproduced twice, both sides byte-equal on that
    verdict). Prose-only — the gate's exit code is unaffected — but the
-   display layer misnames an unchanged field.
+   display layer misnames an unchanged field.~~ **CLOSED in v1.8** —
+   `_diff_verdicts` adopted the sibling families' rule. It stopped
+   being cosmetic the moment exit 3 read `dropped`, which is why it
+   landed first.
 3. **assay 0.5.0 has no `diff` subcommand; its argparse exits 2**,
    which a consumer maps to "not comparable" — an accidental
    right-answer-for-the-wrong-reason edge, unreachable behind a version

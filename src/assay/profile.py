@@ -69,12 +69,13 @@ _AGENT_RISKY_TPS = 80.0
 
 #: The parallel family's degradation floors. CHOSEN, not derived, and
 #: the lens says so at every point of use — `OVERLAP_TOLERANCE_S`'s
-#: rule. The 2026-08 campaign's ninety lanes (15 models x k in {2, 4})
-#: all read between 0.995 and 1.007 across a 10x span of single-lane
-#: speed, so every live row sits far above both floors and NONE of them
-#: exercises either boundary. 0.5 is the arithmetic signature a k=2
-#: endpoint would show if serialization ever surfaced in the per-lane
-#: rate; 0.8 sits below the live cluster and above that signature.
+#: rule. The 2026-08 campaign's thirty k-readings (15 models x k in
+#: {2, 4}, ninety lanes) all read `degradation_ratio` between 0.995 and
+#: 1.007 across a 10x span of single-lane speed, so every live row sits
+#: far above both floors and NONE of them exercises either boundary.
+#: 0.5 is the arithmetic signature a k=2 endpoint would show if
+#: serialization ever surfaced in the per-lane rate; 0.8 sits below
+#: the live cluster and above that signature.
 #: Retiring the provenance needs an endpoint that actually degrades.
 _PARALLEL_READY_RATIO = 0.8
 _PARALLEL_RISKY_RATIO = 0.5
@@ -108,10 +109,11 @@ class Profile:
     loop: Loop | None
     long_output: LongOutput | None
     tools: Tools | None
-    # Measurement-only (v1.7): what k concurrent requests do to one
-    # endpoint. No verdict reads it — there is no measured floor to
-    # ladder a degradation ratio against yet, and a rung invented for one
-    # would be the overclaim the rest of this schema exists to refuse.
+    # What k concurrent requests do to one endpoint (v1.7). Measurement-
+    # only through v1.7 — there was no measured floor to ladder a
+    # degradation ratio against yet, and a rung invented for one would
+    # have been the overclaim the rest of this schema exists to refuse.
+    # _parallel_verdict (v1.8) now reads it against CHOSEN floors.
     parallel: Parallel | None
     verdicts: dict[str, dict]
     provenance: dict  # started/finished/mode/seeds/budget/spent/calibration/dropped
