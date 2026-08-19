@@ -169,6 +169,14 @@ class DiffResult:
     changes: tuple[Change, ...]
     within_noise: tuple[str, ...]     # cells checked and clean, named
     dropped: tuple[str, ...]          # cells present on one side only
+    #: Cells NOT compared because the two documents were measured under
+    #: different definitions of them (`SEMANTIC_BREAKS`). Distinct from
+    #: `dropped`, which v1.8 pinned to mean measured on exactly one
+    #: side: there, one side has nothing to say; here, both sides speak
+    #: and they are not speaking about the same thing. Defaulted so a
+    #: reader constructing a result without it still gets the honest
+    #: empty answer.
+    incomparable: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -178,6 +186,7 @@ class _Cells:
     changes: tuple[Change, ...] = ()
     within_noise: tuple[str, ...] = ()
     dropped: tuple[str, ...] = ()
+    incomparable: tuple[str, ...] = ()
 
 
 def _merge(*parts: _Cells) -> _Cells:
@@ -185,6 +194,7 @@ def _merge(*parts: _Cells) -> _Cells:
         changes=tuple(c for part in parts for c in part.changes),
         within_noise=tuple(n for part in parts for n in part.within_noise),
         dropped=tuple(d for part in parts for d in part.dropped),
+        incomparable=tuple(i for part in parts for i in part.incomparable),
     )
 
 
@@ -405,6 +415,13 @@ def _diff_verdicts(old: dict, new: dict) -> _Cells:
     new_verdicts = new.get("verdicts") or {}
     parts = []
     for name in sorted(set(old_verdicts) | set(new_verdicts)):
+        cell = f"verdict.{name}"
+        if _straddles(cell, old.get("probe_version"), new.get("probe_version")):
+            # Both sides measured it; they measured different things.
+            # Never scored, and never `dropped` — that word means
+            # something else (v1.8).
+            parts.append(_Cells(incomparable=(cell,)))
+            continue
         old_value, old_prov = _verdict_of(old_verdicts.get(name))
         new_value, new_prov = _verdict_of(new_verdicts.get(name))
         old_measured = old_value is not None and old_value != UNMEASURED
@@ -566,7 +583,8 @@ def diff_profiles(old: dict, new: dict) -> DiffResult:
     comparable, notes = identity_gate(old, new)
     if not comparable:
         return DiffResult(comparable=False, identity_notes=notes,
-                          changes=(), within_noise=(), dropped=())
+                          changes=(), within_noise=(), dropped=(),
+                          incomparable=())
     cells = _merge(
         _diff_ceiling(old, new),
         _diff_shapes(old, new),
@@ -576,7 +594,7 @@ def diff_profiles(old: dict, new: dict) -> DiffResult:
     )
     return DiffResult(comparable=True, identity_notes=notes,
                       changes=cells.changes, within_noise=cells.within_noise,
-                      dropped=cells.dropped)
+                      dropped=cells.dropped, incomparable=cells.incomparable)
 
 
 def _show(value: object) -> str:

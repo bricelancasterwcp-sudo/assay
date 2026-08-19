@@ -92,7 +92,7 @@ def make_profile(**overrides):
         }
     payload = {
         "assay_profile_version": 5,
-        "probe_version": "0.5.0",
+        "probe_version": overrides.pop("probe_version", "0.5.0"),
         "endpoint": {"kind": "ollama", "base_url": "http://x", "autodetected": True},
         "model": model,
         "geometry": None,
@@ -1233,3 +1233,87 @@ def test_an_unknown_instrument_straddles_every_break():
     assert _straddles("verdict.parallel", "0.11.0", None)
     assert _straddles("verdict.parallel", "garbage", "0.11.0")
     assert _straddles("verdict.parallel", None, None)
+
+
+# --- Task 2: DiffResult.incomparable ----------------------------------
+
+
+def _ceiling(max_verified):
+    """Mirrors ``test_cli.py``'s helper of the same name — only
+    ``max_verified`` and ``failure_mode`` are diffed, so a bare
+    two-field ceiling is a complete fixture."""
+    return {"ceiling": {"max_verified": max_verified,
+                        "failure_mode": "hard_error"}}
+
+
+def test_a_straddled_verdict_is_incomparable_not_scored():
+    """v1.9 changed what `verdict.parallel` MEANS — `classify_mode`
+    moved from an absolute-seconds overlap test to a fraction of the
+    shorter span — so the same endpoint can read `risky` under one rule
+    and `ready` under the other. Scoring that as an improvement
+    publishes an instrument change as a fact about the endpoint.
+    """
+    old = make_profile(probe_version="0.10.0", verdicts=make_verdicts(
+        parallel={"verdict": "risky", "lens": {}}))
+    new = make_profile(probe_version="0.11.0", verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+    result = diff_profiles(old, new)
+
+    assert "verdict.parallel" in result.incomparable
+    assert [c for c in result.changes if c.cell == "parallel"] == []
+    assert "verdict.parallel" not in result.within_noise
+    # NOT dropped: v1.8 pinned `dropped` to mean measured on exactly one
+    # side, and both sides measured this. Different fact, different
+    # field.
+    assert "verdict.parallel" not in result.dropped
+
+
+def test_the_same_pair_within_one_era_still_scores():
+    """The guard must not become always-on — that would be its own kind
+    of useless. Two documents from the same side of the break compare
+    exactly as they did before this wave."""
+    old = make_profile(probe_version="0.11.0", verdicts=make_verdicts(
+        parallel={"verdict": "risky", "lens": {}}))
+    new = make_profile(probe_version="0.11.0", verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+    result = diff_profiles(old, new)
+
+    assert result.incomparable == ()
+    (change,) = [c for c in result.changes if c.cell == "parallel"]
+    assert (change.old, change.new) == ("risky", "ready")
+
+
+def test_a_straddle_does_not_stop_the_other_cells_comparing():
+    """The break is per-CELL, not per-document. `ceiling` and `speed`
+    rules did not change at 0.11.0, so a v1.9 boundary must not blind
+    the whole comparison."""
+    old = make_profile(probe_version="0.10.0",
+                       verdicts=make_verdicts(
+                           parallel={"verdict": "risky", "lens": {}}),
+                       **_ceiling(8192))
+    new = make_profile(probe_version="0.11.0",
+                       verdicts=make_verdicts(
+                           parallel={"verdict": "ready", "lens": {}}),
+                       **_ceiling(4096))
+    result = diff_profiles(old, new)
+
+    assert result.incomparable == ("verdict.parallel",)
+    (change,) = [c for c in result.changes if c.family == "ceiling"]
+    assert (change.old, change.new) == (8192, 4096)
+
+
+def test_dropped_and_incomparable_stay_distinct():
+    """Two different reasons a comparison can be incomplete, and a
+    reader must be able to act on the difference: a one-sided cell is
+    fixed by re-running, an incomparable one never can be."""
+    thin = make_verdicts(parallel={"verdict": "risky", "lens": {}})
+    del thin["patch_editing"]
+    old = make_profile(probe_version="0.10.0", verdicts=thin)
+    new = make_profile(probe_version="0.11.0", verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+    result = diff_profiles(old, new)
+
+    assert "verdict.patch_editing" in result.dropped
+    assert "verdict.parallel" in result.incomparable
+    assert "verdict.parallel" not in result.dropped
+    assert "verdict.patch_editing" not in result.incomparable
