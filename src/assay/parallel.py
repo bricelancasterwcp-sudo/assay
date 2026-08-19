@@ -36,9 +36,22 @@ silently drag a mean toward "degraded" and report an unreachable
 endpoint as a slow one. When every lane errors the row carries None
 rates and no mode — nothing was measured, and 0.0 is a measurement.
 
-The clock and the concurrency runner are both injectable; the suite
-never depends on real time, and the default threaded runner is
-exercised against an in-process fake rather than a socket.
+The clock and the concurrency runner are both injectable, and this
+family's own tests (``tests/test_parallel.py``) use both seams to stay
+clock-free BY CONSTRUCTION: synthetic spans in, a classified ``mode``
+out, never a real clock tick; the default threaded runner is exercised
+against an in-process fake rather than a socket. That is narrower than
+"the suite never depends on real time", though — ``probe()`` does not
+thread either seam down to this family (``run.py`` calls
+``probe_parallel`` with neither ``clock`` nor ``runner``, so it falls
+back to ``time.monotonic`` and ``_threaded_runner``; see
+CARRIED-DEBT.md). The one test that pins this family through the full
+``probe()`` -> ``compute_verdicts`` -> ``verdict.parallel`` chain has no
+seam to script the lanes' spans through, so it paces its in-process
+fake's calls in real time instead, deliberately, to give
+``_threaded_runner``'s real OS threads a span long enough to actually
+overlap. That test depends on real time; this family's unit tests do
+not.
 """
 
 from __future__ import annotations

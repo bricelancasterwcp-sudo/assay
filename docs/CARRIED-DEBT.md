@@ -1,3 +1,60 @@
+# Carried debt — v1.9 (recorded 2026-08-18, Task 4)
+
+This wave's full close-out ledger is not written here yet — that is a
+separate, deliberate record following the v1.8/v1.7 convention below.
+One item is filed now, ahead of that record, because it surfaced while
+closing Task 4 and should not wait for a ledger that has not been
+written.
+
+## Deferred, by area
+
+### Parallel
+
+1. **`probe()` threads no clock or concurrency-runner seam into the
+   parallel family.** `probe()` injects `_clock` only into the
+   `BudgetMeter` (`run.py:526-530`) — a seam that exists so a
+   wall-clock budget ceiling can be tested without a sleeping suite.
+   `run.py:682` then constructs `probe_parallel(active, meter,
+   baseline_decode_tps=...)` with neither `clock` nor `runner`
+   forwarded, even though `probe_parallel` accepts both (`parallel.py`)
+   and the family's own unit tests (`tests/test_parallel.py`) use
+   exactly those seams to stay clock-free. The gap is real, not
+   theoretical: `tests/test_run.py`'s
+   `test_full_mode_parallel_verdict_reads_ready_once_overlap_is_scale_free`
+   is the only test that pins the full `run.py` -> `compute_verdicts`
+   -> `verdict.parallel` chain, and it has no way to script the parallel
+   family's lane spans through `probe()`'s public entry point. It works
+   around the gap by pacing its in-process fake's calls in real time
+   (a local `_RealisticallyPacedBackend`, `tests/test_run.py`) instead
+   of injecting synthetic spans — the one test in the suite that
+   depends on real time, and it does so because this seam does not
+   reach it, not by choice. What would close it: threading `clock`
+   and/or `runner` from `probe()` down through to `probe_parallel`, the
+   same way `_clock` already reaches `BudgetMeter`. Not done in v1.9,
+   deliberately — v1.9's scope was the classification rule
+   (`classify_mode`'s fraction, schema v9 → v10), and adding production
+   surface to `run.py` to make one test deterministic was judged
+   disproportionate to what that test needed. **(v1.9, Task 4)**
+
+   **The empirical fact that motivated the workaround, recorded because
+   nobody had written it down:** the house fake's calls return in
+   roughly 10 microseconds — faster than this interpreter's own
+   `threading.Thread.start()` takes to hand control to a new OS thread
+   (measured at roughly 70-100 microseconds between consecutive lanes'
+   start times, this box). Below that floor, `_threaded_runner`'s lanes
+   never share the CPU at all: the first thread runs to completion
+   before the second is even created, so an unmodified fake's lanes
+   produce wall-clock spans that are fully disjoint — genuinely zero
+   overlap, not merely under some threshold. No `classify_mode`
+   tolerance, the old absolute 0.25 s or the new 0.25-of-span fraction,
+   can read two spans that never touch as anything but `serialized`.
+   This is why the house fake could never exercise the `parallel`
+   branch end to end, under either rule — a fixture-speed ceiling
+   orthogonal to which classification rule this project ships, and
+   invisible until something tried to pin the fake's rung against a
+   real `probe_parallel` call rather than synthetic spans. **(v1.9,
+   Task 4)**
+
 # Carried debt — v1.8 (recorded 2026-08-17 at the wave's close)
 
 Known gaps deliberately carried out of v1.8, with the rulings that
