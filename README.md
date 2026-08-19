@@ -618,6 +618,21 @@ It exits 2. Re-baseline with a marked run.
   `disjoint-intervals`, `beyond-2se`, `threshold-20pct-assumed`;
 - **a cell present on one side only** goes in `dropped` — never scored
   as regression or improvement. Absence of evidence is absence.
+- **a cell both sides measured, but under two different rules** goes in
+  `incomparable` — also never scored. `SEMANTIC_BREAKS` (`diff.py`)
+  lists cells a release has redefined without changing their name,
+  type, or presence. It holds **one entry today**
+  (`verdict.parallel`), and it is **not a complete inventory**: at
+  least five earlier releases also redefined existing cells and are not
+  registered, so a pair straddling one of those is still scored
+  silently. See the registry's own comment for the list.
+  `incomparable` covers a **registered** cell only — either because the
+  pair straddles that cell's break, or because a `probe_version` is
+  missing or unparseable on either side, which makes every *registered*
+  break unestablished. Cells with no entry — `ceiling`,
+  `ceiling_shapes`, `codecs`, `speed`, and every unregistered verdict —
+  are compared normally regardless of version, so a version-less
+  profile is **not** protected across the board.
 
 **The verdict ladder:**
 
@@ -667,7 +682,7 @@ carries an answer:
 | `0` | comparable, nothing moved beyond noise (with `--gate`: nothing moved in the regression direction) |
 | `1` | drift found (with `--gate`: a **regression** was found; an improvement alone still exits 0) |
 | `2` | not comparable — a different model, quant, weight size, or hardware tier, **or** a tier/emulated marking recorded on only one side |
-| `3` | **incomplete** — at least one cell was measured on exactly one side, so part of the comparison never happened. Outranks `1`: a family that vanished is not a measured move. A pair spanning a schema bump reads `3` whenever the newer schema actually measured a cell the older one lacks — not merely because the schemas differ — and a budget-mode profile compared against a full one reads `3` under the same rule, whenever the full run measured a cell the budget run skipped |
+| `3` | **incomplete or incomparable** — either at least one cell was measured on exactly one side (`dropped`), or a cell both sides measured was measured under two different rules (`incomparable`, a registered `SEMANTIC_BREAKS` entry). Outranks `1`: neither a vanished family nor a cell the two instruments defined differently is a measured move. A pair spanning a schema bump reads `3` whenever the newer schema actually measured a cell the older one lacks — not merely because the schemas differ — and a budget-mode profile compared against a full one reads `3` under the same rule, whenever the full run measured a cell the budget run skipped |
 | `4` | a profile file could not be read or parsed. Never `1`: exit 1 claims a measured change, and an unreadable file measured nothing |
 
 `--gate` is the CI shape: a model that got *faster* should not fail a
@@ -681,6 +696,33 @@ unmeasured rather than worse. It was measured in the field: a v8
 profile compared against a v4 one passed the gate while `long_output`,
 `tool_calling` and three deep JSON cells went unmeasured on one side.
 The rule now is that an incomplete comparison says so.
+
+**v1.10 added a second cause for exit 3.** `SEMANTIC_BREAKS` (`diff.py`)
+names cells whose measurement rule changed at a given release —
+`verdict.parallel`'s v1.9 fraction rewrite is the one entry today. A
+pair straddling a registered break is never scored, even though both
+sides measured the cell: it lands in `incomparable` rather than being
+compared as if the two runs agreed on what they measured, and exit 3
+fires exactly as it does for `dropped`. `identity_gate` still does not
+check `probe_version` — a version difference is not a different
+endpoint — so this is deliberately narrow: it stops one instrument
+change from reading as an endpoint fact, not general version-awareness.
+
+**How narrow, stated plainly.** The registry is not a complete record
+of this project's rule changes. At least five earlier releases —
+v1.1, v1.3, v1.5, v1.6 and v1.7 — also redefined cells that already
+existed, and none of them is registered, so a pair straddling one of
+those is scored today with no warning. The v1.3 fixture-set change
+alone redefines every `codec.*` cell; the campaign evidence directory
+says so in its own words, that `diff` "deliberately does not gate on
+fixture-set name, so it will subtract across the change without saying
+so". They are not backfilled because doing so needs decisions the
+current design cannot express — several breaks apply only in some
+modes, and the `codec.*` family has no call site that reads the
+registry at all. Recorded as open debt in `docs/CARRIED-DEBT.md`
+(v1.10, "Diff", items 1 and 2). Read a clean `incomparable: ()` as
+"nothing REGISTERED was straddled", not as "the two runs measured the
+same things".
 
 ## The None-vs-zero rule
 

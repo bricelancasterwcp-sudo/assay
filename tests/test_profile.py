@@ -1013,29 +1013,39 @@ def test_the_recovery_demotion_never_promotes():
 
 
 def test_schema_version_and_package_version_move_together():
-    # The schema and the distribution version are one release, not two:
-    # a profile that says v10 must have been written by a 0.11.0 probe.
+    # The schema and the distribution version ship as one release, not
+    # two. Note what that does NOT say: a v10 profile was not necessarily
+    # written by a 0.12.0 probe. v10 arrived in v1.9 (0.11.0) and every
+    # release since writes it, because a schema moves only when a
+    # profile's SHAPE moves — which it did not this wave.
     #
-    # v10 (Task 2, 2026-08-18): PROFILE_VERSION and __version__/pyproject
-    # move together in THIS commit, same as always. The README's own
-    # `assay_profile_version: N` line is Task 4's file in this wave (see
-    # task-2-brief.md's scope boundary) and lands in a later commit — so
-    # the assertion below is expected to stay red between this commit and
-    # that one, for a reason that has nothing to do with this task's
-    # correctness. It is left in place, unweakened, rather than removed,
-    # because it is real coverage Task 4 must satisfy before the wave is
-    # done.
+    # This is not a per-commit fact, it is a standing invariant: whatever
+    # PROFILE_VERSION currently is, __version__/pyproject must agree with
+    # it, and the README must state it in a line a reader who never opens
+    # profile.py can still find. v1.10 (package 0.12.0) left the schema
+    # at v10 — nothing about a profile changed this wave, only how two
+    # profiles are compared — so this commit updates the package-version
+    # literals below without touching PROFILE_VERSION or the README's
+    # `assay_profile_version` line.
     import assay
 
     assert PROFILE_VERSION == 10
-    assert assay.__version__ == "0.11.0"
-    assert 'version = "0.11.0"' in (
+    assert assay.__version__ == "0.12.0"
+    assert 'version = "0.12.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite
     # (it said 3 while PROFILE_VERSION was 4) because nothing pinned it.
     assert f"assay_profile_version: {PROFILE_VERSION}" in (
         _REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    #
+    # `test_schema_v10_and_the_package_version_move_together` was folded
+    # in here by v1.10's final fix wave. It asserted the first two lines
+    # above and nothing else — a strict subset — under a name claiming
+    # the two versions moved together, which is the opposite of what
+    # this wave established: the schema stayed at v10 while the package
+    # went 0.11.0 -> 0.12.0. No coverage was lost, and there is now one
+    # place to update per release instead of two.
 
 
 # --- schema v10: the overlap fraction replaces the seconds tolerance --------
@@ -1080,14 +1090,6 @@ def test_a_v10_profile_loads_with_its_fraction():
     parallel = _parallel_from(v10)
     assert parallel.overlap_fraction == 0.25
     assert parallel.tolerance_s is None
-
-
-def test_schema_v10_and_the_package_version_move_together():
-    from assay.profile import PROFILE_VERSION
-    import assay
-
-    assert PROFILE_VERSION == 10
-    assert assay.__version__ == "0.11.0"
 
 
 def test_long_output_round_trips_as_tuples_of_rungs():
