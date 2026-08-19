@@ -333,3 +333,29 @@ def test_render_refusal_shows_notes_only():
     text = render_cover(result)
     assert "not comparable" in text
     assert "probe_version" in text
+
+
+def test_render_refusal_names_the_incomparable_cells_without_overclaiming():
+    """The refusal a bloomery endpoint actually sees on the live
+    `incomparable` path, and the word it may not use.
+
+    Only ONE route reaches `CoverResult.incomparable`: the gate demands
+    EQUAL `probe_version`s, and two equal parseable versions can never
+    straddle a break — so the cells got here because the instrument
+    could not be identified at all, both sides naming the same
+    unreadable version. "measured under different rules" would be
+    literally false about that pair; the honest claim is the one
+    `render_diff` was already ruled into (diff.py's `incomparable`
+    block): nobody established that the two sides share a rule.
+    """
+    result = cover_profiles(
+        _profile(probe_version="0.13",
+                 verdicts={"parallel": {"verdict": "ready"}}),
+        _profile(name="qwen-b", probe_version="0.13",
+                 verdicts={"parallel": {"verdict": "ready"}}))
+    text = render_cover(result)
+    assert "not comparable" in text
+    assert "verdict.parallel" in text
+    assert "not established" in text
+    assert "different rules" not in text
+    assert _cover_exit_code(result) == 2

@@ -160,12 +160,35 @@ def _cover_exit_code(result: CoverResult) -> int:
 
 
 def render_cover(result: CoverResult) -> str:
+    """Plain text in `render_diff`'s style: the answer, then every cell
+    that produced it.
+
+    The headline word is the exit code's own word, chosen by the SAME
+    precedence (`_cover_exit_code`): a pair that is both not-covered
+    and incomplete headlines "incomplete" while still naming its
+    uncovered cells below. A headline that disagreed with the number
+    beside it in CI would send a reader looking for a different answer
+    than the machine acted on. Note what "covered: N cell(s)" counts:
+    every cell the candidate did not rank BELOW the floor on —
+    improvements and neutral flips among them — not cells that held
+    still.
+    """
     if not result.comparable:
         lines = ["not comparable:"]
         lines.extend(f"  {note}" for note in result.identity_notes)
         if result.incomparable:
-            lines.append("  cells measured under different rules: "
-                         + ", ".join(result.incomparable))
+            # "not established", never "measured under different rules"
+            # — `render_diff`'s ruled wording, and cover needs it MORE
+            # than diff does. Diff has two routes here and the weaker
+            # word is the one true for both; cover has exactly one, and
+            # it is the route the stronger word is false about. The gate
+            # demands EQUAL `probe_version`s and two equal parseable
+            # versions cannot straddle a break, so a cell only arrives
+            # here when both sides named the same UNREADABLE version:
+            # nobody can say the rules differed, only that nobody
+            # established they agree.
+            lines.append("  cells not established to share a measurement "
+                         "rule: " + ", ".join(result.incomparable))
         return "\n".join(lines)
     if result.incomplete:
         verdict = "incomplete"
@@ -181,9 +204,9 @@ def render_cover(result: CoverResult) -> str:
         for change in result.uncovered)
     lines.extend(
         f"  incomplete {cell}: the floor measured it, the candidate "
-        f"did not" for cell in result.incomplete)
+        "did not" for cell in result.incomplete)
     lines.append(f"  covered: {len(result.covered)} cell(s)")
     if result.ignored:
-        lines.append(f"  ignored (candidate-only): "
+        lines.append("  ignored (candidate-only): "
                      f"{len(result.ignored)} cell(s)")
     return "\n".join(lines)
