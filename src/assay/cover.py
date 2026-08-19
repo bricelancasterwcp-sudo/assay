@@ -142,3 +142,48 @@ def cover_profiles(floor: dict, candidate: dict) -> CoverResult:
     return CoverResult(comparable=True, identity_notes=notes,
                        uncovered=uncovered, covered=covered,
                        incomplete=incomplete, ignored=ignored)
+
+
+def _cover_exit_code(result: CoverResult) -> int:
+    """0 covered, 1 not covered, 2 refused, 3 incomplete — precedence
+    2 > 3 > 1 > 0, mirroring `diff --gate` so a consumer's four-code
+    reading maps over unchanged. Incomplete outranks not-covered for
+    the same reason exit 3 outranks 1 in diff: an unmeasured floor
+    cell may hide a worse answer than any measured one."""
+    if not result.comparable:
+        return 2
+    if result.incomplete:
+        return 3
+    if result.uncovered:
+        return 1
+    return 0
+
+
+def render_cover(result: CoverResult) -> str:
+    if not result.comparable:
+        lines = ["not comparable:"]
+        lines.extend(f"  {note}" for note in result.identity_notes)
+        if result.incomparable:
+            lines.append("  cells measured under different rules: "
+                         + ", ".join(result.incomparable))
+        return "\n".join(lines)
+    if result.incomplete:
+        verdict = "incomplete"
+    elif result.uncovered:
+        verdict = "not covered"
+    else:
+        verdict = "covered"
+    lines = [f"cover: {verdict}"]
+    lines.extend(f"  note: {note}" for note in result.identity_notes)
+    lines.extend(
+        f"  uncovered {change.family}.{change.cell}: "
+        f"{change.old!r} -> {change.new!r} ({change.basis})"
+        for change in result.uncovered)
+    lines.extend(
+        f"  incomplete {cell}: the floor measured it, the candidate "
+        f"did not" for cell in result.incomplete)
+    lines.append(f"  covered: {len(result.covered)} cell(s)")
+    if result.ignored:
+        lines.append(f"  ignored (candidate-only): "
+                     f"{len(result.ignored)} cell(s)")
+    return "\n".join(lines)

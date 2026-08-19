@@ -1,7 +1,9 @@
 """Cover: the crossed-model coverage check (spec: docs/superpowers/
 specs/2026-08-19-assay-v1.11-cover-design.md)."""
 
-from assay.cover import CoverResult, cover_identity_gate, cover_profiles
+from assay.cover import (CoverResult, _cover_exit_code, cover_identity_gate,
+                         cover_profiles, render_cover)
+from assay.diff import Change
 
 
 def _profile(*, name="qwen-a", quant="Q4_K_M", weights=1000,
@@ -247,3 +249,87 @@ def test_floor_covers_itself():
     assert result.uncovered == ()
     assert result.incomplete == ()
     assert result.covered  # every measured cell, named
+
+
+def _change(cell="patch_editing", family="verdict"):
+    return Change(family=family, cell=cell, direction="regression",
+                  old="ready", new="risky", basis="flip")
+
+
+def test_exit_code_precedence_table():
+    """2 > 3 > 1 > 0, enumerated — the contract bloomery reads."""
+    table = [
+        (CoverResult(comparable=False, identity_notes=("x",)), 2,
+         "refused outranks everything"),
+        (CoverResult(comparable=False, identity_notes=(),
+                     incomparable=("verdict.parallel",)), 2,
+         "a straddled cell is a refusal, not a score"),
+        (CoverResult(comparable=True, identity_notes=(),
+                     uncovered=(_change(),),
+                     incomplete=("verdict.tool_calling",)), 3,
+         "incomplete outranks not-covered: the unmeasured cell may "
+         "hide a worse answer than the measured one"),
+        (CoverResult(comparable=True, identity_notes=(),
+                     uncovered=(_change(),)), 1, "not covered"),
+        (CoverResult(comparable=True, identity_notes=(),
+                     covered=("verdict.patch_editing",),
+                     ignored=("verdict.tool_calling",)), 0,
+         "ignored cells decide nothing"),
+    ]
+    for result, expected, why in table:
+        assert _cover_exit_code(result) == expected, why
+
+
+def test_render_names_the_evidence():
+    """Every bucket reaches the page. The headline is the SAME
+    precedence the exit code uses (2 > 3 > 1 > 0), so this result —
+    uncovered cells AND an unmeasured floor cell — headlines
+    "incomplete" while still naming the uncovered cell below it: a
+    headline that disagreed with the exit code beside it would send a
+    reader looking for a different answer than the machine got."""
+    result = CoverResult(
+        comparable=True,
+        identity_notes=("model.name (informational): 'a' -> 'b'",),
+        uncovered=(_change(),),
+        covered=("verdict.structured_extraction",),
+        incomplete=("verdict.tool_calling",),
+        ignored=("speed.prefill_tps",))
+    text = render_cover(result)
+    assert text.startswith("cover: incomplete")
+    assert _cover_exit_code(result) == 3   # headline == exit code
+    assert "verdict.patch_editing" in text and "'ready' -> 'risky'" in text
+    assert "verdict.tool_calling" in text
+    assert "1 cell(s)" in text          # covered count
+    assert "ignored" in text
+    assert "model.name" in text
+
+
+def test_render_headlines_not_covered_when_that_is_the_answer():
+    """The other side of the precedence: with nothing incomplete, a
+    single uncovered cell IS the headline, in the words the exit-1
+    contract uses."""
+    result = CoverResult(comparable=True, identity_notes=(),
+                         uncovered=(_change(),),
+                         covered=("verdict.structured_extraction",))
+    text = render_cover(result)
+    assert text.startswith("cover: not covered")
+    assert _cover_exit_code(result) == 1
+    assert "uncovered verdict.patch_editing" in text
+
+
+def test_render_headlines_covered_when_nothing_is_missing():
+    result = CoverResult(comparable=True, identity_notes=(),
+                         covered=("verdict.patch_editing",),
+                         ignored=("verdict.tool_calling",))
+    text = render_cover(result)
+    assert text.startswith("cover: covered")
+    assert "ignored (candidate-only): 1 cell(s)" in text
+
+
+def test_render_refusal_shows_notes_only():
+    result = CoverResult(comparable=False,
+                         identity_notes=("probe_version must match "
+                                         "exactly: '0.12.0' -> '0.13.0'",))
+    text = render_cover(result)
+    assert "not comparable" in text
+    assert "probe_version" in text

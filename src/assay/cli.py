@@ -59,6 +59,7 @@ from assay.budget import Budget, BudgetMeter
 from assay.codecs import CodecDirectives
 from assay.ceiling import calibrate, probe_ceiling
 from assay.codecs import probe_codecs
+from assay.cover import _cover_exit_code, cover_profiles, render_cover
 from assay.diff import DiffResult, diff_profiles, render_diff
 from assay.envelope import probe_envelope
 from assay.errors import BudgetExhausted, InfrastructureError
@@ -151,6 +152,7 @@ DEFAULT_BUDGETS = {
 _COMMANDS = ("probe", "geometry", "ceiling", "envelope", "codecs")
 _REPORT_COMMAND = "report"
 _DIFF_COMMAND = "diff"
+_COVER_COMMAND = "cover"
 #: The key every profile schema has carried since v1. A document
 #: without it is not a profile, whatever else it parses as.
 PROFILE_VERSION_KEY = "assay_profile_version"
@@ -297,6 +299,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", dest="json_path", type=Path,
         help="write the full diff result to this path",
     )
+    cover = subparsers.add_parser(
+        _COVER_COMMAND,
+        help="does a candidate profile cover a floor profile? "
+             "one-directional; crossed models allowed, crossed "
+             "instruments refused (exit 1 = not covered, "
+             "2 = refused, 3 = incomplete)")
+    cover.add_argument("floor", type=Path,
+                       help="the floor profile JSON — the requirement")
+    cover.add_argument("candidate", type=Path,
+                       help="the candidate profile JSON")
+    cover.add_argument(
+        "--json", dest="json_path", type=Path,
+        help="write the full cover result to this path",
+    )
     return parser
 
 
@@ -417,6 +433,20 @@ def _run_diff(args: argparse.Namespace) -> int:
             encoding="utf-8",
         )
     return _diff_exit_code(result, gate=args.gate)
+
+
+def _run_cover(args: argparse.Namespace) -> int:
+    result = cover_profiles(_load_profile(args.floor),
+                            _load_profile(args.candidate))
+    print(render_cover(result))
+    if args.json_path is not None:
+        # The whole result, covered cells included: a machine reader
+        # needs to know what was compared, not only what failed.
+        args.json_path.write_text(
+            json.dumps(dataclasses.asdict(result), indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return _cover_exit_code(result)
 
 
 def _load_directives(path: Path | None) -> CodecDirectives | None:
@@ -553,8 +583,8 @@ def _run_probe(args: argparse.Namespace, budget: Budget) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    # Only the measuring commands take a budget; report and diff read
-    # files that already exist and never touch an endpoint.
+    # Only the measuring commands take a budget; report, diff and cover
+    # read files that already exist and never touch an endpoint.
     if args.command == "probe":
         _apply_budget_mode(parser, args)
     budget = _budget_for(args) if args.command in _COMMANDS else None
@@ -563,6 +593,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_report(args)
         if args.command == _DIFF_COMMAND:
             return _run_diff(args)
+        if args.command == _COVER_COMMAND:
+            return _run_cover(args)
         if args.command == "probe":
             return _run_probe(args, budget)
         return _run_family(args, budget)
