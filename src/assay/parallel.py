@@ -238,6 +238,16 @@ def classify_mode(
     None below two lanes: "serialized" is a statement about how two
     lanes relate, and with one lane there is nothing to relate. None,
     never the reassuring answer.
+
+    None also on a degenerate zero-length span. A zero-length span makes
+    any overlap infinite in ratio terms, and the comment used to say so
+    while the code fell through to `serialized` anyway — a lane that
+    measured nothing was being called serialized rather than left
+    unmeasured (CARRIED-DEBT I2, final fix wave). It measured nothing,
+    so it classifies nothing: `None`, the same honest answer the
+    below-two-lanes case already gives, and the one `_parallel_verdict`
+    already routes to `unmeasured` (its rule 1, "the same holds for
+    `mode is None`").
     """
     if len(spans) < 2:
         return None
@@ -245,9 +255,9 @@ def classify_mode(
     for (prev_start, prev_end), (next_start, next_end) in zip(ordered, ordered[1:]):
         overlap = min(prev_end, next_end) - max(prev_start, next_start)
         shortest = min(prev_end - prev_start, next_end - next_start)
-        # A zero-length span makes any overlap infinite in ratio terms;
-        # it measured nothing, so it classifies nothing.
-        if shortest > 0 and overlap > fraction * shortest:
+        if shortest <= 0:
+            return None
+        if overlap > fraction * shortest:
             return "parallel"
     return "serialized"
 

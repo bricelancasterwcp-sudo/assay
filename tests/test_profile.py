@@ -757,8 +757,17 @@ def test_parallel_round_trips_and_every_field_is_wired_into_the_payload():
     profile = make_profile()
     payload = json.loads(profile.to_json())
 
+    # make_parallel() is v9-shaped (tolerance_s/tolerance_provenance
+    # real, overlap_fraction/overlap_provenance left at their None
+    # default) — I6's fix (final fix wave, 2026-08-18) drops a null
+    # era-pair half from the SERIALIZED document, so the payload no
+    # longer carries every field the dataclass declares, only the half
+    # of the tolerance/fraction pair this fixture actually measured.
+    # See test_a_v10_profile_does_not_emit_the_retired_seconds_tolerance
+    # below for the payload this same fixture in its v10 shape emits.
     assert set(payload["parallel"]) == {
-        field.name for field in dataclasses.fields(Parallel)}
+        field.name for field in dataclasses.fields(Parallel)
+    } - {"overlap_fraction", "overlap_provenance"}
     assert set(payload["parallel"]["rows"][0]) == {
         field.name for field in dataclasses.fields(ParallelRow)}
     restored = Profile.from_json(payload)
@@ -768,6 +777,41 @@ def test_parallel_round_trips_and_every_field_is_wired_into_the_payload():
     assert isinstance(restored.parallel.rows[0], ParallelRow)
     assert [row.k for row in restored.parallel.rows] == [2, 4]
     assert restored.parallel.baseline_decode_tps == 16.0
+
+
+def test_a_v10_profile_does_not_emit_the_retired_seconds_tolerance():
+    """I6, final fix wave (2026-08-18): a v10 document must not carry
+    `tolerance_s`/`tolerance_provenance` at all, even as null.
+
+    Before this fix `dataclasses.asdict` wrote every declared field, so
+    EVERY v10 profile ever written shipped
+    `"tolerance_s": null, "tolerance_provenance": null` beside its real
+    `overlap_fraction` — the retired names, present and null, on a
+    document that never measured under them. That contradicts the
+    README's "every field is a measurement, a `None` with a named
+    reason, or provenance" (null there means "measured nothing", not
+    "this schema never had the field") and `_parallel_from`'s own
+    comment drawing exactly that line on the way IN. This is the test
+    that pins the emitted JSON shape directly — the round-trip test
+    above only ever pinned the in-memory dataclass, which is why a v10
+    write carrying the retired keys survived until this fix wave.
+    """
+    from assay.parallel import OVERLAP_FRACTION, OVERLAP_PROVENANCE
+
+    profile = make_profile(parallel=make_parallel(
+        tolerance_s=None, tolerance_provenance=None,
+        overlap_fraction=OVERLAP_FRACTION,
+        overlap_provenance=OVERLAP_PROVENANCE,
+    ))
+    payload = json.loads(profile.to_json())
+
+    assert "tolerance_s" not in payload["parallel"]
+    assert "tolerance_provenance" not in payload["parallel"]
+    assert payload["parallel"]["overlap_fraction"] == OVERLAP_FRACTION
+    assert payload["parallel"]["overlap_provenance"] == OVERLAP_PROVENANCE
+    # And the round trip still lands on the same object: an absent key
+    # and a `.get()`-read None are the same fact on the way back in.
+    assert Profile.from_json(payload) == profile
 
 
 def test_parallel_lane_errors_survive_the_round_trip_as_tuples():
@@ -998,11 +1042,16 @@ def test_schema_version_and_package_version_move_together():
 
 
 def test_a_v9_profile_still_loads_with_its_seconds_tolerance():
-    """The fifteen committed profiles are v9 and were measured under the
-    seconds rule. They are never rescored and never converted: a
-    tolerance in seconds and a dimensionless fraction are different
-    quantities, and mapping one onto the other would invent a
-    measurement nobody made.
+    """The fifteen committed profiles are v8 (pre-v10), not v9 — no
+    committed profile has ever carried schema v9 (CARRIED-DEBT item 16's
+    erratum; M2, final fix wave, 2026-08-18). v9 is still a real schema
+    this reader must handle, since v8 and v9 share the same
+    `tolerance_s`/`tolerance_provenance` shape; the synthetic v9 payload
+    below pins the reader against the version boundary directly. Any
+    profile of either era was measured under the seconds rule and is
+    never rescored and never converted: a tolerance in seconds and a
+    dimensionless fraction are different quantities, and mapping one
+    onto the other would invent a measurement nobody made.
     """
     from assay.profile import _parallel_from
 
@@ -1399,12 +1448,24 @@ def test_every_campaign_k_reading_reads_ready_under_the_chosen_floors():
 
 
 def test_no_campaign_row_ever_read_serialized():
-    """The mode gate is UNEXERCISED by live data and the suite says so
-    out loud. CARRIED-DEBT item 16's condition for retiring the
-    tolerance flag is the same one that would exercise this gate: an
-    endpoint that actually serializes. This tier has not produced one,
-    and a test asserting the absence is how that stays honest instead
-    of being quietly forgotten.
+    """A historical fact about the RETIRED rule, not evidence about
+    today's gate (I3/I4, final fix wave, 2026-08-18).
+
+    These fifteen profiles store the derived `mode` string only —
+    `ParallelRow` has no span field, and the transcripts carry no
+    timing — so the `mode` values this test reads were classified by
+    the 0.25-SECOND absolute-tolerance rule this campaign actually ran
+    under, and they neither exercise nor can be re-checked against
+    `classify_mode`'s current fraction rule: the spans that would let
+    anyone re-classify them were never recorded and cannot be
+    recovered. So this test does NOT show that today's `serialized`
+    gate is unexercised by live data — it cannot show that, one way or
+    the other, from mode strings alone. What it actually pins is
+    narrower and still true: no row in this campaign ever read
+    `serialized` under the rule it was measured with. CARRIED-DEBT item
+    16 records the same absence and item 16's v1.9 note (corrected by
+    this same fix wave) is the accurate account of what is and is not
+    known about live overlap fractions.
     """
     from assay.profile import _parallel_from
 

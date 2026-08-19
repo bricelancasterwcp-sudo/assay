@@ -109,7 +109,18 @@ class PinnedSpans:
 
 
 def counting_clock(step: float = 1.0):
-    """A thread-safe monotonic counter — the suite never reads real time."""
+    """A thread-safe monotonic counter — this file's tests never read
+    real time.
+
+    Narrower than "the suite never reads real time" (M1, final fix
+    wave, 2026-08-18): `tests/test_run.py`'s full-`probe()` pin has no
+    seam to script the parallel family's lane spans through and paces
+    its fake in real time instead, deliberately — see `parallel.py`'s
+    module docstring and CARRIED-DEBT.md for why. Every test in THIS
+    file stays clock-free by construction: synthetic spans in, a
+    classified mode out, this clock counting ticks rather than
+    sampling the wall.
+    """
     state = {"t": 0.0}
     lock = threading.Lock()
 
@@ -225,9 +236,24 @@ def test_dispatch_skew_cannot_manufacture_a_parallel_reading():
 
 
 def test_a_zero_length_span_cannot_divide_by_itself():
-    """A degenerate span makes any overlap infinite in ratio terms.
-    Guarded explicitly rather than left to float luck."""
-    assert classify_mode([(0.0, 0.0), (0.0, 0.0)]) == "serialized"
+    """A degenerate span makes any overlap infinite in ratio terms, and
+    a pair that measured nothing must not be allowed to classify
+    anything (CARRIED-DEBT I2, final fix wave, 2026-08-18).
+
+    Before this fix the zero-length guard stopped the ratio computation
+    but still fell through to the function's default return, so a pair
+    of lanes with no measurable duration at all read `serialized` —
+    and `_parallel_verdict`'s rule 1 has no way to tell that answer
+    apart from a genuinely queued endpoint, so it published `risky` for
+    a k that measured nothing. `classify_mode` already returns `None`
+    for the below-two-lanes case on exactly this principle ("None,
+    never the reassuring answer"); a degenerate span is the same
+    nothing-was-measured fact one level in, and now gets the same
+    honest answer. `_parallel_verdict` already routes `mode is None` to
+    `unmeasured` (its rule 1), so this is a route-through fix, not a
+    new consumer-side branch.
+    """
+    assert classify_mode([(0.0, 0.0), (0.0, 0.0)]) is None
 
 
 def test_a_single_returned_lane_has_no_mode():
