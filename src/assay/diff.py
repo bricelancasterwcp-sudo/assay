@@ -47,6 +47,17 @@ what v1.8's exit 3 reads. ``unsupported`` is the one word that looks
 like absence and is not: the endpoint was asked and said no, so it
 ranks (bottom rung) instead of dropping.
 
+That rule holds for every TOP-LEVEL cell. It has one known breach, at
+the ``verdict.<name>.provisional`` sub-cell: a provisional flag present
+on one side only is reported just when the verdict it rides on did not
+itself move, so a one-sided provisional accompanying a moved — or
+straddled — verdict lands in no field at all. Pre-existing (it predates
+``incomparable``; the ``if scored.changes: continue`` below is the
+original path) and without exit-code consequence, since the verdict's
+own change or straddle already fires. Recorded in docs/CARRIED-DEBT.md,
+v1.10 "Diff" item 3, rather than stated here as an exact equivalence
+the code does not keep.
+
 A cell measured on BOTH sides can still go unscored, for a different
 reason: ``incomparable`` (v1.10, ``SEMANTIC_BREAKS``). ``dropped`` is
 about ONE side having nothing to say — re-running the missing side is

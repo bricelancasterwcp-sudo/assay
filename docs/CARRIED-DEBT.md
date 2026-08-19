@@ -40,6 +40,228 @@ capability.
    version-awareness would need a straddle check at every family's
    comparison site, not one.
 
+   **This item compounds with item 2 below, and the two were filed
+   separately by mistake.** Item 2 enumerates five unregistered
+   semantic breaks; the largest of them (v1.3's fixture-set change)
+   redefines the entire `codec.*` family — which is precisely the set
+   of rows this item says the registry can hold in its type and will
+   silently ignore. So the rows most in need of backfilling are the
+   rows that would not work if backfilled. Neither gap can be closed
+   without the other: registering `codec.*` requires the wiring this
+   item names, and doing the wiring without the rows changes nothing.
+
+2. **The registry's founding premise is false: at least five earlier
+   releases redefined an existing cell and are NOT registered.** (C1,
+   final whole-branch fix wave, 2026-08-19.) The design rests on the
+   claim that every schema bump before v1.9 was **additive** — a new
+   cell the old side lacked, which `dropped` and exit 3 already
+   handle — "which is why one row covers eleven releases". This
+   repository documents its own counter-evidence. Verified against the
+   sources named:
+
+   - **v1.1 (0.2.0)**, commit `7367802`: `_small_landing(codecs, codec)`
+     gained `lens="applies_and_parses"`, repointing
+     `verdict.patch_editing` at a different lens. The v0.2 CHANGELOG
+     entry records the two lenses reading the same model at 0% and
+     100% — the finding that motivated the release.
+   - **v1.3 (0.4.0)**, commit `484bc4c`: one fixture per codec cell
+     became 5 heterogeneous tasks across 5 defect classes, plus changed
+     refusal classification. Redefines **every `codec.*` cell** and the
+     codec-backed verdicts. Committed profiles sit on both sides of it.
+   - **v1.5 (0.6.0)**: fixed n=5 with provisional marking became
+     sequential testing. The CHANGELOG says it outright, and says why
+     saying it matters: *"This wave **amends v1.3's verdict semantics**.
+     The amendment is recorded rather than quietly applied, because a
+     number whose definition changed without saying so is worse than no
+     number."* An existing cell, redefined, by a release that knew it.
+   - **v1.6 (0.7.0)**: `scripted-loop-v1` became `v2`, `n_turns` 3 → 5
+     into the shared denominator, plus a new recovery demotion —
+     `verdict.loop_discipline`.
+   - **v1.7 (0.9.0)**: the tools pool grew 5 → 20 with a look schedule,
+     in full mode. The CHANGELOG enumerates a verdict changing for an
+     unchanged endpoint.
+
+   The repository already knew.
+   `docs/superpowers/evidence/tier-enthusiast-2026-08/diffs/README.md`
+   states that `diff` *"deliberately does not gate on fixture-set name,
+   so it will subtract across the change without saying so"*, and its
+   finding 5 concludes *"None of these five is evidence that a model got
+   worse."*
+
+   **Reproduced at HEAD on real committed evidence**, `tier-enthusiast/
+   qwen2.5-coder-7b-q8-quick.json` against `tier-enthusiast-2026-08/
+   qwen2.5-coder-7b-instruct-q8_0.json`:
+
+   ```
+   old probe_version 0.3.0   new probe_version 0.9.0
+   ceiling.max_verified: 16384 -> 32768 (improvement, rung-change)
+   verdict.patch_editing: ready -> risky (regression, flip)
+   codec.search_replace.tiny.lands_applies:   0.0 -> 0.9428571428571428 (improvement, disjoint-intervals)
+   codec.search_replace.medium.lands_applies: 0.0 -> 0.6571428571428571 (improvement, disjoint-intervals)
+   codec.whole_file.tiny.lands:               0.0 -> 0.6571428571428571 (improvement, disjoint-intervals)
+   incomparable: ()
+   dropped: 10 cells
+   ```
+
+   A 0 → 0.94 "improvement" on the instrument's strongest evidence
+   class, published as an endpoint fact, with `incomparable` empty. The
+   `ceiling.max_verified` line is the same class of artefact and is
+   already recorded as finding 1 of that diffs README (the CAP moved
+   from 16384 to 32768; neither run found a ceiling).
+
+   **Why the rows were NOT backfilled by this wave.** Two of the
+   decisions sit above the registry's type and belong to the project
+   owner, not to a fix wave:
+
+   - Several breaks are **mode-conditional**. v1.7 grew the tools pool
+     5 → 20 *in full mode* and kept `--quick`'s pool verbatim, so
+     `verdict.tool_calling` straddles for one pair of documents and not
+     for another pair carrying the same two versions. A registry keyed
+     `cell -> version` structurally cannot express that; expressing it
+     needs a predicate over the profile, which is a design wave.
+   - The `codec.*` rows **cannot be consulted at all**. Only
+     `_diff_verdicts` reads the registry (item 1 above), so an entry
+     keyed `codec.search_replace.tiny.lands` would type-check, sit in
+     the table, and never be read. Registering it would create the
+     appearance of a guard that does not exist — worse than the honest
+     gap, by this project's own standard.
+
+   **Warning for whoever backfills**, because this will look like a
+   logic problem and is a fixture problem: `tests/test_cli.py`'s
+   `_diff_payload()` emits **no** `probe_version`, so both sides parse
+   to `None` and straddle every *registered* break. Registering
+   `verdict.structured_extraction` or `verdict.tool_calling` will break
+   `test_cli_diff_exit_code_table`, which uses those cells with that
+   helper.
+
+   **Spec erratum, same item.** The v1.10 design spec
+   (`docs/superpowers/specs/2026-08-18-assay-v1.10-semantic-breaks-design.md`)
+   asserts the false premise in three places, and per this project's
+   convention a committed design document is not rewritten after the
+   fact — this entry is the correction sitting beside it:
+
+   - **§0 Scope and non-goals**: *"**Backfilling breaks for earlier
+     versions** — every bump before v1.9 was additive; §1 says why that
+     means the table starts with one row."*
+   - **§1 The defect**: *"Until v1.9 that was harmless, because every
+     schema bump had been **additive**: a new release measured cells the
+     old one did not, so the old side simply lacked them…"* and *"v1.9
+     is the first release to change **what an existing cell means**
+     without changing its name, its type, or its presence."*
+   - **§2 The registry**: *"Every bump before v1.9 was additive — a new
+     cell the old side lacked, which `dropped` and exit 3 already
+     handle — which is why one row covers eleven releases."*
+
+   Corrected statement: v1.9 is the first release for which this project
+   *registered* a semantic break, not the first to create one; the
+   registry covers the breaks it lists and no others; and at least the
+   five releases enumerated above redefined existing cells and remain
+   unregistered, so a pair straddling one of them is still scored today
+   with no warning. Non-spec surfaces carrying the same claim were
+   corrected directly rather than by erratum, following the same split
+   this file used for item 113: `src/assay/diff.py`'s registry comment,
+   `CHANGELOG.md`'s v0.12 entry, `README.md` (both passages), and the
+   v1.9 item 2 paragraph in this file. The claim also appears inside
+   v1.9 item 2's **struck-through** original text above and in the
+   committed plan
+   (`docs/superpowers/plans/2026-08-18-assay-v1.10-semantic-breaks.md`,
+   at `:105`, `:141`-`:145`, `:526`, `:531`, `:545`, `:547`); both are
+   left unedited as process record, exactly as item 113 left the v1.8
+   plan's repeated `by construction` phrasing.
+
+   **How it was found**: by a whole-branch review reading the CHANGELOG
+   for what earlier waves said about their own changes, rather than
+   grepping for the word "additive" — the v1.5 entry states the
+   counter-evidence in the project's own voice, one file away from the
+   claim it falsifies.
+
+3. **The v1.8 `dropped` invariant is not exactly true, and never
+   was.** (Recorded, not fixed, by the final fix wave, 2026-08-19.)
+   The invariant, stated as an equivalence in the v1.8 design spec
+   (`docs/superpowers/specs/2026-08-17-assay-v1.8-gate-and-floors-design.md`:
+   *"**dropped ⇔ the cell was measured on exactly one side.**"*) and
+   re-quoted by the v1.10 spec §4 as *"`dropped` is non-empty **iff**
+   some cell was measured on exactly one side"*, has one breach:
+   `verdict.<name>.provisional`.
+
+   ```
+   old: verdict.parallel = {verdict: ready, provisional: True}   probe 0.10.0
+   new: verdict.parallel = {verdict: ready}                      probe 0.11.0
+     -> dropped=()  incomparable=('verdict.parallel',)  within_noise=()  changes=[]
+   ```
+
+   `verdict.parallel.provisional` was measured on exactly one side and
+   appears in **nothing** — not `dropped`, not `incomparable`, not
+   `changes`, not `within_noise`.
+
+   **Verified pre-existing, and this wave did not create it.** At the
+   branch point `9dd9f5d`, `_diff_verdicts`' `if scored.changes:
+   continue` already swallowed a one-sided provisional whenever the
+   verdict itself also moved. Measured there directly, with no v1.10
+   code present:
+
+   ```
+   old: verdict.parallel = {verdict: risky, provisional: True}
+   new: verdict.parallel = {verdict: ready}
+     -> dropped=()  changes=[('parallel', 'risky', 'ready')]
+   ```
+
+   v1.10 adds a third path into the same swallow — the straddle
+   `continue` — but the sub-cell was already unreachable through a
+   moving verdict. **No exit-code consequence in the v1.10 case**: the
+   straddle fires exit 3 anyway. In the pre-existing case the verdict's
+   own change fires exit 1.
+
+   **Not fixed here**, deliberately: the fix is a change to
+   `_diff_verdicts`' precedence, and that precedence cost this wave a
+   Critical to get right (both-absent → nothing; one-sided → `dropped`;
+   both + straddling → `incomparable`; else score). Reopening it to
+   chase a sub-cell with no exit-code consequence is not a fix-wave
+   change.
+
+   **What is corrected is the WORDING**, because an invariant stated as
+   an equivalence and enforced as an implication is exactly the kind of
+   claim this project does not make. Both statements above are in
+   committed design specs and are not rewritten; this entry is the
+   erratum for both. Corrected statement: *`dropped` names every
+   top-level cell measured on exactly one side; the
+   `verdict.<name>.provisional` sub-cell is reported only when the
+   verdict it rides on did not itself move, so a one-sided provisional
+   accompanying a moved or unscored verdict appears in no field at
+   all.* `src/assay/diff.py`'s module docstring, which is live source
+   prose rather than a design record, is corrected directly.
+
+4. **The version machinery's tests sit at the wrong altitude, in both
+   directions at once.** (Recorded, not fixed, by the final fix wave,
+   2026-08-19.) Five of the eight tests added for the registry import
+   `_straddles` or `_parse_version` directly. `_straddles` has exactly
+   one call site, so a refactor that inlines it breaks all five with
+   `ImportError` — failing for the wrong reason, loudly, while the
+   instrument's behaviour is unchanged. Simultaneously, the two
+   mutations that actually matter went almost entirely unseen. Measured
+   by the fix wave against the branch as it stood:
+
+   | mutation | before | after |
+   |---|---|---|
+   | `_straddles` compares versions lexically (`_parse_version` left intact) | **0 failures** of 1037 | 1 |
+   | `_straddles`' unparseable branch returns `False` (comparable-by-default, the direction §6 forbids) | 1 failure, a private-helper unit test | 7, six behavioural |
+
+   Brittle to refactor and blind to the mutations that matter is an
+   unusual combination, and it has one cause: the tests assert against
+   the helpers instead of against `diff_profiles`.
+
+   The fix wave added the behavioural floor —
+   `test_the_0_9_0_baseline_every_committed_profile_carries_is_incomparable`
+   and `test_an_unidentifiable_instrument_is_incomparable_end_to_end`,
+   both driven through `diff_profiles` — so the blindness is closed.
+   The five helper-level tests were left in place: they are fast,
+   readable, and pin the parser's contract directly, and deleting
+   passing tests to satisfy a stylistic preference is not a fix-wave
+   change. The recorded debt is the imbalance itself, for whoever next
+   touches `_straddles`: if you inline it, the five ImportErrors are
+   expected and the two behavioural tests are the ones that must stay
+   green.
+
 ## Process lessons
 
 1. **A test that pins two fields using two different cells never
@@ -326,6 +548,22 @@ the same not-yet-written-ledger convention.
    of change that deserves its own reviewed diff rather than riding
    along in a fix wave already touching this file in a dozen places.
    **(M3)**
+
+   **CLOSED in v1.10** by the final whole-branch fix wave. Folded into
+   `test_schema_version_and_package_version_move_together`, which
+   already asserted both of its lines plus the `pyproject.toml` string
+   and the README's `assay_profile_version` line, so no coverage was
+   lost. Two things changed since this item was parked. First, the
+   objection above — that removing a test "deserves its own reviewed
+   diff rather than riding along" — was answered by giving it exactly
+   that: one commit, that change only. Second, it stopped being a
+   merely-redundant passing test: the v1.10 package bump left the
+   schema at v10 while `__version__` went 0.11.0 → 0.12.0, so the name
+   `..._move_together` came to assert the opposite of what the release
+   established. A test name is prose, and a false one is a defect here.
+   (Note the line numbers above are stale, as this file's own process
+   lesson predicts: the test sat at `:1085` by the time it was removed,
+   and its sibling at `:1015`.)
 5. **`tests/test_run.py:797` gates the paced fake on
    `seed >= PARALLEL_SEED_BASE`, an open upper bound.** Airtight today —
    every other family's seed base is ≤ 1520 against `PARALLEL_SEED_BASE
