@@ -1579,3 +1579,19 @@ def test_neither_side_measured_a_straddling_cell_is_nothing_at_all():
     assert result.incomparable == ()
     assert "parallel" not in [c.cell for c in result.changes]
     assert "verdict.parallel" not in result.within_noise
+
+
+def test_families_is_diff_profiles_cell_layer():
+    """The Task-1 extraction is a refactor, not a change: on a
+    comparable pair, `diff_profiles`'s cells are exactly
+    `_families`'s."""
+    from assay.diff import _families, diff_profiles
+    old = make_profile()
+    new = make_profile()
+    result = diff_profiles(old, new)
+    cells = _families(old, new)
+    assert result.comparable
+    assert result.changes == cells.changes
+    assert result.within_noise == cells.within_noise
+    assert result.dropped == cells.dropped
+    assert result.incomparable == cells.incomparable
