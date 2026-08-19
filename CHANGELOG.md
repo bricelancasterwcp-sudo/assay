@@ -5,6 +5,60 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
+## v0.12 (v1.10): the semantic-break registry
+
+`diff` compares five families and scores each cell by the strongest
+evidence it carries. It had no notion of *which instrument produced the
+numbers*: `identity_gate` establishes that both documents describe the
+same model on the same class of machine, and says nothing about whether
+the two runs meant the same thing by what they wrote.
+
+Until v1.9 that was harmless, because every schema bump had been
+**additive** — a new release measured cells the old one did not, the old
+side simply lacked them, they landed in `dropped`, and exit 3 reported
+the comparison as incomplete. That machinery worked because absence is
+visible.
+
+v1.9 was the first release to change **what an existing cell means**
+without changing its name, type, or presence: `classify_mode` moved from
+an absolute-seconds overlap test to a fraction of the shorter span, so
+`verdict.parallel` can read differently for an endpoint that did not
+change at all. Both sides measured the cell, so nothing was absent, so
+nothing was dropped, so exit 3 could not fire. A 0.10.0 baseline against
+a 0.11.0 re-run on a fast endpoint reported
+`verdict.parallel: risky -> ready (improvement, flip)` — an instrument
+change published as a fact about the endpoint — and `--gate` exited
+**0**, because an improvement does not fail a gate.
+
+**`SEMANTIC_BREAKS` records which cells changed meaning and when.** A
+pair straddling a registered break does not score that cell: it lands in
+the new `DiffResult.incomparable`, and exit 3 fires. The registry is
+small by construction — one row covers eleven releases — because an
+entry is needed only when a release redefines an existing cell, which
+had never happened before v1.9.
+
+`incomparable` is a **new field, not a widened `dropped`.** v1.8 pinned,
+enumerated and mutation-tested `dropped` to mean "measured on exactly
+one side", and exit 3 reads it; folding a second meaning in would have
+broken that invariant and left a reader unable to tell the cases apart.
+They are genuinely different: a one-sided cell is fixed by re-running,
+and an incomparable one never can be. The render says which, and the
+`--json` document carries both.
+
+Versions are **parsed, never compared as text**: `"0.9.0" < "0.11.0"` is
+`False`, and a lexical check would have decided that pair does not
+straddle a 0.11.0 break — failing in the direction that scores it. An
+unparseable or absent `probe_version` straddles every break, because "we
+could not establish which rule produced this" must resolve to
+not-comparable rather than comparable-by-default.
+
+`identity_gate` is unchanged: a version difference is not a different
+endpoint, and making it fatal would return exit 2 for every
+cross-upgrade pair and destroy the instrument's central use. Exit-code
+meanings are unchanged; only the set of conditions producing 3 grows.
+Profile schema stays **v10** — this changes how two profiles are
+compared, not what a profile says.
+
 ## v0.11 (v1.9): the scale-free overlap rule
 
 A scheduling fact should not depend on how fast the endpoint is.

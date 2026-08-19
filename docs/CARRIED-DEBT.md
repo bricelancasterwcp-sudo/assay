@@ -1,3 +1,83 @@
+# Carried debt — v1.10 (recorded 2026-08-18 at the wave's close)
+
+Package 0.12.0. Profile schema unchanged at **v10** — this wave changes
+how two profiles are COMPARED, not what a profile says. None blocks the
+release.
+
+`diff` gained `SEMANTIC_BREAKS` (`diff.py`): a registry naming cells
+whose measurement rule changed at a given release, and a new
+`DiffResult.incomparable` for a cell both sides measured under two
+different rules. It closes v1.9's item 2 below, "the diff blind spot"
+(struck through in place, per this file's own convention) — but only
+for the one break the registry lists today. **Item 113's broader
+observation, that `diff` has no general version-aware machinery, stays
+open**: this wave gives `diff` one named exception, not a general
+capability.
+
+## Deferred, by area
+
+### Diff
+
+1. **`SEMANTIC_BREAKS` is typed and documented as if it named any cell,
+   but only `_diff_verdicts` consults it.** `_straddles` is called from
+   exactly one site (`diff.py:453`, inside the generic `verdicts`-dict
+   walk); the four raw-measurement family comparisons —
+   `_diff_ceiling`, `_diff_shapes`, `_diff_codecs`, `_diff_speed` — have
+   no equivalent check. The registry's type
+   (`dict[str, tuple[int, ...]]`, keyed by `f"{family}.{cell}"`) and its
+   own docstring name no family restriction, so an entry keyed
+   `"ceiling.max_verified"` or `"codec.search_replace.small"` would
+   type-check, sit in the table, and be silently ignored — never
+   consulted, never causing a straddle, never producing `incomparable`
+   — because the family it names has no call site that reads the
+   registry. Not a defect against v1.10's own scope: the only
+   redefinition on record is `verdict.parallel`, a verdicts-family cell,
+   so the registry does everything it was built to do today. It is a
+   trap for whoever adds the SECOND entry, if that entry ever names a
+   cell outside `verdicts` — recorded now so that implementer checks the
+   wiring rather than trusting the type signature as the contract.
+   Closing it fully is item 113's territory, sharpened: general
+   version-awareness would need a straddle check at every family's
+   comparison site, not one.
+
+## Process lessons
+
+1. **A test that pins two fields using two different cells never
+   exercises one cell being both.** Task 2's
+   `test_dropped_and_incomparable_stay_distinct` used a `patch_editing`
+   fixture to pin `dropped` and a `parallel` fixture to pin
+   `incomparable`, and passed green over a real Critical defect: the
+   straddle guard ran BEFORE the measured/unmeasured determination, so a
+   cell measured on exactly ONE side that also straddled a registered
+   break landed in `incomparable` instead of `dropped`. The review that
+   caught it was asked to check the population PATHS rather than the
+   tests themselves. The lesson generalizes past this one bug: when two
+   output fields are meant to be mutually exclusive, the test that
+   matters is the one where a SINGLE input could land in either — not
+   two separate tests that each pin one field with fixtures the other
+   field never touches.
+2. **Do not assert a test helper's availability from memory of a
+   sibling test file.** Three of this wave's four task briefs contained
+   a factual error by the controller about the file the task actually
+   edits: a snippet that reassigned `_diff_verdicts`'s own loop variable
+   (`diff.py:349`'s `name`, which the loop body already builds cell
+   names from — overwriting it would have corrupted every cell name for
+   the rest of that iteration); a claim that `make_profile`
+   (`tests/test_diff.py`) needed a new default added for `probe_version`
+   when the payload already carried one (`"0.5.0"`, hardcoded) and only
+   needed to be made overridable; and a claim that `_ceiling` "already
+   exists in `tests/test_diff.py`" when, at the time the brief was
+   checked, it existed only in `tests/test_cli.py`. A fourth stated the
+   wrong REASON an existing test survives the change: it survives
+   because its cells are unregistered in `SEMANTIC_BREAKS`, not because
+   its fixtures share a `probe_version` — they carry none at all, which
+   straddles by design (an unparseable-or-absent version straddles
+   every break). None of the four was caught by trusting the brief;
+   each was caught by opening the actual file the task edits and
+   checking the claim against it directly.
+
+---
+
 # Carried debt — v1.9 (recorded 2026-08-18, Task 4; extended 2026-08-18
 by the final whole-branch fix wave)
 
@@ -71,7 +151,7 @@ the same not-yet-written-ledger convention.
 
 ### Diff
 
-2. **The diff blind spot: a rule-change flip reads as a silent,
+2. ~~**The diff blind spot: a rule-change flip reads as a silent,
    `--gate`-passing endpoint improvement.** (C1, final fix wave,
    2026-08-18.) The v1.9 spec §3 and this file's own CHANGELOG entry
    originally justified the `tolerance_s` → `overlap_fraction` rename
@@ -84,15 +164,15 @@ the same not-yet-written-ledger convention.
    `parallel` payload — it compares exactly five families (`ceiling`,
    `ceiling_shapes`, `verdicts`, `codecs`, `speed`), and `parallel`
    only enters the comparison indirectly, as one more name inside the
-   generic `verdicts` dict `_diff_verdicts` walks.
+   generic `verdicts` dict `_diff_verdicts` walks.~~
 
-   The real failure is worse than a silently-skipped field, because
+   ~~The real failure is worse than a silently-skipped field, because
    the verdict IS compared — and reads as a genuine finding. Reproduced
    directly against `diff_profiles`/`_diff_exit_code` (same model, same
    hardware tier, only `verdict.parallel` differing — the shape a
    0.10.0-baseline-vs-0.11.0-rerun comparison on a fast endpoint would
    take once the classification rule alone flips a k's `mode` from
-   `serialized` to `parallel`):
+   `serialized` to `parallel`):~~
 
    ```
    comparable: True   identity notes: ()
@@ -101,7 +181,7 @@ the same not-yet-written-ledger convention.
    exit plain: 1      exit --gate: 0
    ```
 
-   `_ladder_direction` (`diff.py`) ranks `ready` above `risky`, so the
+   ~~`_ladder_direction` (`diff.py`) ranks `ready` above `risky`, so the
    flip scores `improvement`, and `_diff_exit_code` (`cli.py`) only
    fails `--gate` on a `regression` — an improvement passes silently.
    Exit 3 (`dropped`) cannot catch it either: nothing is dropped, both
@@ -109,9 +189,9 @@ the same not-yet-written-ledger convention.
    exactly one side" and this is measured on both. So an instrument
    rule change — nothing about the endpoint moved — publishes as a
    verified capability improvement, and a `--gate`-based CI would wave
-   it through.
+   it through.~~
 
-   This is NOT the same gap CARRIED-DEBT item 113 already named
+   ~~This is NOT the same gap CARRIED-DEBT item 113 already named
    ("`diff` has no version-aware machinery at all"). Item 113 concerns
    whether a cross-schema pair reads exit 3 (it does, IF the newer
    schema measured something new the older one lacks — not "by
@@ -127,9 +207,9 @@ the same not-yet-written-ledger convention.
    diagnosis (exit 3 depends on what was measured, not on schema
    difference alone) is exactly why exit 3 cannot see this: nothing
    was dropped, so by item 113's own accurate account exit 3 correctly
-   does not fire — the gap this item names is orthogonal, not a variant.
+   does not fire — the gap this item names is orthogonal, not a variant.~~
 
-   Also unlike the diff family cells (`ceiling`, `codecs`, `speed`),
+   ~~Also unlike the diff family cells (`ceiling`, `codecs`, `speed`),
    which compare raw measurements diff itself judges by evidence
    strength, `verdict.parallel` is a STRING already reduced by
    `_parallel_verdict`'s own ladder logic before `diff` ever sees it —
@@ -137,18 +217,18 @@ the same not-yet-written-ledger convention.
    that reads the endpoint changed" from a verdict string alone, for
    any family, not just this one. `verdict.parallel` is simply the
    family where this wave made that distinction matter for the first
-   time.
+   time.~~
 
-   The identity gate (`identity_gate`, `diff.py`) does not help either:
+   ~~The identity gate (`identity_gate`, `diff.py`) does not help either:
    it checks `model.name`, `model.quant`, `model.weights_bytes`,
    `provenance.tier`, and `provenance.emulated` — five fields about
    the HARDWARE and MODEL under test, never `probe_version` or
    `assay_profile_version`. A pair that differs only in which assay
    build measured it passes the identity gate cleanly, by design (the
    gate's whole job is refusing to compare different weights, not
-   different instrument versions).
+   different instrument versions).~~
 
-   **Not fixed here, deliberately.** Giving `diff` version-awareness is
+   ~~**Not fixed here, deliberately.** Giving `diff` version-awareness is
    a change to its whole contract — CARRIED-DEBT item 113's territory,
    already open, now sharpened by a second concrete instance instead of
    item 113's hypothetical account. The mitigation available today is
@@ -158,15 +238,44 @@ the same not-yet-written-ledger convention.
    the real (and now correctly stated) reason the v1.9 rename and
    schema bump matter. A consumer relying on `assay diff --gate` alone,
    with no version precheck of its own, is not protected by anything
-   this wave shipped.
+   this wave shipped.~~
 
-   **Spec erratum, same item:** the v1.9 design spec's §3
+   ~~**Spec erratum, same item:** the v1.9 design spec's §3
    (`docs/superpowers/specs/2026-08-18-assay-v1.9-scale-free-overlap-design.md`)
    states the false byte-equality justification quoted above. Per this
    project's convention the committed spec is not rewritten after the
    fact; this entry is the correction sitting beside it. CHANGELOG.md's
    v1.9 entry made the same claim and, being in-branch and unpublished,
-   is corrected directly rather than by erratum.
+   is corrected directly rather than by erratum.~~
+
+   **CLOSED in v1.10.** `SEMANTIC_BREAKS` (`diff.py`) now records
+   `verdict.parallel`'s v1.9 rule change; a pair straddling it lands in
+   the new `DiffResult.incomparable`, never scored, and exit 3 fires on
+   either `dropped` or `incomparable`. The reproduction above now reads
+   `incomparable: (verdict.parallel,)`, exit 3 under both plain and
+   `--gate`, verified end to end by
+   `test_an_instrument_rule_change_is_not_published_as_an_improvement`
+   (`tests/test_cli.py`).
+
+   **What did NOT change, so this closure is not over-read.**
+   `identity_gate` still ignores `probe_version` and
+   `assay_profile_version` entirely, by design — a version difference is
+   not a different endpoint. `diff` still has no GENERAL
+   version-awareness: **item 113's broader observation stays open.**
+   This wave closes the one named break the registry lists, not the
+   class of the problem; a future release that redefines a different
+   cell's meaning without adding a `SEMANTIC_BREAKS` entry for it
+   reintroduces exactly this defect, unflagged, for that cell.
+
+   **The v1.10 slice's own record.** `SEMANTIC_BREAKS` grows by one row
+   per release that redefines an EXISTING cell's meaning, not per
+   release generally — every bump before v1.9 was additive (new field,
+   new family, new lens), which `dropped` and exit 3 already handled,
+   which is why one row covers eleven releases. The table's smallness is
+   a property of this project's history so far, not a guarantee about
+   its future: the next release that changes what an already-measured
+   cell means needs its own entry, or it repeats this item's defect for
+   that cell.
 
 3. **Spec §2's "strictly dominates ... changes none it got right" is
    an overclaim, corrected.** (I5, final fix wave, 2026-08-18.)

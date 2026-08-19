@@ -618,6 +618,13 @@ It exits 2. Re-baseline with a marked run.
   `disjoint-intervals`, `beyond-2se`, `threshold-20pct-assumed`;
 - **a cell present on one side only** goes in `dropped` — never scored
   as regression or improvement. Absence of evidence is absence.
+- **a cell both sides measured, but under two different rules** goes in
+  `incomparable` — also never scored. `SEMANTIC_BREAKS` (`diff.py`)
+  names the handful of cells a release has redefined without changing
+  their name, type, or presence; a pair straddling a registered break —
+  or carrying an unparseable or missing `probe_version` on either
+  side — lands here instead of being scored as if the two sides agreed
+  on what they were measuring.
 
 **The verdict ladder:**
 
@@ -667,7 +674,7 @@ carries an answer:
 | `0` | comparable, nothing moved beyond noise (with `--gate`: nothing moved in the regression direction) |
 | `1` | drift found (with `--gate`: a **regression** was found; an improvement alone still exits 0) |
 | `2` | not comparable — a different model, quant, weight size, or hardware tier, **or** a tier/emulated marking recorded on only one side |
-| `3` | **incomplete** — at least one cell was measured on exactly one side, so part of the comparison never happened. Outranks `1`: a family that vanished is not a measured move. A pair spanning a schema bump reads `3` whenever the newer schema actually measured a cell the older one lacks — not merely because the schemas differ — and a budget-mode profile compared against a full one reads `3` under the same rule, whenever the full run measured a cell the budget run skipped |
+| `3` | **incomplete or incomparable** — either at least one cell was measured on exactly one side (`dropped`), or a cell both sides measured was measured under two different rules (`incomparable`, a registered `SEMANTIC_BREAKS` entry). Outranks `1`: neither a vanished family nor a cell the two instruments defined differently is a measured move. A pair spanning a schema bump reads `3` whenever the newer schema actually measured a cell the older one lacks — not merely because the schemas differ — and a budget-mode profile compared against a full one reads `3` under the same rule, whenever the full run measured a cell the budget run skipped |
 | `4` | a profile file could not be read or parsed. Never `1`: exit 1 claims a measured change, and an unreadable file measured nothing |
 
 `--gate` is the CI shape: a model that got *faster* should not fail a
@@ -681,6 +688,17 @@ unmeasured rather than worse. It was measured in the field: a v8
 profile compared against a v4 one passed the gate while `long_output`,
 `tool_calling` and three deep JSON cells went unmeasured on one side.
 The rule now is that an incomplete comparison says so.
+
+**v1.10 added a second cause for exit 3.** `SEMANTIC_BREAKS` (`diff.py`)
+names cells whose measurement rule changed at a given release —
+`verdict.parallel`'s v1.9 fraction rewrite is the one entry today. A
+pair straddling a registered break is never scored, even though both
+sides measured the cell: it lands in `incomparable` rather than being
+compared as if the two runs agreed on what they measured, and exit 3
+fires exactly as it does for `dropped`. `identity_gate` still does not
+check `probe_version` — a version difference is not a different
+endpoint — so this is deliberately narrow: it stops one instrument
+change from reading as an endpoint fact, not general version-awareness.
 
 ## The None-vs-zero rule
 

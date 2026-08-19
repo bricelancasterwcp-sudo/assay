@@ -1014,22 +1014,21 @@ def test_the_recovery_demotion_never_promotes():
 
 def test_schema_version_and_package_version_move_together():
     # The schema and the distribution version are one release, not two:
-    # a profile that says v10 must have been written by a 0.11.0 probe.
+    # a profile that says v10 must have been written by a 0.12.0 probe.
     #
-    # v10 (Task 2, 2026-08-18): PROFILE_VERSION and __version__/pyproject
-    # move together in THIS commit, same as always. The README's own
-    # `assay_profile_version: N` line is Task 4's file in this wave (see
-    # task-2-brief.md's scope boundary) and lands in a later commit — so
-    # the assertion below is expected to stay red between this commit and
-    # that one, for a reason that has nothing to do with this task's
-    # correctness. It is left in place, unweakened, rather than removed,
-    # because it is real coverage Task 4 must satisfy before the wave is
-    # done.
+    # This is not a per-commit fact, it is a standing invariant: whatever
+    # PROFILE_VERSION currently is, __version__/pyproject must agree with
+    # it, and the README must state it in a line a reader who never opens
+    # profile.py can still find. v1.10 (package 0.12.0) left the schema
+    # at v10 — nothing about a profile changed this wave, only how two
+    # profiles are compared — so this commit updates the package-version
+    # literals below without touching PROFILE_VERSION or the README's
+    # `assay_profile_version` line.
     import assay
 
     assert PROFILE_VERSION == 10
-    assert assay.__version__ == "0.11.0"
-    assert 'version = "0.11.0"' in (
+    assert assay.__version__ == "0.12.0"
+    assert 'version = "0.12.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite
@@ -1087,7 +1086,7 @@ def test_schema_v10_and_the_package_version_move_together():
     import assay
 
     assert PROFILE_VERSION == 10
-    assert assay.__version__ == "0.11.0"
+    assert assay.__version__ == "0.12.0"
 
 
 def test_long_output_round_trips_as_tuples_of_rungs():
