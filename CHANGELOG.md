@@ -5,6 +5,67 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
+## v0.11 (v1.9): the scale-free overlap rule
+
+A scheduling fact should not depend on how fast the endpoint is.
+
+`classify_mode` asked whether two lanes overlapped by more than
+**0.25 seconds**. For lanes launched together — which is what
+`probe_parallel` does — overlap is approximately the lane duration, so
+the rule reduced to "each lane must last longer than 0.25 s". That is a
+statement about SPEED, not scheduling: a fast endpoint read
+`serialized` while serving every lane at once, and `verdict.parallel`
+capped at `risky` for a box doing exactly what was asked of it.
+
+It now asks whether they overlapped by more than **0.25 of the shorter
+span**. Dimensionless, so it is correct at every time scale. Verified
+in both directions: genuinely concurrent lanes read `parallel` at
+0.05 s, 0.222 s and 1.0 s where the old rule failed the first two;
+genuinely serialized lanes still read `serialized` at all three; and
+two lanes that nearly serialize — 2 ms of overlap on a 200 ms span —
+still read `serialized`, which is the client-skew guard the old
+tolerance existed to provide. 0.222 s is not a hypothetical: it is the
+pure-decode span of the fastest model on the published matrix, which
+cleared the old threshold only because prefill and HTTP padded it.
+
+**The field is renamed and the schema moves: `tolerance_s` →
+`overlap_fraction`, `tolerance_provenance` → `overlap_provenance`,
+profile schema v9 → v10, package 0.10.0 → 0.11.0.** The rename is not
+cosmetic. The same number 0.25 means seconds under the old rule and a
+fraction under the new one, so keeping the name would leave a field
+called *seconds* carrying a fraction — and `assay diff` would compare
+`tolerance_s: 0.25` against `tolerance_s: 0.25`, find them byte-equal,
+and report no change across a break where the classification rule
+changed completely. The schema bump is what makes a consumer's
+instrument-changed precheck fire on this boundary instead of letting a
+diff sail through it.
+
+The fifteen committed profiles are **not** rescored and no campaign
+was re-run. They are pre-v10 — and, per the erratum recorded in
+CARRIED-DEBT.md, that means v8, not v9: the v1.8 wave bumped
+`PROFILE_VERSION` 8 → 9 but never re-ran the campaign either, so no
+committed profile has ever carried v9. They keep `tolerance_s`, they
+keep their v8 identity, and the renderers show each era in its own
+terms rather than converting one into the other — a seconds tolerance
+and a dimensionless fraction are different quantities, and mapping one
+onto the other would invent a measurement nobody made.
+
+`OVERLAP_FRACTION` is **CHOSEN, not derived**, and `overlap_provenance`
+says so at every point of use. What it is still waiting for has
+narrowed: the old constant was both unexercised AND able to produce a
+false `serialized` from speed alone. The fraction can no longer do the
+second. What remains unexercised is the boundary itself — no live row
+has ever overlapped by between 0% and 25% of a span (CARRIED-DEBT.md
+item 16, amended).
+
+One more finding, orthogonal to the rule itself: the house fake used
+by the full-mode `probe()` test is faster than this interpreter's own
+thread-start overhead, so its lanes never shared the CPU at all under
+either tolerance style — a gap the fraction rule cannot close by
+itself. That test now paces the fake's parallel-family calls to a
+duration a real endpoint would have, so the `ready` it reads is earned
+against threads that genuinely overlapped, not merely asserted to.
+
 ## v0.10 (v1.8): the honest gate and the parallel verdict
 
 Two claims this instrument was making that it should not have been.

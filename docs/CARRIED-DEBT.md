@@ -702,6 +702,46 @@ was recorded for each at the time and is preserved where it bites.
     `serialized` gate unexercised by live data too. Both are pinned by
     `test_no_campaign_row_ever_read_serialized`, which asserts the
     absence rather than letting it be forgotten.*
+
+    *v1.9 note (2026-08-18): the constant is renamed and re-typed —
+    `OVERLAP_TOLERANCE_S` (0.25 s, absolute) is retired and
+    `OVERLAP_FRACTION` (0.25, dimensionless — 25% of the shorter
+    lane's span) takes its place, with `overlap_provenance` carrying
+    forward the same **chosen, not derived** flag under its own name.
+    This item is amended, not closed. What it was waiting for had two
+    parts: the old constant was unexercised by live data, AND it could
+    read a genuinely concurrent fast endpoint as `serialized` from
+    speed alone — the tolerance cliff this file already flagged. v1.9
+    removes the second part: §2 of the v1.9 design spec verifies, at
+    0.05 s / 0.222 s / 1.0 s, that concurrent lanes now read `parallel`
+    at every scale a fixed-seconds tolerance used to fail, while a
+    near-miss (2 ms of overlap on a 200 ms span) still correctly reads
+    `serialized` — the client-skew guard the tolerance existed to
+    provide, preserved. What remains is exactly the first part,
+    narrowed to a single boundary: no live row has ever overlapped by
+    between 0% and 25% of a span, so retiring the flag still needs an
+    endpoint that actually serializes, and this tier still has not
+    produced one. The fifteen campaign profiles were left exactly as
+    measured — not rescored, no campaign re-run — and still carry
+    `tolerance_s` / `tolerance_provenance` under their own committed
+    schema version, which the v1.9 renderers read in its own terms
+    rather than converting to a fraction nobody measured.
+
+    **Erratum, same note:** the v1.9 spec and plan both wrote "the
+    fifteen committed **v9** profiles." They are **v8**. Verified by
+    reading `assay_profile_version` out of all fifteen files under
+    `docs/superpowers/evidence/tier-enthusiast-2026-08/`: every one
+    reads `8`. The v1.8 wave bumped `PROFILE_VERSION` 8 → 9 but
+    deliberately never re-ran the campaign (see this same item 16's
+    v1.8 note and item 15's closure, above), so no committed profile
+    has ever been v9 — and CHANGELOG.md's own v1.8 entry already said
+    "v8 profiles" correctly at the time. v1.9 repeats the same
+    non-event a schema version later: schema moves to v10, the
+    fifteen profiles stay v8, still unrescored. Per this project's
+    convention the committed spec and plan are not rewritten; this is
+    the dated amendment sitting beside the claim instead. Correct
+    phrasing used going forward: *pre-v10 profiles*, which happen to
+    be v8.*
 17. Evidence-class strings are re-declared here against `speed.py`'s
     inline literals; the fix is a shared tuple in `speed.py`
     (scope-blocked at the time). **(T5)**

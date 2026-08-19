@@ -1,6 +1,7 @@
 """Task 11 tests: the probe() orchestrator (plan Task 11, spec §9)."""
 
 import json
+import time
 
 import pytest
 from fakes import (CodecFailingBackend, LongOutputDegradingBackend,
@@ -9,6 +10,7 @@ from fakes import (CodecFailingBackend, LongOutputDegradingBackend,
 
 from assay import Budget, Profile, probe
 from assay.errors import BudgetExhausted
+from assay.parallel import PARALLEL_SEED_BASE
 
 _URL = "http://fake-host:11434"
 _VRAM_MIB = 14558
@@ -760,7 +762,45 @@ def test_full_mode_measures_parallel_against_this_run_s_own_baseline():
     assert Profile.from_json(json.loads(profile.to_json())) == profile
 
 
-def test_full_mode_parallel_verdict_is_produced_and_reads_risky_not_ready():
+class _RealisticallyPacedBackend(ScriptedBackend):
+    """`ScriptedBackend`, except the parallel family's lanes take long
+    enough for real OS threads to actually overlap.
+
+    Discovered while writing this test: `ScriptedBackend.generate()`
+    returns in single-digit microseconds — faster than
+    `threading.Thread.start()` takes to hand control to a new OS
+    thread on this box (~0.1 ms, measured). Below that floor
+    `_threaded_runner`'s lanes never share the CPU at all: the first
+    thread runs to completion before the second is even created, so
+    every lane's wall-clock span is fully disjoint from its
+    neighbours — verified directly against the unmodified fake, both
+    k=2 and k=4, every run. No `classify_mode` tolerance, absolute or
+    scale-free, can read two spans that never touch as anything but
+    `serialized`; v1.9's fix is necessary but not sufficient to change
+    what this fake earns.
+
+    Sleeping only the calls whose seed falls in the parallel family's
+    reserved block (`PARALLEL_SEED_BASE` and up — see
+    `assay.parallel`'s seed layout) gives those six calls a span long
+    enough to interleave for real, without slowing the other ~550
+    calls this test also makes. `time.sleep` releases the GIL, which
+    is what lets the second lane's thread actually start running
+    before the first one finishes — the same reason a real endpoint's
+    network wait, not its CPU time, is what makes concurrency visible.
+    This does not manufacture `parallel`: it gives the fake's lanes a
+    duration a real endpoint would have, so the SAME wall-clock spans
+    `classify_mode` reads are genuinely produced by threads that ran
+    at once, not merely asserted to be.
+    """
+
+    def generate(self, prompt, *, seed, max_tokens, num_ctx=None):
+        if seed >= PARALLEL_SEED_BASE:
+            time.sleep(0.01)
+        return super().generate(
+            prompt, seed=seed, max_tokens=max_tokens, num_ctx=num_ctx)
+
+
+def test_full_mode_parallel_verdict_reads_ready_once_overlap_is_scale_free():
     """M10: the only `probe()`-level assertion of the parallel VERDICT
     cell was quick mode's `unmeasured`
     (`test_quick_mode_drops_the_parallel_family_by_name` checks only
@@ -768,30 +808,45 @@ def test_full_mode_parallel_verdict_is_produced_and_reads_risky_not_ready():
     pinned that `run.py` -> `compute_verdicts` ->
     `verdicts["parallel"]` produces a verdict at all on a full run.
 
-    What this GENUINELY reads, and why: the house fake's lanes return
-    in-process, well under `OVERLAP_TOLERANCE_S` (0.25s) — nowhere near
-    the wall-clock span a real concurrent HTTP round trip takes — so
-    `classify_mode` reads `serialized` even though the lanes ran
-    genuinely concurrently and `degradation_ratio` is ~1.0 (no
-    degradation at all). Per `_parallel_verdict` rule 2, a `serialized`
-    mode CAPS the verdict at `risky` regardless of the ratio. This
-    pins what the instrument actually does against this fake — it does
-    NOT tune the fake to manufacture `ready`, which would hide the
-    tolerance cliff instead of pinning it (see CARRIED-DEBT.md, the
-    0.25s tolerance-cliff entry, v1.8).
+    What this GENUINELY reads, and why it changed: under v1.8's
+    absolute 0.25 s tolerance, a fake whose lanes ran genuinely
+    concurrently but finished in microseconds still read `serialized`,
+    capping this verdict at `risky` despite a `degradation_ratio` of
+    ~1.0 (no degradation at all) — the tolerance cliff CARRIED-DEBT.md
+    item 16 describes. v1.9's fraction rule classifies overlap
+    relative to the span, not against a fixed number of seconds, so
+    lanes that genuinely ran at once read `parallel` whatever their
+    absolute duration, and the rung this fake earns is `ready`.
+
+    Getting there against the *unmodified* `ScriptedBackend` is not
+    possible, though, for a reason v1.9 does not touch:
+    `_RealisticallyPacedBackend` above exists because the stock fake's
+    calls are faster than this interpreter's own thread-start
+    overhead, so its lanes never overlap in wall-clock time at all —
+    true under the old rule and the new one alike, and orthogonal to
+    which classify_mode this project ships. That gap is item 16's,
+    not this test's: it is the "no live row has ever overlapped by
+    between 0% and 25% of a span" boundary the v1.9 amendment leaves
+    open, restated at fixture scale. Paced to a realistic call
+    duration, the fake's lanes DO overlap, and the change in the
+    assertion below IS the fix, observed end to end against genuinely
+    concurrent threads — it does NOT tune the fake to manufacture
+    `ready`, it gives it enough duration to be measured honestly (see
+    CARRIED-DEBT.md item 16, amended v1.9).
     """
     profile = probe(
         _URL, "fake-model",
         budget=Budget(max_calls=_CLEAN_FULL_RUN_HEADROOM,
                       max_prompt_tokens=2_000_000),
-        mode="full", _backend_override=ScriptedBackend(),
+        mode="full", _backend_override=_RealisticallyPacedBackend(),
     )
 
-    assert profile.verdicts["parallel"]["verdict"] == "risky"
-    assert all(row.mode == "serialized" for row in profile.parallel.rows), (
-        "the house fake's lanes return too fast to clear "
-        "OVERLAP_TOLERANCE_S — if this ever reads 'parallel' the fake's "
-        "timing changed and the docstring above needs re-deriving")
+    assert profile.verdicts["parallel"]["verdict"] == "ready"
+    assert all(row.mode == "parallel" for row in profile.parallel.rows), (
+        "the house fake's lanes run concurrently and now clear "
+        "OVERLAP_FRACTION of their own span — if this ever reads "
+        "'serialized' the fake's timing changed and the docstring "
+        "above needs re-deriving")
     assert all(row.degradation_ratio == 1.0 for row in profile.parallel.rows)
 
 
