@@ -1582,16 +1582,39 @@ def test_neither_side_measured_a_straddling_cell_is_nothing_at_all():
 
 
 def test_families_is_diff_profiles_cell_layer():
-    """The Task-1 extraction is a refactor, not a change: on a
-    comparable pair, `diff_profiles`'s cells are exactly
-    `_families`'s."""
-    from assay.diff import _families, diff_profiles
+    """The Task-1 extraction is a refactor, not a change: on a pair
+    that really moved, `diff_profiles`'s four cell fields are exactly
+    the five family walkers merged — the walker SET, their ORDER, and
+    `_merge` itself all pinned.
+
+    The expectation is assembled here from the five walkers directly,
+    never from `_families`: `diff_profiles` now computes its cells BY
+    CALLING `_families`, so asserting the two agree would compare f(x)
+    with f(x) and no mutation of `_families` could fail it. Against
+    this expectation, dropping a walker or reordering two changes
+    `within_noise`'s membership or order and the test fails.
+    """
+    from assay.diff import (_diff_ceiling, _diff_codecs, _diff_shapes,
+                            _diff_speed, _diff_verdicts, _merge,
+                            diff_profiles)
     old = make_profile()
-    new = make_profile()
+    new = make_profile(verdicts=make_verdicts(
+        patch_editing={"verdict": "ready", "provisional": False, "lens": {}}))
+    expected = _merge(
+        _diff_ceiling(old, new),
+        _diff_shapes(old, new),
+        _diff_verdicts(old, new),
+        _diff_codecs(old, new),
+        _diff_speed(old, new),
+    )
+
     result = diff_profiles(old, new)
-    cells = _families(old, new)
+
     assert result.comparable
-    assert result.changes == cells.changes
-    assert result.within_noise == cells.within_noise
-    assert result.dropped == cells.dropped
-    assert result.incomparable == cells.incomparable
+    # Non-vacuity: a pair with nothing moving would pass on empty
+    # tuples and establish nothing about the cells.
+    assert expected.changes and expected.within_noise
+    assert result.changes == expected.changes
+    assert result.within_noise == expected.within_noise
+    assert result.dropped == expected.dropped
+    assert result.incomparable == expected.incomparable

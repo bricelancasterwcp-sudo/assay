@@ -48,6 +48,25 @@ def test_one_sided_emulated_refuses():
     assert not comparable
 
 
+def test_absent_tier_on_both_sides_refuses():
+    """Deliberately stricter than `diff`'s gate, which passes this
+    pair: a coverage claim "for this box" with no box declared on
+    either side is a silent pass, not an agreement."""
+    comparable, notes = cover_identity_gate(
+        _profile(tier=None), _profile(tier=None))
+    assert not comparable
+    assert any("provenance.tier not declared on either side" in note
+               for note in notes)
+
+
+def test_absent_emulated_on_both_sides_refuses():
+    comparable, notes = cover_identity_gate(
+        _profile(emulated=None), _profile(emulated=None))
+    assert not comparable
+    assert any("provenance.emulated not declared on either side" in note
+               for note in notes)
+
+
 def test_probe_version_inequality_refuses():
     comparable, notes = cover_identity_gate(
         _profile(probe_version="0.12.0"), _profile(probe_version="0.13.0"))

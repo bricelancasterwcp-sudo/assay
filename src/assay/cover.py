@@ -45,7 +45,10 @@ def cover_identity_gate(floor: dict, candidate: dict) -> tuple[bool, tuple[str, 
     box, and a floor measured by a different instrument was measured
     under different rules (strict equality per the spec's ruling —
     the semantic-break registry is not a complete inventory, so
-    version tolerance here would trust an incomplete table)."""
+    version tolerance here would trust an incomplete table).
+    Undeclared is unknown on both counts: hardware missing from BOTH
+    sides is fatal here too (spec §1's 2026-08-19 amendment) where
+    `diff`'s gate passes that pair."""
     floor_model = floor.get("model") or {}
     cand_model = candidate.get("model") or {}
     floor_prov = floor.get("provenance") or {}
@@ -59,6 +62,18 @@ def cover_identity_gate(floor: dict, candidate: dict) -> tuple[bool, tuple[str, 
                          f"{old_value!r} -> {new_value!r}")
     for field in ("tier", "emulated"):
         old_value, new_value = floor_prov.get(field), cand_prov.get(field)
+        if old_value is None and new_value is None:
+            # A deliberate deviation from `diff`'s gate, which passes
+            # this pair (two Nones compare equal there). Cover's own
+            # instrument loop below already holds that undeclared is
+            # unknown, and a coverage claim "for this box" with no box
+            # declared on EITHER side is exactly the silent pass this
+            # gate exists to refuse. Checked before the equality test,
+            # which two Nones would otherwise satisfy.
+            notes.append(f"provenance.{field} not declared on either side: "
+                         "unknown hardware")
+            fatal = True
+            continue
         if old_value == new_value:
             continue
         if old_value is None or new_value is None:
