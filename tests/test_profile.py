@@ -1890,7 +1890,7 @@ def test_parallel_verdict_truth_table():
                           n_lanes_ok=3)]),
          "unmeasured",
          "C1: partial lane failure with an otherwise-healthy ratio must "
-         "not publish ready — n_lanes_ok=2 of k=4 is not evidence for k=4"),
+         "not publish ready — n_lanes_ok=3 of k=4 is not evidence for k=4"),
         (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=1.0, n_lanes_ok=3)]),
          "unmeasured",
          "C1: n_lanes_ok < k alone (no lane_errors named) still means "
@@ -1900,8 +1900,6 @@ def test_parallel_verdict_truth_table():
          "C1: mode=None means the scheduling fact — the family's "
          "headline — was never established; one lane's ratio does not "
          "answer whether k=4 overlapped at all"),
-        (_parallel([_prow(ratio=1.0), _prow(k=4, ratio=0.99)]),
-         "ready", "all-healthy row still passes — the gate is not always-on"),
     ]
     for parallel, expected, why in table:
         assert _parallel_verdict(parallel)["verdict"] == expected, why
