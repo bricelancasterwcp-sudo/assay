@@ -494,6 +494,27 @@ def test_an_instrument_rule_change_is_not_published_as_an_improvement(tmp_path):
     assert payload["incomparable"] == ["verdict.parallel"]
 
 
+def test_a_two_component_version_does_not_slip_past_the_guard(tmp_path):
+    """The same defect, reached by a shorter version string.
+
+    `(0, 11) < (0, 11, 0)` is True — tuples compare on their common
+    prefix — so a `"0.11"` document, written under v1.9's rule, sorted
+    BELOW the 0.11.0 break and was filed on the old side. Measured
+    before the fix: `verdict.parallel: risky -> ready (improvement,
+    flip)`, exit 1 plain and exit **0** under --gate. The headline
+    defect this wave exists to stop, wearing a different version string.
+    """
+    old = _write_profile(tmp_path / "old.json", _diff_payload(
+        probe_version="0.10.0",
+        verdicts={"parallel": {"verdict": "risky", "lens": {}}}))
+    new = _write_profile(tmp_path / "new.json", _diff_payload(
+        probe_version="0.11",
+        verdicts={"parallel": {"verdict": "ready", "lens": {}}}))
+
+    assert cli.main(["diff", old, new]) == 3
+    assert cli.main(["diff", old, new, "--gate"]) == 3
+
+
 def test_cli_diff_not_comparable_outranks_incomplete(tmp_path):
     """2 > 3. A different model is not a partial comparison, it is the
     absence of one — nothing was subtracted, so the one-sided cells

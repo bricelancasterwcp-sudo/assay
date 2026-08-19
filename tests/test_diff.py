@@ -1211,6 +1211,58 @@ def test_an_unparseable_version_is_not_a_version():
         assert _parse_version(value) is None, repr(value)
 
 
+def test_a_version_that_is_not_three_components_is_not_a_version():
+    """The silent-sort trap. `(0, 11)` compares BELOW `(0, 11, 0)`, so a
+    two-component `"0.11"` — a document written under the NEW rule — was
+    filed on the OLD side of a 0.11.0 break and scored. Rejected rather
+    than padded: assay writes `probe_version` from `__version__`, which
+    is always three components, so anything else was not written by this
+    instrument, and padding would assert a patch level the document
+    never stated. `None` routes to §6's discipline — unknown instrument,
+    not comparable — which fails toward refusing to score rather than
+    toward scoring a pair that must not be scored.
+    """
+    from assay.diff import _parse_version
+
+    for value in ("0.11", "0", "0.11.0.1"):
+        assert _parse_version(value) is None, repr(value)
+    assert _parse_version("0.11.0") == (0, 11, 0)
+
+
+def test_a_two_component_version_does_not_sort_below_its_own_break():
+    """The defect end to end, in the direction that publishes a claim.
+    A `"0.11"` document was measured under v1.9's rule; scoring it
+    against a 0.10.0 baseline reports an instrument change as an
+    endpoint improvement — plain exit 1, `--gate` exit 0, the exact
+    headline this wave exists to stop.
+    """
+    old = make_profile(probe_version="0.10.0", verdicts=make_verdicts(
+        parallel={"verdict": "risky", "lens": {}}))
+    new = make_profile(probe_version="0.11", verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+
+    result = diff_profiles(old, new)
+
+    assert result.incomparable == ("verdict.parallel",)
+    assert [c for c in result.changes if c.cell == "parallel"] == []
+
+
+def test_a_two_component_version_is_incomparable_against_its_own_era():
+    """The other direction. `"0.11"` against `"0.11.0"` is the same era
+    by eye, and under the tuple-length bug it straddled for an incorrect
+    REASON (a bogus ordering) while its sibling above did not straddle
+    at all — two mutually inconsistent answers from one rule. Both now
+    resolve the same honest way: the version is not one assay writes, so
+    which rule produced it is not established, and §6 refuses to score.
+    """
+    old = make_profile(probe_version="0.11", verdicts=make_verdicts(
+        parallel={"verdict": "risky", "lens": {}}))
+    new = make_profile(probe_version="0.11.0", verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+
+    assert diff_profiles(old, new).incomparable == ("verdict.parallel",)
+
+
 def test_a_pair_straddling_a_break_is_named_incomparable():
     from assay.diff import _straddles
 

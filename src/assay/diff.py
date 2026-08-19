@@ -96,6 +96,13 @@ SEMANTIC_BREAKS: dict[str, tuple[int, ...]] = {
 }
 
 
+#: A probe version has exactly this many components. ``run.py`` writes
+#: ``probe_version`` from ``assay.__version__``, which is always
+#: ``major.minor.patch``, so a string of any other length was not
+#: written by this instrument.
+_VERSION_COMPONENTS = 3
+
+
 def _parse_version(value: object) -> tuple[int, ...] | None:
     """A dotted version as an int tuple, or None if it is not one.
 
@@ -104,11 +111,27 @@ def _parse_version(value: object) -> tuple[int, ...] | None:
     0.9.0-vs-0.11.0 pair does not straddle a 0.11.0 break and would
     score it — failing in the direction that publishes a comparison
     nobody can stand behind.
+
+    A version that is not exactly ``_VERSION_COMPONENTS`` long is
+    REJECTED rather than padded, and the choice is load-bearing.
+    Tuples of unequal length compare by their common prefix, so
+    ``(0, 11) < (0, 11, 0)`` is True: a two-component ``"0.11"``, which
+    describes a document written under the 0.11 rule, sorted BELOW a
+    0.11.0 break and was filed on the old side and scored — the same
+    class of silent-wrong-answer the lexical trap above describes.
+    Padding would fix that ordering but assert a patch level the
+    document never stated, which against a patch-level break decides
+    the comparison on a number nobody wrote. Rejecting asserts nothing:
+    ``None`` routes to ``_straddles``' unknown-instrument branch, which
+    refuses to compare (§6). Both repairs close the dangerous
+    direction; only this one avoids inventing evidence to do it.
     """
     if not isinstance(value, str):
         return None
     parts = value.split(".")
-    if not parts or not all(part.isdigit() for part in parts):
+    if len(parts) != _VERSION_COMPONENTS:
+        return None
+    if not all(part.isdigit() for part in parts):
         return None
     return tuple(int(part) for part in parts)
 
