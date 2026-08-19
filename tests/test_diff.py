@@ -1402,6 +1402,68 @@ def test_a_straddled_verdict_is_incomparable_not_scored():
     assert "verdict.parallel" not in result.dropped
 
 
+def test_the_0_9_0_baseline_every_committed_profile_carries_is_incomparable():
+    """Version ordering is parsed, not lexical — pinned BEHAVIOURALLY,
+    with the exact pair that gets it wrong.
+
+    `"0.9.0" < "0.11.0"` is False under string comparison ("9" sorts
+    after "1"), so a lexical `_straddles` decides this pair does not
+    straddle and scores it. That mutation — a plausible "simplification"
+    of a helper with one call site — survived the whole suite, because
+    the only test holding the ordering was a `_parse_version` unit test
+    that stays green while the BEHAVIOUR is wrong.
+
+    This is not a hypothetical pair. Every one of the fifteen committed
+    campaign profiles is probe `0.9.0`, so a 0.9.0 baseline against a
+    0.11.0-or-later re-run is the single most likely diff anyone runs
+    against this repository.
+    """
+    for newer in ("0.11.0", "0.12.0"):
+        old = make_profile(probe_version="0.9.0", verdicts=make_verdicts(
+            parallel={"verdict": "risky", "lens": {}}))
+        new = make_profile(probe_version=newer, verdicts=make_verdicts(
+            parallel={"verdict": "ready", "lens": {}}))
+
+        result = diff_profiles(old, new)
+
+        assert result.incomparable == ("verdict.parallel",), newer
+        assert [c for c in result.changes if c.cell == "parallel"] == [], newer
+        assert "verdict.parallel" not in result.within_noise
+
+
+def test_an_unidentifiable_instrument_is_incomparable_end_to_end():
+    """§6's discipline, pinned at `diff_profiles` altitude.
+
+    Inverting `_straddles`' unparseable branch from `return True` to
+    `return False` — comparable-by-default, the exact direction §6
+    forbids — left 1036 of 1037 tests green, and the sole failure was a
+    unit test on a private helper. No behavioural test reached this
+    path, because `make_profile()` always supplies a `probe_version`.
+
+    Both sides measure `verdict.parallel` here, so nothing is `dropped`
+    and the cell would otherwise be scored: an absent or unreadable
+    version is the ONLY thing standing between this pair and a
+    published `risky -> ready` improvement.
+    """
+    for old_version, new_version in ((None, "0.11.0"),
+                                     ("0.11.0", None),
+                                     ("garbage", "0.11.0"),
+                                     (None, None)):
+        old = make_profile(probe_version=old_version, verdicts=make_verdicts(
+            parallel={"verdict": "risky", "lens": {}}))
+        new = make_profile(probe_version=new_version, verdicts=make_verdicts(
+            parallel={"verdict": "ready", "lens": {}}))
+
+        result = diff_profiles(old, new)
+
+        pair = (old_version, new_version)
+        assert result.incomparable == ("verdict.parallel",), pair
+        assert [c for c in result.changes if c.cell == "parallel"] == [], pair
+        # Not `dropped`: both sides measured it. v1.8's word means
+        # measured on exactly one side, and this is neither.
+        assert "verdict.parallel" not in result.dropped, pair
+
+
 def test_the_same_pair_within_one_era_still_scores():
     """The guard must not become always-on — that would be its own kind
     of useless. Two documents from the same side of the break compare
