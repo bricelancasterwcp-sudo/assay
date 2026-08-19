@@ -186,15 +186,26 @@ def _affordable(meter: BudgetMeter, lanes: int, prompt_tokens: int) -> bool:
 
 
 def classify_mode(
-    spans: list[tuple[float, float]], tolerance: float = OVERLAP_TOLERANCE_S
+    spans: list[tuple[float, float]], fraction: float = OVERLAP_TOLERANCE_S
 ) -> str | None:
     """"serialized" if the lanes' spans stacked, "parallel" if they overlapped.
 
-    Sorted by start; serialized iff every consecutive pair overlaps by
-    less than `tolerance` (``next.start >= prev.end - tolerance``). The
-    tolerance absorbs the client-side skew between "the previous lane's
-    reply finished arriving" and "the next lane's request went out" —
-    it is not a claim about the endpoint.
+    Sorted by start; parallel iff some consecutive pair overlaps by
+    more than `fraction` of the SHORTER of the two spans.
+
+    The fraction is relative on purpose. An absolute seconds tolerance
+    subtracted from a duration-dependent comparison can only be correct
+    at one time scale: for lanes launched together, overlap is
+    approximately the lane duration, so "overlap > 0.25 s" reduces to
+    "each lane lasted longer than 0.25 s" — a statement about the
+    endpoint's SPEED, not its scheduling. A fast endpoint would read
+    `serialized` while serving every lane at once.
+
+    What the fraction still absorbs is the client-side skew between "the
+    previous lane's reply finished arriving" and "the next lane's
+    request went out". That skew is milliseconds, and 25% of a span is
+    far above it at any scale — two lanes that nearly serialize overlap
+    by ~1% and correctly stay `serialized`.
 
     None below two lanes: "serialized" is a statement about how two
     lanes relate, and with one lane there is nothing to relate. None,
@@ -203,8 +214,12 @@ def classify_mode(
     if len(spans) < 2:
         return None
     ordered = sorted(spans)
-    for (_, prev_end), (next_start, _) in zip(ordered, ordered[1:]):
-        if next_start < prev_end - tolerance:
+    for (prev_start, prev_end), (next_start, next_end) in zip(ordered, ordered[1:]):
+        overlap = min(prev_end, next_end) - max(prev_start, next_start)
+        shortest = min(prev_end - prev_start, next_end - next_start)
+        # A zero-length span makes any overlap infinite in ratio terms;
+        # it measured nothing, so it classifies nothing.
+        if shortest > 0 and overlap > fraction * shortest:
             return "parallel"
     return "serialized"
 
@@ -219,7 +234,7 @@ def _row(
     k: int,
     results: list[LaneResult],
     baseline_decode_tps: float,
-    tolerance: float,
+    fraction: float,
 ) -> ParallelRow:
     """One k's lanes, folded into a row without conflating the failures.
 
@@ -267,7 +282,7 @@ def _row(
             if per_lane is not None and baseline_decode_tps > 0
             else None
         ),
-        mode=classify_mode(spans, tolerance),
+        mode=classify_mode(spans, fraction),
         n_lanes_ok=len(spans),
         lane_errors=tuple(errors),
         evidence=_weakest(classes),
