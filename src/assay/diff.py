@@ -46,6 +46,17 @@ is not even a drop: nothing was compared and nothing vanished, so
 what v1.8's exit 3 reads. ``unsupported`` is the one word that looks
 like absence and is not: the endpoint was asked and said no, so it
 ranks (bottom rung) instead of dropping.
+
+A cell measured on BOTH sides can still go unscored, for a different
+reason: ``incomparable`` (v1.10, ``SEMANTIC_BREAKS``). ``dropped`` is
+about ONE side having nothing to say — re-running the missing side is
+exactly what closes it. ``incomparable`` is about a cell where both
+sides spoke and are not speaking about the same thing, because the
+release that produced one of them changed what the cell MEANS; no
+amount of re-running the older document fixes that, only re-measuring
+under the newer rule does. The two never overlap on the same cell —
+one side missing is checked first, unconditionally — so every
+incomplete comparison lands in exactly one of the two, never both.
 """
 
 from __future__ import annotations
@@ -647,4 +658,12 @@ def render_diff(result: DiffResult) -> str:
         lines.append(f"incomplete: {len(result.dropped)} cell(s)"
                      " measured on one side only")
         lines.append("dropped: " + ", ".join(result.dropped))
+    if result.incomparable:
+        # A separate line from `dropped` on purpose: a one-sided cell is
+        # fixed by re-running, and this one is not fixable at all — the
+        # two documents were written by instruments that meant
+        # different things by the same name.
+        lines.append(f"incomparable: {len(result.incomparable)} cell(s)"
+                     " measured under a different rule")
+        lines.append("rule changed: " + ", ".join(result.incomparable))
     return "\n".join(lines)

@@ -466,6 +466,34 @@ def test_cli_diff_exit_code_table(tmp_path):
         assert cli.main(argv) == expected, f"{argv}: {why}"
 
 
+def test_an_instrument_rule_change_is_not_published_as_an_improvement(tmp_path):
+    """The defect this wave closes, end to end.
+
+    Before v1.10 this exact pair — same model, same box, a 0.10.0
+    baseline against a 0.11.0 re-run — reported
+    `verdict.parallel: risky -> ready (improvement, flip)`, exit 1
+    plain and exit **0** under --gate, because an improvement does not
+    fail a gate. An instrument rule change published as a fact about
+    the endpoint, and a CI check going green on it.
+    """
+    old = _write_profile(tmp_path / "old.json", _diff_payload(
+        probe_version="0.10.0",
+        verdicts={"parallel": {"verdict": "risky", "lens": {}}}))
+    new = _write_profile(tmp_path / "new.json", _diff_payload(
+        probe_version="0.11.0",
+        verdicts={"parallel": {"verdict": "ready", "lens": {}}}))
+
+    assert cli.main(["diff", old, new]) == 3
+    assert cli.main(["diff", old, new, "--gate"]) == 3
+
+    # Spec §4: a machine reader needs to know what was NOT compared,
+    # for the same reason it already gets `within_noise`.
+    out = tmp_path / "diff.json"
+    assert cli.main(["diff", old, new, "--json", str(out)]) == 3
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["incomparable"] == ["verdict.parallel"]
+
+
 def test_cli_diff_not_comparable_outranks_incomplete(tmp_path):
     """2 > 3. A different model is not a partial comparison, it is the
     absence of one — nothing was subtracted, so the one-sided cells

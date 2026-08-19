@@ -913,6 +913,23 @@ def test_render_names_the_incomplete_comparison(capsys):
     assert "dropped: verdict.patch_editing" in page
 
 
+def test_the_render_names_incomparable_separately_from_dropped():
+    """A reader must be able to act on the difference. Re-running fixes
+    a one-sided cell; nothing fixes a cell the two instruments defined
+    differently."""
+    thin = make_verdicts(parallel={"verdict": "risky", "lens": {}})
+    del thin["patch_editing"]
+    old = make_profile(probe_version="0.10.0", verdicts=thin)
+    new = make_profile(probe_version="0.11.0", verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+    page = render_diff(diff_profiles(old, new))
+
+    assert "incomparable: 1 cell(s) measured under a different rule" in page
+    assert "verdict.parallel" in page
+    assert "incomplete: 1 cell(s) measured on one side only" in page
+    assert "dropped: verdict.patch_editing" in page
+
+
 def test_render_of_an_incomparable_pair_says_why():
     text = render_diff(diff_profiles(make_profile(),
                                      make_profile(model_name="other-model")))
