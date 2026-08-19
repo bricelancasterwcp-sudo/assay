@@ -1038,6 +1038,14 @@ def test_schema_version_and_package_version_move_together():
     # (it said 3 while PROFILE_VERSION was 4) because nothing pinned it.
     assert f"assay_profile_version: {PROFILE_VERSION}" in (
         _REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    #
+    # `test_schema_v10_and_the_package_version_move_together` was folded
+    # in here by v1.10's final fix wave. It asserted the first two lines
+    # above and nothing else — a strict subset — under a name claiming
+    # the two versions moved together, which is the opposite of what
+    # this wave established: the schema stayed at v10 while the package
+    # went 0.11.0 -> 0.12.0. No coverage was lost, and there is now one
+    # place to update per release instead of two.
 
 
 # --- schema v10: the overlap fraction replaces the seconds tolerance --------
@@ -1082,14 +1090,6 @@ def test_a_v10_profile_loads_with_its_fraction():
     parallel = _parallel_from(v10)
     assert parallel.overlap_fraction == 0.25
     assert parallel.tolerance_s is None
-
-
-def test_schema_v10_and_the_package_version_move_together():
-    from assay.profile import PROFILE_VERSION
-    import assay
-
-    assert PROFILE_VERSION == 10
-    assert assay.__version__ == "0.12.0"
 
 
 def test_long_output_round_trips_as_tuples_of_rungs():
