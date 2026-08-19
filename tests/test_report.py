@@ -411,9 +411,15 @@ def test_the_report_renders_a_v10_overlap_fraction():
 
 
 def test_the_report_still_renders_a_v9_seconds_tolerance():
-    """The fifteen committed profiles are v9 and render through this
-    path. Their output must not move — the published matrix page is a
-    byte-compared copy of a build."""
+    """The fifteen committed profiles are v8 (pre-v10), not v9 — no
+    committed profile has ever carried schema v9 (CARRIED-DEBT item 16's
+    erratum; M2, final fix wave, 2026-08-18) — but v8 carries the same
+    `tolerance_s`/`tolerance_provenance` field shape a v9 document would,
+    and both render through this path. The synthetic `assay_profile_
+    version: 9` payload below pins the renderer against the version
+    number itself, since the committed corpus never exercises it. Their
+    output must not move — the published matrix page is a byte-compared
+    copy of a build."""
     page = render_report([{
         "assay_profile_version": 9,
         "model": {"name": "v9-model"},

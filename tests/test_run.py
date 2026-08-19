@@ -824,15 +824,21 @@ def test_full_mode_parallel_verdict_reads_ready_once_overlap_is_scale_free():
     calls are faster than this interpreter's own thread-start
     overhead, so its lanes never overlap in wall-clock time at all —
     true under the old rule and the new one alike, and orthogonal to
-    which classify_mode this project ships. That gap is item 16's,
-    not this test's: it is the "no live row has ever overlapped by
-    between 0% and 25% of a span" boundary the v1.9 amendment leaves
-    open, restated at fixture scale. Paced to a realistic call
-    duration, the fake's lanes DO overlap, and the change in the
-    assertion below IS the fix, observed end to end against genuinely
-    concurrent threads — it does NOT tune the fake to manufacture
-    `ready`, it gives it enough duration to be measured honestly (see
-    CARRIED-DEBT.md item 16, amended v1.9).
+    which classify_mode this project ships. That is a DIFFERENT gap
+    from item 16's (corrected, final fix wave, 2026-08-18: this
+    docstring previously conflated the two). Item 16 is about LIVE
+    endpoints never having produced an overlap fraction near the
+    25% boundary — a fact that was never recorded either, since
+    profiles store only the derived `mode`, never the spans. This
+    fixture's problem is unrelated: the unmodified fake's lanes are
+    fully disjoint in wall-clock time (genuinely ZERO overlap, nowhere
+    near any boundary), a thread-start-overhead ceiling this file's
+    own CARRIED-DEBT.md v1.9 section (item 1, "the fixture-speed
+    ceiling") records directly. Paced to a realistic call duration, the
+    fake's lanes DO overlap, and the change in the assertion below IS
+    the fix, observed end to end against genuinely concurrent threads
+    — it does NOT tune the fake to manufacture `ready`, it gives it
+    enough duration to be measured honestly.
     """
     profile = probe(
         _URL, "fake-model",

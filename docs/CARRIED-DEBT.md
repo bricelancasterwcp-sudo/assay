@@ -1,10 +1,15 @@
-# Carried debt — v1.9 (recorded 2026-08-18, Task 4)
+# Carried debt — v1.9 (recorded 2026-08-18, Task 4; extended 2026-08-18
+by the final whole-branch fix wave)
 
 This wave's full close-out ledger is not written here yet — that is a
 separate, deliberate record following the v1.8/v1.7 convention below.
-One item is filed now, ahead of that record, because it surfaced while
-closing Task 4 and should not wait for a ledger that has not been
-written.
+Item 1 was filed at Task 4's close, ahead of that record, because it
+surfaced while closing Task 4 and should not wait for a ledger that had
+not been written. Items 2 onward were filed by the final whole-branch
+review that precedes merge — one Critical (item 2), two Important
+erratum entries (items 2-3 cover both), and four items recorded but
+deliberately not fixed (items 4-7, the Minor "park" list) — following
+the same not-yet-written-ledger convention.
 
 ## Deferred, by area
 
@@ -38,10 +43,19 @@ written.
 
    **The empirical fact that motivated the workaround, recorded because
    nobody had written it down:** the house fake's calls return in
-   roughly 10 microseconds — faster than this interpreter's own
+   **0.77 microseconds (median)** — faster than this interpreter's own
    `threading.Thread.start()` takes to hand control to a new OS thread
-   (measured at roughly 70-100 microseconds between consecutive lanes'
-   start times, this box). Below that floor, `_threaded_runner`'s lanes
+   (measured at **12-71 microseconds** between consecutive lanes' start
+   times, this box). *Correction (M5, final fix wave, 2026-08-18): this
+   entry originally stated "roughly 10 microseconds" and "roughly
+   70-100 microseconds." Independently re-measured — 2000 scripted
+   calls for the per-call figure, 300 four-lane trials (900 gaps) for
+   the start-time spread — at 0.77 µs median call and a 12-71 µs gap
+   range. The conclusion these numbers support is unchanged and holds
+   with MORE margin than originally recorded (the fake is faster, and
+   the thread-start floor is lower, than first stated); only the
+   numbers, which were presented as measurements, needed correcting.*
+   Below that floor, `_threaded_runner`'s lanes
    never share the CPU at all: the first thread runs to completion
    before the second is even created, so an unmodified fake's lanes
    produce wall-clock spans that are fully disjoint — genuinely zero
@@ -54,6 +68,180 @@ written.
    invisible until something tried to pin the fake's rung against a
    real `probe_parallel` call rather than synthetic spans. **(v1.9,
    Task 4)**
+
+### Diff
+
+2. **The diff blind spot: a rule-change flip reads as a silent,
+   `--gate`-passing endpoint improvement.** (C1, final fix wave,
+   2026-08-18.) The v1.9 spec §3 and this file's own CHANGELOG entry
+   originally justified the `tolerance_s` → `overlap_fraction` rename
+   with a claim that turned out to be false: that `assay diff` would
+   compare `tolerance_s: 0.25` against `tolerance_s: 0.25`, find them
+   byte-equal, and report no change across the rule break. Checked
+   directly against `src/assay/diff.py`: the module has **zero**
+   references to `parallel` as a family name. It never reads
+   `tolerance_s`, `overlap_fraction`, or any other field of the
+   `parallel` payload — it compares exactly five families (`ceiling`,
+   `ceiling_shapes`, `verdicts`, `codecs`, `speed`), and `parallel`
+   only enters the comparison indirectly, as one more name inside the
+   generic `verdicts` dict `_diff_verdicts` walks.
+
+   The real failure is worse than a silently-skipped field, because
+   the verdict IS compared — and reads as a genuine finding. Reproduced
+   directly against `diff_profiles`/`_diff_exit_code` (same model, same
+   hardware tier, only `verdict.parallel` differing — the shape a
+   0.10.0-baseline-vs-0.11.0-rerun comparison on a fast endpoint would
+   take once the classification rule alone flips a k's `mode` from
+   `serialized` to `parallel`):
+
+   ```
+   comparable: True   identity notes: ()
+   verdict.parallel: risky -> ready (improvement, flip)
+   dropped: ()
+   exit plain: 1      exit --gate: 0
+   ```
+
+   `_ladder_direction` (`diff.py`) ranks `ready` above `risky`, so the
+   flip scores `improvement`, and `_diff_exit_code` (`cli.py`) only
+   fails `--gate` on a `regression` — an improvement passes silently.
+   Exit 3 (`dropped`) cannot catch it either: nothing is dropped, both
+   sides measured the `parallel` cell, `dropped` means "measured on
+   exactly one side" and this is measured on both. So an instrument
+   rule change — nothing about the endpoint moved — publishes as a
+   verified capability improvement, and a `--gate`-based CI would wave
+   it through.
+
+   This is NOT the same gap CARRIED-DEBT item 113 already named
+   ("`diff` has no version-aware machinery at all"). Item 113 concerns
+   whether a cross-schema pair reads exit 3 (it does, IF the newer
+   schema measured something new the older one lacks — not "by
+   construction"). Every schema bump before v1.9 was purely ADDITIVE:
+   a new field, a new family, a new lens — so a pair spanning one of
+   those bumps either drops a genuinely-new cell (caught by exit 3,
+   item 113's territory) or compares two cells that mean the same thing
+   on both sides. **v1.9 is the first bump that changes the MEANING of
+   an already-measured cell without changing its name, type, or
+   presence.** `verdict.parallel` exists on both sides, is a string on
+   both sides, and is measured on both sides — nothing about its shape
+   signals that the rule which produced it changed. Item 113's
+   diagnosis (exit 3 depends on what was measured, not on schema
+   difference alone) is exactly why exit 3 cannot see this: nothing
+   was dropped, so by item 113's own accurate account exit 3 correctly
+   does not fire — the gap this item names is orthogonal, not a variant.
+
+   Also unlike the diff family cells (`ceiling`, `codecs`, `speed`),
+   which compare raw measurements diff itself judges by evidence
+   strength, `verdict.parallel` is a STRING already reduced by
+   `_parallel_verdict`'s own ladder logic before `diff` ever sees it —
+   diff has no way to distinguish "the endpoint changed" from "the rule
+   that reads the endpoint changed" from a verdict string alone, for
+   any family, not just this one. `verdict.parallel` is simply the
+   family where this wave made that distinction matter for the first
+   time.
+
+   The identity gate (`identity_gate`, `diff.py`) does not help either:
+   it checks `model.name`, `model.quant`, `model.weights_bytes`,
+   `provenance.tier`, and `provenance.emulated` — five fields about
+   the HARDWARE and MODEL under test, never `probe_version` or
+   `assay_profile_version`. A pair that differs only in which assay
+   build measured it passes the identity gate cleanly, by design (the
+   gate's whole job is refusing to compare different weights, not
+   different instrument versions).
+
+   **Not fixed here, deliberately.** Giving `diff` version-awareness is
+   a change to its whole contract — CARRIED-DEBT item 113's territory,
+   already open, now sharpened by a second concrete instance instead of
+   item 113's hypothetical account. The mitigation available today is
+   external: a consumer that prechecks `probe_version` +
+   `schema_version` before trusting a diff at all — bloomery's drift
+   watch does exactly this — is safe from this specific trap, which is
+   the real (and now correctly stated) reason the v1.9 rename and
+   schema bump matter. A consumer relying on `assay diff --gate` alone,
+   with no version precheck of its own, is not protected by anything
+   this wave shipped.
+
+   **Spec erratum, same item:** the v1.9 design spec's §3
+   (`docs/superpowers/specs/2026-08-18-assay-v1.9-scale-free-overlap-design.md`)
+   states the false byte-equality justification quoted above. Per this
+   project's convention the committed spec is not rewritten after the
+   fact; this entry is the correction sitting beside it. CHANGELOG.md's
+   v1.9 entry made the same claim and, being in-branch and unpublished,
+   is corrected directly rather than by erratum.
+
+3. **Spec §2's "strictly dominates ... changes none it got right" is
+   an overclaim, corrected.** (I5, final fix wave, 2026-08-18.)
+   Measured counter-examples: `classify_mode([(0, 10), (9.7, 19.7)])`
+   and `classify_mode([(0, 10), (9, 19)])` both read `parallel` under
+   the retired absolute rule and `serialized` under the new fraction
+   rule — a FLIP, not a preserved answer, on a pair the old rule got
+   "right" only in the sense that it was internally consistent with
+   itself. In both cases the new answer is the better one: 0.3 s and
+   1 s of overlap on a 10 s span is 3% and 10%, respectively — nowhere
+   near genuinely concurrent — and the old rule called both `parallel`
+   purely because 0.3 s and 1 s both clear the flat 0.25 s bar. The
+   rule is fine; the domination claim is false. Corrected statement,
+   also applied to CHANGELOG.md directly (in-branch, unpublished): the
+   new rule corrects every SHORT-lane case the old one got wrong (the
+   family this wave was written to fix) AND reclassifies long-lane
+   pairs whose overlap is a small fraction of their span (a case the
+   old rule was also getting wrong, from the opposite side) — which is
+   the intended consequence of making the test relative, not a
+   narrower "changes nothing else" guarantee. Per this project's
+   convention the spec (§2) is not rewritten; this is the erratum.
+
+### Parked (recorded, not fixed, by the final fix wave, 2026-08-18)
+
+4. **`tests/test_profile.py:1036`'s
+   `test_schema_v10_and_the_package_version_move_together` duplicates
+   `test_schema_version_and_package_version_move_together`** (line 971
+   of the same file), which already asserts `PROFILE_VERSION == 10`,
+   `assay.__version__ == "0.11.0"`, the `pyproject.toml` version string,
+   AND the README's `assay_profile_version` line — strictly more than
+   the duplicate covers. Not removed here: a redundant PASSING test is
+   a lower-priority cleanup than the Critical/Important findings this
+   wave exists to fix, and removing test coverage is exactly the kind
+   of change that deserves its own reviewed diff rather than riding
+   along in a fix wave already touching this file in a dozen places.
+   **(M3)**
+5. **`tests/test_run.py:797` gates the paced fake on
+   `seed >= PARALLEL_SEED_BASE`, an open upper bound.** Airtight today —
+   every other family's seed base is ≤ 1520 against `PARALLEL_SEED_BASE
+   = 1700` — but nothing enforces that relationship going forward: a
+   future family seeded at 1700 or above would silently start inheriting
+   the paced fake's per-call sleep (real time, deliberately, per this
+   file's item 1 above), which would slow that family's tests without
+   any signal pointing at why. Not fixed here: the correct fix is
+   probably a shared, explicitly-ordered seed registry across all
+   families, which is a larger and separately-reviewable change than
+   this wave's scope. **(M4)**
+6. **Commit `692e0eb` deliberately leaves the suite red until
+   `701c521`**, so `git bisect` run across that range can land on a
+   commit with failing tests. Not squashed or reordered: this project's
+   documents (specs, plans, this file) are amended in place rather than
+   silently rewritten after the fact, and the same principle applies
+   here — the red window is a true record of TDD's RED step, not an
+   accident, and rewriting history to look green throughout would be a
+   worse kind of dishonesty than a bisect landing on a known-red commit.
+   Recorded so a future bisect run is not surprised by it. **(M6)**
+7. **`make_parallel` (`tests/test_profile.py`) is pinned v9-shaped** —
+   `tolerance_s`/`tolerance_provenance` real, `overlap_fraction`/
+   `overlap_provenance` left at their `None` default — so most
+   report/profile tests that build a profile through this fixture
+   exercise the pre-v10 render branch by default. The v10 branch has a
+   couple of narrow dedicated tests that pass explicit `overlap_*`
+   overrides (`test_the_report_renders_a_v10_overlap_fraction` in
+   `tests/test_report.py`; `test_a_v10_profile_does_not_emit_the_
+   retired_seconds_tolerance` in `tests/test_profile.py`, added by this
+   same fix wave for I6) and no DEFAULT-fixture coverage — a future
+   change to the general profile/report test suite is still far more
+   likely to exercise the v9 path than the v10 one purely by which
+   fixture it inherits. Not changed here: `make_parallel`'s own
+   docstring explains this is deliberate, because it is shared with
+   `tests/test_report.py`'s byte-pinned matrix-page rendering tests,
+   which read the literal "0.25" / "chosen-2026-08-17" seconds-tolerance
+   text — flipping the fixture's default shape would be a much larger,
+   separately-reviewable change touching the byte-pinned page output.
+   **(M8)**
 
 # Carried debt — v1.8 (recorded 2026-08-17 at the wave's close)
 
@@ -375,6 +563,48 @@ genuinely-concurrent lanes read `serialized`; 0.3s lanes read
   file already records as unexercised by live data (item 16). This
   shares item 16's retirement condition exactly: an endpoint that
   actually serializes.
+
+  **v1.9 amendment (2026-08-18): this is the entry the v1.9 wave
+  exists to close, and it is amended, not struck — the original text
+  above is left standing because it is the accurate account of the
+  defect as it stood when this item was raised.** `OVERLAP_TOLERANCE_S`
+  (0.25 s, absolute) no longer exists; `classify_mode` now reads
+  `OVERLAP_FRACTION` (0.25, dimensionless — 25% of the shorter lane's
+  span; see `src/assay/parallel.py`). What changed, verified by the
+  v1.9 suite (`tests/test_parallel.py`,
+  `test_concurrent_lanes_read_parallel_at_every_time_scale`): the
+  0.1 s-lane case this item measured directly now reads `parallel`,
+  not `serialized`, and so does every genuinely-concurrent duration
+  swept from 0.05 s to 1.0 s — the cliff this item named is gone as a
+  function of lane DURATION. The 0.222 s pure-decode span this item
+  flagged as sitting right at the old edge is now robustly `parallel`
+  rather than surviving only because prefill and HTTP padded it. The
+  house fake's test was renamed
+  (`test_full_mode_parallel_verdict_is_produced_and_reads_risky_not_
+  ready` → `test_full_mode_parallel_verdict_reads_ready_once_overlap_
+  is_scale_free`, `tests/test_run.py`) and now asserts `ready`, not
+  `risky` — the fake's sub-millisecond lanes read `parallel` under the
+  new rule where they read `serialized` under the old one, once paced
+  to a duration real OS threads can actually overlap at (see this
+  file's v1.9 section, item 1, for the fixture-speed ceiling that
+  pacing works around).
+
+  What remains open, and is now item 16's open condition exactly
+  rather than a variant of it: no live campaign row has ever read
+  `serialized` under either rule, so the boundary itself — the point
+  where the ratio test actually decides something — is still
+  unexercised by live data. **What is NOT supported by anything
+  measured** (corrected by I3, same fix wave, after this item's own
+  first v1.9 draft overclaimed it): the evidence does not show that no
+  live row overlapped by between 0% and 25% of a span. Profiles store
+  only the derived `mode`, never the spans (`ParallelRow` has no span
+  field), and the transcripts carry no timing — those overlap
+  fractions were never recorded and cannot be recovered from anything
+  committed. The narrower, actually-supported claim is: no live row
+  ever read `serialized` under the RETIRED absolute-seconds rule.
+  Retiring `OVERLAP_FRACTION`'s chosen-not-derived flag still needs an
+  endpoint that actually serializes under the new rule, and this tier
+  has not produced one — item 16's condition, unchanged by this wave.
 
 ### Documentation
 
@@ -775,14 +1005,35 @@ was recorded for each at the time and is preserved where it bites.
     near-miss (2 ms of overlap on a 200 ms span) still correctly reads
     `serialized` — the client-skew guard the tolerance existed to
     provide, preserved. What remains is exactly the first part,
-    narrowed to a single boundary: no live row has ever overlapped by
-    between 0% and 25% of a span, so retiring the flag still needs an
+    narrowed to a single boundary: retiring the flag still needs an
     endpoint that actually serializes, and this tier still has not
-    produced one. The fifteen campaign profiles were left exactly as
-    measured — not rescored, no campaign re-run — and still carry
-    `tolerance_s` / `tolerance_provenance` under their own committed
-    schema version, which the v1.9 renderers read in its own terms
-    rather than converting to a fraction nobody measured.
+    produced one. **Correction (I3, final fix wave, 2026-08-18): this
+    note originally said "no live row has ever overlapped by between 0%
+    and 25% of a span" here. That overstates what is known. Profiles
+    store only the derived `mode`, never the spans — `ParallelRow` has
+    no span field — and the transcripts carry no timing, so no overlap
+    fraction was ever recorded for any live row and none can be
+    recovered from anything committed; "0% to 25%" is not a range
+    anything measured. The claim the evidence actually supports is
+    narrower: no live row has ever read `serialized` under the retired
+    absolute-seconds rule. The same overclaim also appears in the
+    committed design spec at
+    `docs/superpowers/specs/2026-08-18-assay-v1.9-scale-free-overlap-design.md`
+    §4 ("no live row has ever overlapped by between 0% and 25% of a
+    span"), in the committed plan at
+    `docs/superpowers/plans/2026-08-18-assay-v1.9-scale-free-overlap.md`
+    (the drafted CHANGELOG block at line 530 and the Step 5 task text at
+    line 542, same wording), and in `CHANGELOG.md`'s v1.9 entry; per
+    this project's convention the spec and plan are committed process
+    record and are not rewritten after the fact — this correction is
+    the erratum for both, so the spec's §4 claim and the plan's Step 5
+    text should both be read with the same correction applied, and
+    CHANGELOG.md is edited directly since it is in-branch and
+    unpublished.** The fifteen campaign profiles were left
+    exactly as measured — not rescored, no campaign re-run — and still
+    carry `tolerance_s` / `tolerance_provenance` under their own
+    committed schema version, which the v1.9 renderers read in its own
+    terms rather than converting to a fraction nobody measured.
 
     **Erratum, same note:** the v1.9 spec and plan both wrote "the
     fifteen committed **v9** profiles." They are **v8**. Verified by

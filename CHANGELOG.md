@@ -18,27 +18,57 @@ statement about SPEED, not scheduling: a fast endpoint read
 capped at `risky` for a box doing exactly what was asked of it.
 
 It now asks whether they overlapped by more than **0.25 of the shorter
-span**. Dimensionless, so it is correct at every time scale. Verified
-in both directions: genuinely concurrent lanes read `parallel` at
-0.05 s, 0.222 s and 1.0 s where the old rule failed the first two;
-genuinely serialized lanes still read `serialized` at all three; and
-two lanes that nearly serialize — 2 ms of overlap on a 200 ms span —
-still read `serialized`, which is the client-skew guard the old
-tolerance existed to provide. 0.222 s is not a hypothetical: it is the
-pure-decode span of the fastest model on the published matrix, which
-cleared the old threshold only because prefill and HTTP padded it.
+span**. Dimensionless, so the SAME rule now applies at every time
+scale — that is not the same as saying it produces the same verdicts
+the old rule did, and it does not. Verified in both directions:
+genuinely concurrent lanes read `parallel` at 0.05 s, 0.222 s and 1.0 s
+where the old rule failed the first two; genuinely serialized lanes
+still read `serialized` at all three; and two lanes that nearly
+serialize — 2 ms of overlap on a 200 ms span — still read `serialized`,
+which is the client-skew guard the old tolerance existed to provide.
+0.222 s is not a hypothetical: it is the pure-decode span of the
+fastest model on the published matrix, which cleared the old threshold
+only because prefill and HTTP padded it. **The new rule is not a
+superset of the old one's correct answers, though: it also reclassifies
+long-lane pairs whose overlap is a small FRACTION of their span even
+when that overlap comfortably clears the old absolute floor** — e.g.
+`[(0, 10), (9.7, 19.7)]` and `[(0, 10), (9, 19)]` both read `parallel`
+under the old rule (0.3 s and 1 s of overlap both clear the flat
+0.25 s bar) and `serialized` under the new one (0.3 s and 1 s are 3%
+and 10% of a 10 s span, both under the 25% floor). That is the intended
+consequence of making the test relative, not a regression: the old
+rule's "correct" answer on those pairs was itself an artifact of the
+same absolute-threshold defect this wave exists to fix, just from the
+opposite side (a false `parallel` instead of a false `serialized`).
 
 **The field is renamed and the schema moves: `tolerance_s` →
 `overlap_fraction`, `tolerance_provenance` → `overlap_provenance`,
 profile schema v9 → v10, package 0.10.0 → 0.11.0.** The rename is not
-cosmetic. The same number 0.25 means seconds under the old rule and a
-fraction under the new one, so keeping the name would leave a field
-called *seconds* carrying a fraction — and `assay diff` would compare
+cosmetic, for two real reasons. First, the same number 0.25 means
+seconds under the old rule and a fraction under the new one, so keeping
+the name would leave a field called *seconds* carrying a fraction — a
+false label regardless of who reads it next. Second, and this is the
+reason the schema bump matters: `assay diff` never reads `tolerance_s`
+or `overlap_fraction` at all — it has zero references to `parallel` as
+a named family, and only the derived `verdict.parallel` string passes
+through its generic verdict comparison, the same as every other
+verdict. **A previous draft of this entry claimed `diff` would compare
 `tolerance_s: 0.25` against `tolerance_s: 0.25`, find them byte-equal,
-and report no change across a break where the classification rule
-changed completely. The schema bump is what makes a consumer's
-instrument-changed precheck fire on this boundary instead of letting a
-diff sail through it.
+and report no change across this break. That claim was checked against
+`diff.py` and is false** — `diff` was never going to read that field
+either way, renamed or not, and reproducing the scenario shows a
+DIFFERENT and worse failure than the one originally described (see
+CARRIED-DEBT.md's v1.9 section, "the diff blind spot," for the
+reproduction and the corrected reasoning). The schema bump's real job
+is protecting the consumers who preflight on it: a version-aware
+precheck like bloomery's drift watch, which compares `probe_version`
+and `schema_version` before trusting a diff at all, correctly refuses
+to compare a v9 reference against a v10 current — which is the honest
+outcome for a pair measured under two different classification rules,
+and is exactly the trap this rename and bump close for a consumer doing
+that check. `assay diff` itself does not do that check, and this wave
+does not add it (see the same CARRIED-DEBT.md entry for what remains
+open there).
 
 The fifteen committed profiles are **not** rescored and no campaign
 was re-run. They are pre-v10 — and, per the erratum recorded in
@@ -54,9 +84,14 @@ onto the other would invent a measurement nobody made.
 says so at every point of use. What it is still waiting for has
 narrowed: the old constant was both unexercised AND able to produce a
 false `serialized` from speed alone. The fraction can no longer do the
-second. What remains unexercised is the boundary itself — no live row
-has ever overlapped by between 0% and 25% of a span (CARRIED-DEBT.md
-item 16, amended).
+second. What remains unexercised is the boundary itself: no live row
+has ever read `serialized` under the retired absolute rule (CARRIED-
+DEBT.md item 16, amended) — profiles store only the derived `mode`,
+never the spans, so no overlap fraction was ever recorded for a live
+row and none can be recovered; "no live row has ever overlapped by
+between 0% and 25% of a span," which an earlier draft of this and
+other v1.9 documents claimed, is not something anything measured
+supports.
 
 One more finding, orthogonal to the rule itself: the house fake used
 by the full-mode `probe()` test is faster than this interpreter's own
@@ -65,6 +100,10 @@ either tolerance style — a gap the fraction rule cannot close by
 itself. That test now paces the fake's parallel-family calls to a
 duration a real endpoint would have, so the `ready` it reads is earned
 against threads that genuinely overlapped, not merely asserted to.
+
+One more breaking change, easy to miss because it costs nothing under
+positional calling: `classify_mode`'s second parameter is renamed
+`tolerance` → `fraction`. Any caller passing it by keyword breaks.
 
 ## v0.10 (v1.8): the honest gate and the parallel verdict
 
