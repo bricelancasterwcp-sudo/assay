@@ -60,9 +60,10 @@ capability.
    sibling test file.** Three of this wave's four task briefs contained
    a factual error by the controller about the file the task actually
    edits: a snippet that reassigned `_diff_verdicts`'s own loop variable
-   (`diff.py:349`'s `name`, which the loop body already builds cell
-   names from — overwriting it would have corrupted every cell name for
-   the rest of that iteration); a claim that `make_profile`
+   (the `name` bound by its `for name in sorted(...)` line, which the
+   loop body already builds cell names from — overwriting it would have
+   corrupted every cell name for the rest of that iteration); a claim
+   that `make_profile`
    (`tests/test_diff.py`) needed a new default added for `probe_version`
    when the payload already carried one (`"0.5.0"`, hardcoded) and only
    needed to be made overridable; and a claim that `_ceiling` "already
@@ -75,6 +76,18 @@ capability.
    every break). None of the four was caught by trusting the brief;
    each was caught by opening the actual file the task edits and
    checking the claim against it directly.
+
+   **This entry made the same mistake in its own first draft**, which is
+   why it now cites the loop by its `for` line rather than by number: it
+   originally read `diff.py:349`, a line number that was accurate when
+   the Task 2 brief was written and stale by the time this record was —
+   Task 1 had inserted the registry and parser ahead of
+   `_diff_verdicts`, moving the loop to `:428`, where `:349` now lands
+   inside `_diff_ceiling`. The task review caught it. The compounded
+   lesson: a line number is a claim with a shelf life, and in a wave
+   that inserts code above the thing it cites, that shelf life is one
+   commit. Cite a symbol or a distinctive line of source, which moves
+   with the code, rather than a number, which does not.
 
 ---
 

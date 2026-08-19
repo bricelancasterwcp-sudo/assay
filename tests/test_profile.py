@@ -1013,8 +1013,11 @@ def test_the_recovery_demotion_never_promotes():
 
 
 def test_schema_version_and_package_version_move_together():
-    # The schema and the distribution version are one release, not two:
-    # a profile that says v10 must have been written by a 0.12.0 probe.
+    # The schema and the distribution version ship as one release, not
+    # two. Note what that does NOT say: a v10 profile was not necessarily
+    # written by a 0.12.0 probe. v10 arrived in v1.9 (0.11.0) and every
+    # release since writes it, because a schema moves only when a
+    # profile's SHAPE moves — which it did not this wave.
     #
     # This is not a per-commit fact, it is a standing invariant: whatever
     # PROFILE_VERSION currently is, __version__/pyproject must agree with
