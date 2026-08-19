@@ -392,6 +392,40 @@ def test_parallel_grid_names_the_ks_the_meter_refused():
     assert "<td>parallel</td>" in _parallel_grid(html)
 
 
+def test_the_report_renders_a_v10_overlap_fraction():
+    # A v10 document classified by overlap as a fraction of the shorter
+    # span — dimensionless, and rendered in the fraction's own terms.
+    page = render_report([{
+        "assay_profile_version": 10,
+        "model": {"name": "v10-model"},
+        "verdicts": {},
+        "parallel": {"rows": [], "baseline_decode_tps": 30.0,
+                     "overlap_fraction": 0.25,
+                     "overlap_provenance": "chosen-2026-08-18"},
+    }])
+    assert "overlap fraction 0.25" in page
+    assert "chosen-2026-08-18" in page
+    # A fraction is dimensionless: rendering it with a seconds unit
+    # would reintroduce exactly the confusion the rename removed.
+    assert "0.25s" not in page
+
+
+def test_the_report_still_renders_a_v9_seconds_tolerance():
+    """The fifteen committed profiles are v9 and render through this
+    path. Their output must not move — the published matrix page is a
+    byte-compared copy of a build."""
+    page = render_report([{
+        "assay_profile_version": 9,
+        "model": {"name": "v9-model"},
+        "verdicts": {},
+        "parallel": {"rows": [], "baseline_decode_tps": 30.0,
+                     "tolerance_s": 0.25,
+                     "tolerance_provenance": "chosen-2026-08-17"},
+    }])
+    assert "tolerance 0.25s" in page
+    assert "chosen-2026-08-17" in page
+
+
 def test_parallel_absent_from_the_schema_reads_unmeasured_not_a_crash():
     # Every profile written before v1.7 has no parallel key at all; the
     # page renders them, so a missing family is a schema fact, not a
