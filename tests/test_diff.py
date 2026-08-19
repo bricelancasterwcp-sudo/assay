@@ -1211,6 +1211,31 @@ def test_an_unparseable_version_is_not_a_version():
         assert _parse_version(value) is None, repr(value)
 
 
+def test_a_non_ascii_digit_returns_none_instead_of_raising():
+    """`str.isdigit()` is True for superscripts and subscripts, which
+    `int()` rejects — so `_parse_version("1.².0")` RAISED where it
+    promises None. `main()` catches only `BudgetExhausted` and
+    `InfrastructureError`, so the ValueError escaped the documented
+    0/1/2/3/4 exit taxonomy as an uncaught traceback, and §6's
+    unparseable-straddles rule never got the chance to run.
+    `isdecimal()` is the predicate that means what this parser needs.
+    """
+    from assay.diff import _parse_version, _straddles
+
+    for value in ("1.².0", "1.₂.0"):
+        assert _parse_version(value) is None, repr(value)
+    # And the value it should have had all along: an instrument we
+    # cannot identify is not a comparable one.
+    assert _straddles("verdict.parallel", "1.².0", "0.11.0")
+    # The boundary `isdecimal` actually draws, stated rather than
+    # implied: it promises `int()` will not raise, NOT that the digits
+    # are ASCII. Arabic-Indic digits are decimal and `int()` reads them,
+    # so this parses to a real version instead of being rejected. That
+    # is the honest consequence of the predicate, and harmless — assay
+    # writes `probe_version` from `__version__`, which is ASCII.
+    assert _parse_version("١.٢.٣") == (1, 2, 3)
+
+
 def test_a_version_that_is_not_three_components_is_not_a_version():
     """The silent-sort trap. `(0, 11)` compares BELOW `(0, 11, 0)`, so a
     two-component `"0.11"` — a document written under the NEW rule — was

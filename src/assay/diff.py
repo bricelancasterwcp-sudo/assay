@@ -125,13 +125,23 @@ def _parse_version(value: object) -> tuple[int, ...] | None:
     ``None`` routes to ``_straddles``' unknown-instrument branch, which
     refuses to compare (§6). Both repairs close the dangerous
     direction; only this one avoids inventing evidence to do it.
+
+    ``isdecimal``, not ``isdigit``: ``"²".isdigit()`` is True while
+    ``int("²")`` raises, so an ``isdigit`` guard let a superscript digit
+    through to a ``ValueError``. ``main()`` catches only
+    ``BudgetExhausted`` and ``InfrastructureError``, so that escaped the
+    documented 0/1/2/3/4 exit taxonomy as an uncaught traceback — and
+    this function promises None for anything it cannot read, which a
+    raise is not. ``isdecimal`` is exactly the predicate that means
+    "``int()`` will read this"; it does not mean ASCII, and does not
+    need to.
     """
     if not isinstance(value, str):
         return None
     parts = value.split(".")
     if len(parts) != _VERSION_COMPONENTS:
         return None
-    if not all(part.isdigit() for part in parts):
+    if not all(part.isdecimal() for part in parts):
         return None
     return tuple(int(part) for part in parts)
 
