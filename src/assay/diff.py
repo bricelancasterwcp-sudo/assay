@@ -416,12 +416,6 @@ def _diff_verdicts(old: dict, new: dict) -> _Cells:
     parts = []
     for name in sorted(set(old_verdicts) | set(new_verdicts)):
         cell = f"verdict.{name}"
-        if _straddles(cell, old.get("probe_version"), new.get("probe_version")):
-            # Both sides measured it; they measured different things.
-            # Never scored, and never `dropped` — that word means
-            # something else (v1.8).
-            parts.append(_Cells(incomparable=(cell,)))
-            continue
         old_value, old_prov = _verdict_of(old_verdicts.get(name))
         new_value, new_prov = _verdict_of(new_verdicts.get(name))
         old_measured = old_value is not None and old_value != UNMEASURED
@@ -434,7 +428,23 @@ def _diff_verdicts(old: dict, new: dict) -> _Cells:
             # and the rule v1.8's exit 3 reads directly.
             continue
         if not (old_measured and new_measured):
-            parts.append(_Cells(dropped=(f"verdict.{name}",)))
+            # Measured on exactly one side. `dropped`, unconditionally
+            # — a straddled break is irrelevant here: there is nothing
+            # on the other side to straddle it WITH, and re-measuring
+            # the missing side is exactly what closes this gap, which
+            # is not true of `incomparable` below. Checking this before
+            # the straddle guard (not after) is the fix: the guard used
+            # to run first and could steal a one-sided cell into
+            # `incomparable` whenever it also happened to straddle a
+            # registered break.
+            parts.append(_Cells(dropped=(cell,)))
+            continue
+        if _straddles(cell, old.get("probe_version"), new.get("probe_version")):
+            # Both sides measured it — that's established above, not
+            # assumed — and they measured different things. Never
+            # scored, and never `dropped` — that word means something
+            # else (v1.8).
+            parts.append(_Cells(incomparable=(cell,)))
             continue
         scored = _exact("verdict", name, old_value, new_value,
                         basis=BASIS_FLIP, direction=_ladder_direction)

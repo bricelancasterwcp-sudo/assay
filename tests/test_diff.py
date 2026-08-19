@@ -1317,3 +1317,69 @@ def test_dropped_and_incomparable_stay_distinct():
     assert "verdict.parallel" in result.incomparable
     assert "verdict.parallel" not in result.dropped
     assert "verdict.patch_editing" not in result.incomparable
+
+
+def test_a_straddling_cell_measured_on_one_side_is_dropped_not_incomparable():
+    """`dropped` means measured on exactly one side, full stop (v1.8) —
+    a cell that ALSO straddles a registered break is no exception.
+    Re-running the missing side is exactly what fixes a `dropped` cell,
+    which is not true of an `incomparable` one, so filing it as
+    `incomparable` tells the operator the wrong story: that the gap can
+    never close. Checked in both directions, and BOTH fields asserted
+    each time — a build that files the cell as both `dropped` and
+    `incomparable` must still fail this.
+    """
+    old = make_profile(probe_version="0.9.0", verdicts=make_verdicts())
+    new = make_profile(probe_version="0.11.0", verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+
+    old_side_missing = diff_profiles(old, new)
+    assert "verdict.parallel" in old_side_missing.dropped
+    assert old_side_missing.incomparable == ()
+
+    new_side_missing = diff_profiles(new, old)
+    assert "verdict.parallel" in new_side_missing.dropped
+    assert new_side_missing.incomparable == ()
+
+
+def test_an_explicit_unmeasured_straddling_cell_is_also_dropped():
+    """`_verdict_of` treats an explicit "unmeasured" verdict the same as
+    an absent key — both mean nothing was measured on that side — so a
+    straddling cell where one side reads "unmeasured" must land in
+    `dropped`, exactly like the absent-key case above, not
+    `incomparable`."""
+    old = make_profile(probe_version="0.9.0", verdicts=make_verdicts(
+        parallel={"verdict": "unmeasured", "lens": {}}))
+    new = make_profile(probe_version="0.11.0", verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+
+    result = diff_profiles(old, new)
+
+    assert "verdict.parallel" in result.dropped
+    assert result.incomparable == ()
+
+
+def test_neither_side_measured_a_straddling_cell_is_nothing_at_all():
+    """A third outcome for a straddling cell, distinct from both above:
+    neither side measured it at all. `dropped` doesn't apply — v1.8
+    pinned that word to mean measured on exactly one side, and nothing
+    was measured here on EITHER side — and `incomparable` doesn't apply
+    either: there is no pair of answers to be incompatible when neither
+    rule ever ran. The cell appears in nothing: not `dropped`, not
+    `incomparable`, not `changes`, not `within_noise`.
+
+    This falls out of the fixed ordering for free — the both-unmeasured
+    `continue` runs before the straddle check ever looks at this cell —
+    but it is cheap to pin so a future "simplification" that moves the
+    guard back above the measured determination gets caught here too.
+    """
+    old = make_profile(probe_version="0.9.0", verdicts=make_verdicts(
+        parallel={"verdict": "unmeasured", "lens": {}}))
+    new = make_profile(probe_version="0.11.0", verdicts=make_verdicts())
+
+    result = diff_profiles(old, new)
+
+    assert result.dropped == ()
+    assert result.incomparable == ()
+    assert "parallel" not in [c.cell for c in result.changes]
+    assert "verdict.parallel" not in result.within_noise
