@@ -20,7 +20,12 @@ capability.
 
 1. **`SEMANTIC_BREAKS` is typed and documented as if it named any cell,
    but only `_diff_verdicts` consults it.** `_straddles` is called from
-   exactly one site (`diff.py:453`, inside the generic `verdicts`-dict
+   exactly one site (the `if _straddles(cell, old.get("probe_version"),
+   new.get("probe_version")):` line in `_diff_verdicts` — cited by
+   source, not by number, per this section's process lesson 2; it read
+   `diff.py:453` until the fix wave's prose edits moved it to `:535`,
+   making the same mistake the lesson records, one wave later), inside
+   the generic `verdicts`-dict
    walk); the four raw-measurement family comparisons —
    `_diff_ceiling`, `_diff_shapes`, `_diff_codecs`, `_diff_speed` — have
    no equivalent check. The registry's type
