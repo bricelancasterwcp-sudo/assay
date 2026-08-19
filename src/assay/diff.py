@@ -65,6 +65,64 @@ BASIS_FLIP = "flip"
 BASIS_DISJOINT = "disjoint-intervals"
 BASIS_2SE = "beyond-2se"
 
+#: Cells whose MEASUREMENT RULE changed at a given probe version, so a
+#: pair straddling it was measured under two different definitions and
+#: no arithmetic between the two sides is a fact. Keyed by the cell name
+#: this module already uses (``f"{family}.{cell}"``); the value is the
+#: first version that used the NEW rule.
+#:
+#: Small BY CONSTRUCTION and expected to stay small: an entry is needed
+#: only when a release changes what an EXISTING cell means. Every bump
+#: before v1.9 was additive — a new cell the old side simply lacked,
+#: which `dropped` and exit 3 already handle — which is why one row
+#: covers eleven releases.
+SEMANTIC_BREAKS: dict[str, tuple[int, ...]] = {
+    # v1.9 (0.11.0): `classify_mode` moved from an absolute-seconds
+    # overlap test to a fraction of the shorter span, so `mode` — and
+    # the verdict derived from it — can differ for an endpoint that did
+    # not change at all.
+    "verdict.parallel": (0, 11, 0),
+}
+
+
+def _parse_version(value: object) -> tuple[int, ...] | None:
+    """A dotted version as an int tuple, or None if it is not one.
+
+    Parsed rather than compared as text because ``"0.9.0" < "0.11.0"``
+    is **False**: "9" sorts after "1". A lexical check would decide a
+    0.9.0-vs-0.11.0 pair does not straddle a 0.11.0 break and would
+    score it — failing in the direction that publishes a comparison
+    nobody can stand behind.
+    """
+    if not isinstance(value, str):
+        return None
+    parts = value.split(".")
+    if not parts or not all(part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+def _straddles(cell: str, old_version: object, new_version: object) -> bool:
+    """True when this cell means different things on the two sides.
+
+    An unregistered cell never straddles: the registry is an allowlist
+    of KNOWN breaks, so every cell whose rule has never changed compares
+    exactly as it did before this wave.
+
+    An unparseable version straddles EVERY registered break. Absence is
+    not evidence of sameness — "we could not establish which rule
+    produced this" resolves to not-comparable, never to
+    comparable-by-default.
+    """
+    break_at = SEMANTIC_BREAKS.get(cell)
+    if break_at is None:
+        return False
+    old_parsed = _parse_version(old_version)
+    new_parsed = _parse_version(new_version)
+    if old_parsed is None or new_parsed is None:
+        return True
+    return (old_parsed < break_at) != (new_parsed < break_at)
+
 # ready > risky > degrades-at-N > unusable > unsupported. ready/risky/
 # unusable come from assay.stats.ladder; degrades-at-N is the
 # long_output family's own rung (v1.5), and it sits above unusable — a

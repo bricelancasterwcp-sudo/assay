@@ -1167,3 +1167,69 @@ def test_cli_diff_across_the_version_boundary_takes_the_documented_exits(
     out = capsys.readouterr().out
     assert out.startswith("not comparable")
     assert "dropped" not in out
+
+
+def test_version_ordering_is_parsed_not_lexical():
+    """The trap this parser exists for. `"0.9.0" < "0.11.0"` is False
+    under string comparison, because "9" sorts after "1" — so a lexical
+    check would decide a 0.9.0-vs-0.11.0 pair does NOT straddle a
+    0.11.0 break and would score it. The failure direction is the
+    dangerous one: silently comparing two numbers that answer different
+    questions.
+    """
+    from assay.diff import _parse_version
+
+    assert _parse_version("0.9.0") < _parse_version("0.11.0")
+    assert _parse_version("0.11.0") > _parse_version("0.10.0")
+    assert _parse_version("1.0.0") > _parse_version("0.99.0")
+    # The literal string comparison this replaces, pinned so nobody
+    # "simplifies" the parser away.
+    assert ("0.9.0" < "0.11.0") is False
+
+
+def test_an_unparseable_version_is_not_a_version():
+    from assay.diff import _parse_version
+
+    for value in (None, "", "not-a-version", "0.x.0", 11, []):
+        assert _parse_version(value) is None, repr(value)
+
+
+def test_a_pair_straddling_a_break_is_named_incomparable():
+    from assay.diff import _straddles
+
+    assert _straddles("verdict.parallel", "0.10.0", "0.11.0")
+    # Order does not matter: an upgrade and a downgrade are equally
+    # incomparable, because the two documents still answer different
+    # questions.
+    assert _straddles("verdict.parallel", "0.11.0", "0.10.0")
+
+
+def test_a_pair_on_one_side_of_a_break_compares_normally():
+    from assay.diff import _straddles
+
+    assert not _straddles("verdict.parallel", "0.10.0", "0.10.0")
+    assert not _straddles("verdict.parallel", "0.11.0", "0.11.0")
+    assert not _straddles("verdict.parallel", "0.11.0", "0.12.0")
+
+
+def test_a_cell_with_no_registered_break_never_straddles():
+    """The registry is an allowlist of KNOWN breaks. A cell nobody
+    registered compares exactly as it did before this wave — which is
+    what keeps additive schema bumps working unchanged."""
+    from assay.diff import _straddles
+
+    assert not _straddles("ceiling.max_verified", "0.9.0", "0.11.0")
+    assert not _straddles("speed.decode_tps", "0.1.0", "0.11.0")
+
+
+def test_an_unknown_instrument_straddles_every_break():
+    """Absence is not evidence of sameness. "We could not establish
+    which rule produced this" must resolve to NOT comparable, never to
+    comparable-by-default — the discipline the rest of the instrument
+    applies to an absent measurement."""
+    from assay.diff import _straddles
+
+    assert _straddles("verdict.parallel", None, "0.11.0")
+    assert _straddles("verdict.parallel", "0.11.0", None)
+    assert _straddles("verdict.parallel", "garbage", "0.11.0")
+    assert _straddles("verdict.parallel", None, None)
