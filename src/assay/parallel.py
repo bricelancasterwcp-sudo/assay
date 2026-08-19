@@ -25,8 +25,8 @@ derives a rate from a span.)
 **Client clocks decide exactly one thing: the scheduling fact.**
 Whether the lanes' wall-clock spans stacked or overlapped is an
 observation about arrival and completion, not a rate, so it is the one
-place the caller's clock is trusted. The overlap tolerance is a CHOSEN
-constant, and it travels with ``TOLERANCE_PROVENANCE`` saying so — a
+place the caller's clock is trusted. The overlap fraction is a CHOSEN
+constant, and it travels with ``OVERLAP_PROVENANCE`` saying so — a
 threshold should be derived from measurement, and one that is not must
 be flagged until the campaign's live rows can sanity-check it.
 
@@ -36,9 +36,22 @@ silently drag a mean toward "degraded" and report an unreachable
 endpoint as a slow one. When every lane errors the row carries None
 rates and no mode — nothing was measured, and 0.0 is a measurement.
 
-The clock and the concurrency runner are both injectable; the suite
-never depends on real time, and the default threaded runner is
-exercised against an in-process fake rather than a socket.
+The clock and the concurrency runner are both injectable, and this
+family's own tests (``tests/test_parallel.py``) use both seams to stay
+clock-free BY CONSTRUCTION: synthetic spans in, a classified ``mode``
+out, never a real clock tick; the default threaded runner is exercised
+against an in-process fake rather than a socket. That is narrower than
+"the suite never depends on real time", though — ``probe()`` does not
+thread either seam down to this family (``run.py`` calls
+``probe_parallel`` with neither ``clock`` nor ``runner``, so it falls
+back to ``time.monotonic`` and ``_threaded_runner``; see
+CARRIED-DEBT.md). The one test that pins this family through the full
+``probe()`` -> ``compute_verdicts`` -> ``verdict.parallel`` chain has no
+seam to script the lanes' spans through, so it paces its in-process
+fake's calls in real time instead, deliberately, to give
+``_threaded_runner``'s real OS threads a span long enough to actually
+overlap. That test depends on real time; this family's unit tests do
+not.
 """
 
 from __future__ import annotations
@@ -53,9 +66,15 @@ from assay.budget import BudgetMeter
 from assay.errors import BudgetExhausted
 from assay.speed import DECODE_MAX_TOKENS, DECODE_PROMPT, server_timings
 
-OVERLAP_TOLERANCE_S = 0.25  # CHOSEN, not derived — sanity-checked by
-                            # the campaign's live rows (spec §3)
-TOLERANCE_PROVENANCE = "chosen-2026-08-17"
+#: The overlap a consecutive lane pair must exceed to count as
+#: concurrent, as a FRACTION of the shorter span. Dimensionless on
+#: purpose: an absolute seconds threshold reduces to "each lane must
+#: last longer than N seconds" for lanes launched together, which makes
+#: a fast endpoint read `serialized` while serving every lane at once.
+#: CHOSEN, not derived — every profile records it beside the provenance
+#: saying so.
+OVERLAP_FRACTION = 0.25
+OVERLAP_PROVENANCE = "chosen-2026-08-18"
 
 DEFAULT_KS = (2, 4)
 PARALLEL_SEED_BASE = 1700
@@ -95,8 +114,17 @@ class ParallelRow:
 class Parallel:
     rows: tuple[ParallelRow, ...]
     baseline_decode_tps: float
-    tolerance_s: float                  # == OVERLAP_TOLERANCE_S as run
-    tolerance_provenance: str           # == TOLERANCE_PROVENANCE
+    #: v10+: the overlap fraction this run classified under.
+    overlap_fraction: float | None = None
+    #: v10+: == OVERLAP_PROVENANCE.
+    overlap_provenance: str | None = None
+    #: v9 and earlier ONLY: the absolute seconds tolerance that era ran
+    #: under. Never populated by a new run, and never converted into a
+    #: fraction — the two are different quantities, and mapping one onto
+    #: the other would invent a measurement nobody made. A v9 document
+    #: read today keeps saying exactly what it said.
+    tolerance_s: float | None = None
+    tolerance_provenance: str | None = None
     # The k values the meter refused, NAMED — ``LongOutput.skipped``'s
     # rule applied here. An absent row is silent about why it is absent:
     # "only k=2 was asked for", "k=4 was refused by the budget" and "this
@@ -186,25 +214,50 @@ def _affordable(meter: BudgetMeter, lanes: int, prompt_tokens: int) -> bool:
 
 
 def classify_mode(
-    spans: list[tuple[float, float]], tolerance: float = OVERLAP_TOLERANCE_S
+    spans: list[tuple[float, float]], fraction: float = OVERLAP_FRACTION
 ) -> str | None:
     """"serialized" if the lanes' spans stacked, "parallel" if they overlapped.
 
-    Sorted by start; serialized iff every consecutive pair overlaps by
-    less than `tolerance` (``next.start >= prev.end - tolerance``). The
-    tolerance absorbs the client-side skew between "the previous lane's
-    reply finished arriving" and "the next lane's request went out" —
-    it is not a claim about the endpoint.
+    Sorted by start; parallel iff some consecutive pair overlaps by
+    more than `fraction` of the SHORTER of the two spans.
+
+    The fraction is relative on purpose. An absolute seconds tolerance
+    subtracted from a duration-dependent comparison can only be correct
+    at one time scale: for lanes launched together, overlap is
+    approximately the lane duration, so "overlap > 0.25 s" reduces to
+    "each lane lasted longer than 0.25 s" — a statement about the
+    endpoint's SPEED, not its scheduling. A fast endpoint would read
+    `serialized` while serving every lane at once.
+
+    What the fraction still absorbs is the client-side skew between "the
+    previous lane's reply finished arriving" and "the next lane's
+    request went out". That skew is milliseconds, and 25% of a span is
+    far above it at any scale — two lanes that nearly serialize overlap
+    by ~1% and correctly stay `serialized`.
 
     None below two lanes: "serialized" is a statement about how two
     lanes relate, and with one lane there is nothing to relate. None,
     never the reassuring answer.
+
+    None also on a degenerate zero-length span. A zero-length span makes
+    any overlap infinite in ratio terms, and the comment used to say so
+    while the code fell through to `serialized` anyway — a lane that
+    measured nothing was being called serialized rather than left
+    unmeasured (CARRIED-DEBT I2, final fix wave). It measured nothing,
+    so it classifies nothing: `None`, the same honest answer the
+    below-two-lanes case already gives, and the one `_parallel_verdict`
+    already routes to `unmeasured` (its rule 1, "the same holds for
+    `mode is None`").
     """
     if len(spans) < 2:
         return None
     ordered = sorted(spans)
-    for (_, prev_end), (next_start, _) in zip(ordered, ordered[1:]):
-        if next_start < prev_end - tolerance:
+    for (prev_start, prev_end), (next_start, next_end) in zip(ordered, ordered[1:]):
+        overlap = min(prev_end, next_end) - max(prev_start, next_start)
+        shortest = min(prev_end - prev_start, next_end - next_start)
+        if shortest <= 0:
+            return None
+        if overlap > fraction * shortest:
             return "parallel"
     return "serialized"
 
@@ -219,7 +272,7 @@ def _row(
     k: int,
     results: list[LaneResult],
     baseline_decode_tps: float,
-    tolerance: float,
+    fraction: float,
 ) -> ParallelRow:
     """One k's lanes, folded into a row without conflating the failures.
 
@@ -267,7 +320,7 @@ def _row(
             if per_lane is not None and baseline_decode_tps > 0
             else None
         ),
-        mode=classify_mode(spans, tolerance),
+        mode=classify_mode(spans, fraction),
         n_lanes_ok=len(spans),
         lane_errors=tuple(errors),
         evidence=_weakest(classes),
@@ -331,12 +384,12 @@ def probe_parallel(
                 for lane in range(k)
             ]
         )
-        rows.append(_row(k, results, baseline_decode_tps, OVERLAP_TOLERANCE_S))
+        rows.append(_row(k, results, baseline_decode_tps, OVERLAP_FRACTION))
 
     return Parallel(
         rows=tuple(rows),
         baseline_decode_tps=baseline_decode_tps,
-        tolerance_s=OVERLAP_TOLERANCE_S,
-        tolerance_provenance=TOLERANCE_PROVENANCE,
+        overlap_fraction=OVERLAP_FRACTION,
+        overlap_provenance=OVERLAP_PROVENANCE,
         skipped=tuple(skipped),
     )

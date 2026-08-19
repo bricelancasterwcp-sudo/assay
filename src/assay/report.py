@@ -397,18 +397,29 @@ def _parallel_grid(parallel: dict | None) -> str:
     mean, so a k where every lane failed carries None rates. 0.00 there
     would publish an unreachable endpoint as a very slow one.
 
-    The baseline and the overlap tolerance ride above the table. A ratio
-    without its denominator is not a measurement, and the tolerance is a
-    CHOSEN constant that travels with the fact that it was chosen — a
-    reader must not take 0.25s for a derived one.
+    The baseline and the overlap classifier ride above the table. A
+    ratio without its denominator is not a measurement, and whichever
+    classifier the document carries — a v10 overlap fraction or a
+    pre-v10 seconds tolerance — is a CHOSEN constant that travels with
+    the fact that it was chosen: a reader must not take 0.25 for a
+    derived one, in either era. The two are different quantities and
+    are rendered in their own terms, never converted into each other.
     """
     if not parallel:
         return '<p class="k">parallel unmeasured</p>'
     rows = parallel.get("rows") or []
+    if parallel.get("overlap_fraction") is not None:
+        overlap = (f"overlap fraction {_num(parallel.get('overlap_fraction'))} "
+                   f"({_word(parallel.get('overlap_provenance'))})")
+    else:
+        # A v9-and-earlier document classified under an absolute seconds
+        # tolerance. Rendered in its own terms rather than converted:
+        # the two are different quantities and the page must not imply
+        # this row was measured under today's rule.
+        overlap = (f"overlap tolerance {_num(parallel.get('tolerance_s'))}s "
+                   f"({_word(parallel.get('tolerance_provenance'))})")
     head = (f"<p><span class='k'>parallel</span> single-lane baseline "
-            f"{_num(parallel.get('baseline_decode_tps'))} tok/s · overlap "
-            f"tolerance {_num(parallel.get('tolerance_s'))}s "
-            f"({_word(parallel.get('tolerance_provenance'))})</p>")
+            f"{_num(parallel.get('baseline_decode_tps'))} tok/s · {overlap}</p>")
     body = "".join(
         f'<tr><td class="mono">{_num(r.get("k"), "g")}</td>'
         f'<td>{_word(r.get("mode"))}</td>'

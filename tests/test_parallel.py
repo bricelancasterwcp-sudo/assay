@@ -16,11 +16,12 @@ from assay.backends.base import Reply
 from assay.budget import Budget, BudgetMeter
 from assay.errors import BudgetExhausted, InfrastructureError
 from assay.parallel import (
-    OVERLAP_TOLERANCE_S,
+    OVERLAP_FRACTION,
+    OVERLAP_PROVENANCE,
     PARALLEL_SEED_BASE,
-    TOLERANCE_PROVENANCE,
     Parallel,
     ParallelRow,
+    classify_mode,
     probe_parallel,
 )
 from assay.speed import DECODE_MAX_TOKENS, DECODE_PROMPT
@@ -108,7 +109,18 @@ class PinnedSpans:
 
 
 def counting_clock(step: float = 1.0):
-    """A thread-safe monotonic counter — the suite never reads real time."""
+    """A thread-safe monotonic counter — this file's tests never read
+    real time.
+
+    Narrower than "the suite never reads real time" (M1, final fix
+    wave, 2026-08-18): `tests/test_run.py`'s full-`probe()` pin has no
+    seam to script the parallel family's lane spans through and paces
+    its fake in real time instead, deliberately — see `parallel.py`'s
+    module docstring and CARRIED-DEBT.md for why. Every test in THIS
+    file stays clock-free by construction: synthetic spans in, a
+    classified mode out, this clock counting ticks rather than
+    sampling the wall.
+    """
     state = {"t": 0.0}
     lock = threading.Lock()
 
@@ -155,21 +167,24 @@ def test_overlapping_spans_classify_parallel():
     assert result.rows[0].mode == "parallel"
 
 
-def test_overlap_exactly_at_the_tolerance_is_still_serialized():
-    # Pinned to the second decimal against OVERLAP_TOLERANCE_S = 0.25:
-    # next.start (0.75) == prev.end (1.0) - tolerance (0.25).
+def test_overlap_exactly_at_the_fraction_is_still_serialized():
+    # Pinned to the second decimal against OVERLAP_FRACTION = 0.25:
+    # both spans are 1.0 s long, so the overlap (1.0 - 0.75 = 0.25 s)
+    # is exactly 0.25 of the shorter span. The rule is strict `>`, so
+    # exactly-at-the-fraction still reads serialized.
     result = two_lanes(
         spans=((0.0, 1.0), (0.75, 1.75)),
         by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
     )
-    # The behavior first, the constant second: a moved tolerance must
+    # The behavior first, the constant second: a moved fraction must
     # break the CLASSIFICATION here, not merely a bookkeeping equality.
     assert result.rows[0].mode == "serialized"
-    assert OVERLAP_TOLERANCE_S == 0.25  # the spans above are pinned to it
+    assert OVERLAP_FRACTION == 0.25  # the spans above are pinned to it
 
 
-def test_one_hundredth_past_the_tolerance_is_parallel():
-    # The other side of the same boundary: 0.74 < 1.0 - 0.25.
+def test_one_hundredth_past_the_fraction_is_parallel():
+    # The other side of the same boundary: the overlap is now
+    # 1.0 - 0.74 = 0.26 of the 1.0 s span, just past the 0.25 fraction.
     result = two_lanes(
         spans=((0.0, 1.0), (0.74, 1.74)),
         by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
@@ -185,6 +200,60 @@ def test_spans_are_sorted_by_start_before_classifying():
         by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
     )
     assert result.rows[0].mode == "serialized"
+
+
+def test_concurrent_lanes_read_parallel_at_every_time_scale():
+    """The defect this rule replaces was scale-dependence, so the test
+    is scale-swept. Under the old absolute tolerance, lanes shorter
+    than 0.25 s read `serialized` no matter how completely they
+    overlapped — the rule was really "each lane must last longer than
+    0.25 s", which is a statement about the endpoint's SPEED, not its
+    scheduling. 0.222 s is not hypothetical: it is the pure-decode span
+    of the fastest model on the committed matrix.
+    """
+    for duration in (0.05, 0.1, 0.222, 0.25, 0.3, 1.0):
+        spans = [(0.0, duration), (0.0, duration)]
+        assert classify_mode(spans) == "parallel", f"{duration}s lanes"
+
+
+def test_serialized_lanes_read_serialized_at_every_time_scale():
+    """The other half: the new rule must not buy concurrency detection
+    by losing serialization detection."""
+    for duration in (0.05, 0.222, 1.0):
+        spans = [(0.0, duration), (duration, 2 * duration)]
+        assert classify_mode(spans) == "serialized", f"{duration}s lanes"
+
+
+def test_dispatch_skew_cannot_manufacture_a_parallel_reading():
+    """The guard the old absolute tolerance existed to provide, kept.
+
+    Two lanes that very nearly serialize — 2 ms of overlap on a 200 ms
+    span — must still read `serialized`. That is 1% overlap against a
+    25% floor. This test is load-bearing: it is the only thing standing
+    between client-side skew and a false `parallel`.
+    """
+    assert classify_mode([(0.0, 0.200), (0.198, 0.398)]) == "serialized"
+
+
+def test_a_zero_length_span_cannot_divide_by_itself():
+    """A degenerate span makes any overlap infinite in ratio terms, and
+    a pair that measured nothing must not be allowed to classify
+    anything (CARRIED-DEBT I2, final fix wave, 2026-08-18).
+
+    Before this fix the zero-length guard stopped the ratio computation
+    but still fell through to the function's default return, so a pair
+    of lanes with no measurable duration at all read `serialized` —
+    and `_parallel_verdict`'s rule 1 has no way to tell that answer
+    apart from a genuinely queued endpoint, so it published `risky` for
+    a k that measured nothing. `classify_mode` already returns `None`
+    for the below-two-lanes case on exactly this principle ("None,
+    never the reassuring answer"); a degenerate span is the same
+    nothing-was-measured fact one level in, and now gets the same
+    honest answer. `_parallel_verdict` already routes `mode is None` to
+    `unmeasured` (its rule 1), so this is a route-through fix, not a
+    new consumer-side branch.
+    """
+    assert classify_mode([(0.0, 0.0), (0.0, 0.0)]) is None
 
 
 def test_a_single_returned_lane_has_no_mode():
@@ -476,7 +545,7 @@ def test_seed_base_is_injectable_and_lanes_stay_distinguishable():
 # --- the envelope carries its provisional tolerance -------------------------
 
 
-def test_result_carries_the_tolerance_and_its_chosen_provenance():
+def test_result_carries_the_fraction_and_its_chosen_provenance():
     result = two_lanes(
         spans=((0.0, 1.0), (0.1, 1.1)),
         by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
@@ -491,10 +560,33 @@ def test_result_carries_the_tolerance_and_its_chosen_provenance():
     # is never absent, because a reader must be able to tell that from a
     # run whose budget quietly dropped a k.
     assert result.skipped == ()
-    assert result.tolerance_s == OVERLAP_TOLERANCE_S
+    # v10: a new run records the FRACTION it classified under, never a
+    # seconds tolerance — that field pair is v9-and-earlier only, and a
+    # live run leaves it None rather than populating a field whose name
+    # would misdescribe what was recorded.
+    assert result.overlap_fraction == OVERLAP_FRACTION
     # A CHOSEN threshold travels with the fact that it was chosen, so a
     # reader never mistakes it for a derived one.
-    assert result.tolerance_provenance == TOLERANCE_PROVENANCE == "chosen-2026-08-17"
+    assert result.overlap_provenance == OVERLAP_PROVENANCE == "chosen-2026-08-18"
+    assert result.tolerance_s is None
+    assert result.tolerance_provenance is None
+
+
+def test_a_new_run_records_the_fraction_and_not_a_seconds_tolerance():
+    """The rename is the point: a fraction stored in a field named
+    seconds would be a false claim, and — worse — `assay diff` would
+    compare `tolerance_s: 0.25` against `tolerance_s: 0.25`, find them
+    byte-equal, and report no change across a break where the whole
+    classification rule changed.
+    """
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.0, 1.0)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+    )
+    assert result.overlap_fraction == OVERLAP_FRACTION == 0.25
+    assert result.overlap_provenance == OVERLAP_PROVENANCE == "chosen-2026-08-18"
+    assert result.tolerance_s is None
+    assert result.tolerance_provenance is None
 
 
 def test_rows_are_frozen():

@@ -39,7 +39,7 @@ from assay.stats import ladder as _ladder
 from assay.stats import wilson95
 from assay.tools import TOOLS_INSTRUMENT, TOOLSET_NAME, Tools
 
-PROFILE_VERSION = 9
+PROFILE_VERSION = 10
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
              "speed", "loop", "long_output", "tools", "parallel")
@@ -49,6 +49,18 @@ _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
 #: nothing, and ``from_json`` keeps the two apart (spec §4).
 _POST_V1_FAMILIES = ("ceiling_shapes", "speed", "loop", "long_output",
                      "tools", "parallel")
+#: The parallel family's retired-vs-current field pairs (v10). Whichever
+#: half a run did not measure comes back from ``dataclasses.asdict`` as
+#: an explicit ``None`` — a v10 run writes ``tolerance_s: null`` beside
+#: its real ``overlap_fraction``, and a re-serialized v9 payload would
+#: write ``overlap_fraction: null`` beside its real ``tolerance_s``.
+#: ``to_json`` drops whichever half is ``None`` (I6, final fix wave,
+#: 2026-08-18) so a v10 document does not carry the retired keys at
+#: all — the idiom `_parallel_from`'s own comment already names
+#: ("a payload that never named a field is different from one that
+#: measured nothing and wrote null") kept on the way OUT, not just in.
+_PARALLEL_ERA_FIELDS = ("overlap_fraction", "overlap_provenance",
+                        "tolerance_s", "tolerance_provenance")
 _GRADE_FOR_VERDICTS = "small"
 #: The codecs ``patch_editing`` may be carried by — either can carry it.
 #: The membership is registered in ``codecs`` (v1.7), where the subset
@@ -68,7 +80,7 @@ _AGENT_READY_TPS = 200.0
 _AGENT_RISKY_TPS = 80.0
 
 #: The parallel family's degradation floors. CHOSEN, not derived, and
-#: the lens says so at every point of use — `OVERLAP_TOLERANCE_S`'s
+#: the lens says so at every point of use — `OVERLAP_FRACTION`'s
 #: rule. The 2026-08 campaign's thirty k-readings (15 models x k in
 #: {2, 4}, ninety lanes) all read `degradation_ratio` between 0.995 and
 #: 1.007 across a 10x span of single-lane speed, so every live row sits
@@ -128,7 +140,8 @@ class Profile:
                 )
 
     def to_json(self) -> str:
-        return json.dumps(dataclasses.asdict(self), indent=2)
+        return json.dumps(_drop_null_parallel_era_fields(
+            dataclasses.asdict(self)), indent=2)
 
     @classmethod
     def from_json(cls, payload: dict) -> "Profile":
@@ -162,6 +175,30 @@ class Profile:
             verdicts=payload["verdicts"],
             provenance=_provenance_naming_absent_families(payload),
         )
+
+
+def _drop_null_parallel_era_fields(payload: dict) -> dict:
+    """Strip whichever half of the parallel family's era pairs is None.
+
+    ``dataclasses.asdict`` always writes every declared field, including
+    the era pair a run did not use — so every v10 write emitted
+    ``"tolerance_s": null, "tolerance_provenance": null`` beside its
+    real ``overlap_fraction`` (I6, final fix wave, 2026-08-18), which
+    contradicts the README's "every field is a measurement, a `None`
+    with a named reason, or provenance" and `_parallel_from`'s own
+    comment that a field never named differs from one that measured
+    nothing and wrote null. The dataclass fields stay — the reader
+    still needs both pairs to parse pre-v10 documents — only the
+    SERIALIZED null halves are dropped, so a v10 document carries
+    `overlap_fraction`/`overlap_provenance` alone and a re-serialized
+    v9 payload carries `tolerance_s`/`tolerance_provenance` alone.
+    """
+    parallel = payload.get("parallel")
+    if parallel is None:
+        return payload
+    trimmed = {key: value for key, value in parallel.items()
+               if value is not None or key not in _PARALLEL_ERA_FIELDS}
+    return {**payload, "parallel": trimmed}
 
 
 def _provenance_naming_absent_families(payload: dict) -> dict:
@@ -249,15 +286,23 @@ def _parallel_from(payload: dict | None) -> Parallel | None:
     #
     # ``skipped`` is read with ``.get``, the ``stopping_rule``
     # convention: a payload written before the list existed named no
-    # skipped k, and the field's own default says exactly that.
+    # skipped k, and the field's own default says exactly that. The
+    # tolerance/fraction pairs follow the same idiom (v10): a v9
+    # document names only `tolerance_s`/`tolerance_provenance`, a v10+
+    # document names only `overlap_fraction`/`overlap_provenance`, and
+    # `.get` lets either payload parse without the other pair's absence
+    # reading as an error — a payload that never named a field is
+    # different from one that measured nothing and wrote null.
     return Parallel(
         rows=tuple(
             ParallelRow(**{**row, "lane_errors": tuple(row["lane_errors"])})
             for row in payload["rows"]
         ),
         baseline_decode_tps=payload["baseline_decode_tps"],
-        tolerance_s=payload["tolerance_s"],
-        tolerance_provenance=payload["tolerance_provenance"],
+        overlap_fraction=payload.get("overlap_fraction"),
+        overlap_provenance=payload.get("overlap_provenance"),
+        tolerance_s=payload.get("tolerance_s"),
+        tolerance_provenance=payload.get("tolerance_provenance"),
         skipped=tuple(payload.get("skipped") or ()),
     )
 
