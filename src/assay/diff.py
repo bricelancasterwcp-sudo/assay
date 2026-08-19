@@ -46,6 +46,36 @@ is not even a drop: nothing was compared and nothing vanished, so
 what v1.8's exit 3 reads. ``unsupported`` is the one word that looks
 like absence and is not: the endpoint was asked and said no, so it
 ranks (bottom rung) instead of dropping.
+
+That rule holds for every TOP-LEVEL cell. It has one known breach, at
+the ``verdict.<name>.provisional`` sub-cell: a provisional flag present
+on one side only is reported just when the verdict it rides on did not
+itself move, so a one-sided provisional accompanying a moved — or
+straddled — verdict lands in no field at all. Pre-existing (it predates
+``incomparable``; the ``if scored.changes: continue`` below is the
+original path) and without exit-code consequence, since the verdict's
+own change or straddle already fires. Recorded in docs/CARRIED-DEBT.md,
+v1.10 "Diff" item 3, rather than stated here as an exact equivalence
+the code does not keep.
+
+A cell measured on BOTH sides can still go unscored, for a different
+reason: ``incomparable`` (v1.10, ``SEMANTIC_BREAKS``). ``dropped`` is
+about ONE side having nothing to say — re-running the missing side is
+exactly what closes it. ``incomparable`` is about a cell where both
+sides spoke and it is not established that they spoke about the same
+thing; no amount of re-running the older document fixes that, only
+re-measuring under the newer rule does. Two routes lead here and the
+distinction matters when reading the output: a pair straddling a
+REGISTERED break, where the rule demonstrably changed, and a document
+whose ``probe_version`` could not be identified at all, where the rule
+is simply unestablished (the parser's ``None``). The render states only
+what covers both. The two never overlap on the same cell — one side
+missing is checked first, unconditionally — so every incomplete
+comparison lands in exactly one of the two, never both.
+
+``SEMANTIC_BREAKS`` covers the breaks it LISTS and no others: read its
+comment before trusting a clean ``incomparable: ()`` as evidence that
+two documents measured the same things.
 """
 
 from __future__ import annotations
@@ -64,6 +94,127 @@ BASIS_RUNG = "rung-change"
 BASIS_FLIP = "flip"
 BASIS_DISJOINT = "disjoint-intervals"
 BASIS_2SE = "beyond-2se"
+
+#: Cells whose MEASUREMENT RULE changed at a given probe version, so a
+#: pair straddling it was measured under two different definitions and
+#: no arithmetic between the two sides is a fact. Keyed by the cell name
+#: this module already uses (``f"{family}.{cell}"``); the value is the
+#: first version that used the NEW rule.
+#:
+#: **This table is NOT a complete inventory of this project's semantic
+#: breaks, and its single row is not evidence that v1.9 was the first.**
+#: An earlier draft of this comment claimed every bump before v1.9 was
+#: additive — a new cell the old side simply lacked, which `dropped` and
+#: exit 3 already handle. That claim is false, and this repository
+#: documents its own counter-evidence. At least five earlier releases
+#: redefined an EXISTING cell and are NOT registered here:
+#:
+#:   v1.1 (0.2.0)  `verdict.patch_editing` repointed to the
+#:                 applies-and-parses lens (commit 7367802). The v0.2
+#:                 CHANGELOG records the two lenses reading the same
+#:                 model at 0% and 100%.
+#:   v1.3 (0.4.0)  one fixture per codec cell became 5 heterogeneous
+#:                 tasks across 5 defect classes, plus changed refusal
+#:                 classification (commit 484bc4c) — redefining every
+#:                 `codec.*` cell and the codec-backed verdicts.
+#:   v1.5 (0.6.0)  fixed n=5 with provisional marking became sequential
+#:                 testing. The CHANGELOG says so in its own words:
+#:                 "This wave amends v1.3's verdict semantics."
+#:   v1.6 (0.7.0)  `scripted-loop-v1` became `v2`; `n_turns` 3 -> 5 into
+#:                 the shared denominator, plus a recovery demotion.
+#:   v1.7 (0.9.0)  the tools pool grew 5 -> 20 with a look schedule, in
+#:                 full mode.
+#:
+#: A pair straddling any of those is still scored today, silently. They
+#: are not backfilled here because two of the decisions sit above this
+#: table's type: several breaks are MODE-CONDITIONAL (v1.7 kept
+#: `--quick`'s pool verbatim), which a version-keyed registry cannot
+#: express, and the `codec.*` rows name a family `_diff_verdicts` never
+#: consults, so an entry for one would sit here and be ignored. Recorded
+#: in docs/CARRIED-DEBT.md, v1.10 "Diff" items 1 and 2, which compound.
+#:
+#: An entry is needed whenever a release changes what an EXISTING cell
+#: means. The table is small because it is incomplete, not because the
+#: history is.
+SEMANTIC_BREAKS: dict[str, tuple[int, ...]] = {
+    # v1.9 (0.11.0): `classify_mode` moved from an absolute-seconds
+    # overlap test to a fraction of the shorter span, so `mode` — and
+    # the verdict derived from it — can differ for an endpoint that did
+    # not change at all.
+    "verdict.parallel": (0, 11, 0),
+}
+
+
+#: A probe version has exactly this many components. ``run.py`` writes
+#: ``probe_version`` from ``assay.__version__``, which is always
+#: ``major.minor.patch``, so a string of any other length was not
+#: written by this instrument.
+_VERSION_COMPONENTS = 3
+
+
+def _parse_version(value: object) -> tuple[int, ...] | None:
+    """A dotted version as an int tuple, or None if it is not one.
+
+    Parsed rather than compared as text because ``"0.9.0" < "0.11.0"``
+    is **False**: "9" sorts after "1". A lexical check would decide a
+    0.9.0-vs-0.11.0 pair does not straddle a 0.11.0 break and would
+    score it — failing in the direction that publishes a comparison
+    nobody can stand behind.
+
+    A version that is not exactly ``_VERSION_COMPONENTS`` long is
+    REJECTED rather than padded, and the choice is load-bearing.
+    Tuples of unequal length compare by their common prefix, so
+    ``(0, 11) < (0, 11, 0)`` is True: a two-component ``"0.11"``, which
+    describes a document written under the 0.11 rule, sorted BELOW a
+    0.11.0 break and was filed on the old side and scored — the same
+    class of silent-wrong-answer the lexical trap above describes.
+    Padding would fix that ordering but assert a patch level the
+    document never stated, which against a patch-level break decides
+    the comparison on a number nobody wrote. Rejecting asserts nothing:
+    ``None`` routes to ``_straddles``' unknown-instrument branch, which
+    refuses to compare (§6). Both repairs close the dangerous
+    direction; only this one avoids inventing evidence to do it.
+
+    ``isdecimal``, not ``isdigit``: ``"²".isdigit()`` is True while
+    ``int("²")`` raises, so an ``isdigit`` guard let a superscript digit
+    through to a ``ValueError``. ``main()`` catches only
+    ``BudgetExhausted`` and ``InfrastructureError``, so that escaped the
+    documented 0/1/2/3/4 exit taxonomy as an uncaught traceback — and
+    this function promises None for anything it cannot read, which a
+    raise is not. ``isdecimal`` is exactly the predicate that means
+    "``int()`` will read this"; it does not mean ASCII, and does not
+    need to.
+    """
+    if not isinstance(value, str):
+        return None
+    parts = value.split(".")
+    if len(parts) != _VERSION_COMPONENTS:
+        return None
+    if not all(part.isdecimal() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+def _straddles(cell: str, old_version: object, new_version: object) -> bool:
+    """True when this cell means different things on the two sides.
+
+    An unregistered cell never straddles: the registry is an allowlist
+    of KNOWN breaks, so every cell whose rule has never changed compares
+    exactly as it did before this wave.
+
+    An unparseable version straddles EVERY registered break. Absence is
+    not evidence of sameness — "we could not establish which rule
+    produced this" resolves to not-comparable, never to
+    comparable-by-default.
+    """
+    break_at = SEMANTIC_BREAKS.get(cell)
+    if break_at is None:
+        return False
+    old_parsed = _parse_version(old_version)
+    new_parsed = _parse_version(new_version)
+    if old_parsed is None or new_parsed is None:
+        return True
+    return (old_parsed < break_at) != (new_parsed < break_at)
 
 # ready > risky > degrades-at-N > unusable > unsupported. ready/risky/
 # unusable come from assay.stats.ladder; degrades-at-N is the
@@ -111,6 +262,14 @@ class DiffResult:
     changes: tuple[Change, ...]
     within_noise: tuple[str, ...]     # cells checked and clean, named
     dropped: tuple[str, ...]          # cells present on one side only
+    #: Cells NOT compared because the two documents were measured under
+    #: different definitions of them (`SEMANTIC_BREAKS`). Distinct from
+    #: `dropped`, which v1.8 pinned to mean measured on exactly one
+    #: side: there, one side has nothing to say; here, both sides speak
+    #: and they are not speaking about the same thing. Defaulted so a
+    #: reader constructing a result without it still gets the honest
+    #: empty answer.
+    incomparable: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -120,6 +279,7 @@ class _Cells:
     changes: tuple[Change, ...] = ()
     within_noise: tuple[str, ...] = ()
     dropped: tuple[str, ...] = ()
+    incomparable: tuple[str, ...] = ()
 
 
 def _merge(*parts: _Cells) -> _Cells:
@@ -127,6 +287,7 @@ def _merge(*parts: _Cells) -> _Cells:
         changes=tuple(c for part in parts for c in part.changes),
         within_noise=tuple(n for part in parts for n in part.within_noise),
         dropped=tuple(d for part in parts for d in part.dropped),
+        incomparable=tuple(i for part in parts for i in part.incomparable),
     )
 
 
@@ -347,6 +508,7 @@ def _diff_verdicts(old: dict, new: dict) -> _Cells:
     new_verdicts = new.get("verdicts") or {}
     parts = []
     for name in sorted(set(old_verdicts) | set(new_verdicts)):
+        cell = f"verdict.{name}"
         old_value, old_prov = _verdict_of(old_verdicts.get(name))
         new_value, new_prov = _verdict_of(new_verdicts.get(name))
         old_measured = old_value is not None and old_value != UNMEASURED
@@ -359,7 +521,23 @@ def _diff_verdicts(old: dict, new: dict) -> _Cells:
             # and the rule v1.8's exit 3 reads directly.
             continue
         if not (old_measured and new_measured):
-            parts.append(_Cells(dropped=(f"verdict.{name}",)))
+            # Measured on exactly one side. `dropped`, unconditionally
+            # — a straddled break is irrelevant here: there is nothing
+            # on the other side to straddle it WITH, and re-measuring
+            # the missing side is exactly what closes this gap, which
+            # is not true of `incomparable` below. Checking this before
+            # the straddle guard (not after) is the fix: the guard used
+            # to run first and could steal a one-sided cell into
+            # `incomparable` whenever it also happened to straddle a
+            # registered break.
+            parts.append(_Cells(dropped=(cell,)))
+            continue
+        if _straddles(cell, old.get("probe_version"), new.get("probe_version")):
+            # Both sides measured it — that's established above, not
+            # assumed — and they measured different things. Never
+            # scored, and never `dropped` — that word means something
+            # else (v1.8).
+            parts.append(_Cells(incomparable=(cell,)))
             continue
         scored = _exact("verdict", name, old_value, new_value,
                         basis=BASIS_FLIP, direction=_ladder_direction)
@@ -508,7 +686,8 @@ def diff_profiles(old: dict, new: dict) -> DiffResult:
     comparable, notes = identity_gate(old, new)
     if not comparable:
         return DiffResult(comparable=False, identity_notes=notes,
-                          changes=(), within_noise=(), dropped=())
+                          changes=(), within_noise=(), dropped=(),
+                          incomparable=())
     cells = _merge(
         _diff_ceiling(old, new),
         _diff_shapes(old, new),
@@ -518,7 +697,7 @@ def diff_profiles(old: dict, new: dict) -> DiffResult:
     )
     return DiffResult(comparable=True, identity_notes=notes,
                       changes=cells.changes, within_noise=cells.within_noise,
-                      dropped=cells.dropped)
+                      dropped=cells.dropped, incomparable=cells.incomparable)
 
 
 def _show(value: object) -> str:
@@ -561,4 +740,24 @@ def render_diff(result: DiffResult) -> str:
         lines.append(f"incomplete: {len(result.dropped)} cell(s)"
                      " measured on one side only")
         lines.append("dropped: " + ", ".join(result.dropped))
+    if result.incomparable:
+        # A separate line from `dropped` on purpose: a one-sided cell is
+        # fixed by re-running, and this one is not — the two sides
+        # cannot be shown to have measured the same thing.
+        #
+        # "not established", not "changed": there are TWO routes into
+        # this field and the line has to be true for both. A straddled
+        # registered break means the rule demonstrably DID change. An
+        # unidentifiable instrument (§6) means only that we could not
+        # establish which rule produced the numbers — and a version-less
+        # document diffed against ITSELF takes that route, where "rule
+        # changed" asserts of one document something no evidence
+        # supports. The weaker word is true in both cases; the stronger
+        # one was false in the second. Distinguishing them in the OUTPUT
+        # would need a reason code on `DiffResult`, which buys a reader
+        # nothing they can act on: neither route is fixable by
+        # re-running the old side, and both exit 3.
+        lines.append(f"incomparable: {len(result.incomparable)} cell(s)"
+                     " not established to share a measurement rule")
+        lines.append("rule not established: " + ", ".join(result.incomparable))
     return "\n".join(lines)
