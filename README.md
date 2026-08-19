@@ -132,7 +132,7 @@ probe, taking its ceilings from the `Budget` itself (`max_calls`, and
 
 ## The profile
 
-One versioned JSON document (`assay_profile_version: 9`). Every field is
+One versioned JSON document (`assay_profile_version: 10`). Every field is
 a measurement, a `None` with a named reason, or provenance.
 
 | Field | What it says |
