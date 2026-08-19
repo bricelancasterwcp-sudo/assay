@@ -1,7 +1,7 @@
 """Cover: the crossed-model coverage check (spec: docs/superpowers/
 specs/2026-08-19-assay-v1.11-cover-design.md)."""
 
-from assay.cover import CoverResult, cover_identity_gate
+from assay.cover import CoverResult, cover_identity_gate, cover_profiles
 
 
 def _profile(*, name="qwen-a", quant="Q4_K_M", weights=1000,
@@ -18,6 +18,12 @@ def _profile(*, name="qwen-a", quant="Q4_K_M", weights=1000,
     }
     doc.update(families)
     return doc
+
+
+def _verdicts(**names):
+    """{"patch_editing": "ready"} -> the profile's verdicts payload."""
+    return {"verdicts": {name: {"verdict": verdict}
+                         for name, verdict in names.items()}}
 
 
 def test_crossed_model_names_pass_the_cover_gate():
@@ -93,3 +99,102 @@ def test_identical_identity_passes_with_no_notes():
     comparable, notes = cover_identity_gate(_profile(), _profile())
     assert comparable
     assert notes == ()
+
+
+def test_reinterpretation_table():
+    """The core rule, enumerated. Floor measures two verdict cells and
+    a speed cell; each candidate wrinkle maps to exactly one bucket."""
+    floor = _profile(**_verdicts(patch_editing="ready",
+                                 structured_extraction="risky"),
+                     speed={"decode_tps": 100.0})
+    table = [
+        # (candidate families, expected uncovered names,
+        #  expected incomplete, why)
+        (dict(**_verdicts(patch_editing="ready",
+                          structured_extraction="risky"),
+              speed={"decode_tps": 100.0}),
+         (), (),
+         "identical candidate covers"),
+        (dict(**_verdicts(patch_editing="risky",
+                          structured_extraction="risky"),
+              speed={"decode_tps": 100.0}),
+         ("verdict.patch_editing",), (),
+         "a rung below on the ladder is uncovered"),
+        (dict(**_verdicts(patch_editing="ready",
+                          structured_extraction="ready"),
+              speed={"decode_tps": 100.0}),
+         (), (),
+         "a rung ABOVE is covered — improvements are not evidence against"),
+        (dict(**_verdicts(patch_editing="ready"),
+              speed={"decode_tps": 100.0}),
+         (), ("verdict.structured_extraction",),
+         "a floor cell the candidate did not measure is incomplete"),
+        (dict(**_verdicts(patch_editing="ready",
+                          structured_extraction="risky",
+                          tool_calling="ready"),
+              speed={"decode_tps": 100.0}),
+         (), (),
+         "a candidate-only cell is ignored, not evidence"),
+        (dict(**_verdicts(patch_editing="ready",
+                          structured_extraction="risky"),
+              speed={"decode_tps": 60.0}),
+         ("speed.decode_tps",), (),
+         "slower beyond the assumed 20% threshold is uncovered"),
+        (dict(**_verdicts(patch_editing="ready",
+                          structured_extraction="risky"),
+              speed={"decode_tps": 140.0}),
+         (), (),
+         "faster is covered — one-directional"),
+    ]
+    for families, expect_uncovered, expect_incomplete, why in table:
+        result = cover_profiles(floor, _profile(name="qwen-b", **families))
+        assert result.comparable, why
+        got_uncovered = tuple(f"{c.family}.{c.cell}" for c in result.uncovered)
+        assert got_uncovered == expect_uncovered, why
+        assert result.incomplete == expect_incomplete, why
+
+
+def test_incomplete_never_passes_even_fully_covered_elsewhere():
+    """Load-bearing: every measured cell covered, one floor cell
+    unmeasured — the result must carry incomplete, and Task 3 pins
+    that incomplete outranks covered in the exit code."""
+    floor = _profile(**_verdicts(patch_editing="ready",
+                                 structured_extraction="ready"))
+    candidate = _profile(name="qwen-b",
+                         **_verdicts(patch_editing="ready"))
+    result = cover_profiles(floor, candidate)
+    assert result.incomplete == ("verdict.structured_extraction",)
+    assert result.uncovered == ()
+
+
+def test_candidate_only_cells_are_named_ignored():
+    floor = _profile(**_verdicts(patch_editing="ready"))
+    candidate = _profile(name="qwen-b",
+                         **_verdicts(patch_editing="ready",
+                                     tool_calling="unusable"))
+    result = cover_profiles(floor, candidate)
+    assert result.ignored == ("verdict.tool_calling",)
+    assert result.uncovered == ()
+    assert result.incomplete == ()
+
+
+def test_refused_pair_reports_nothing_beyond_notes():
+    """Same rule as diff_profiles: cells printed beside a refusal
+    invite reading them anyway."""
+    result = cover_profiles(_profile(probe_version="0.12.0"),
+                            _profile(probe_version="0.13.0"))
+    assert not result.comparable
+    assert result.uncovered == ()
+    assert result.covered == ()
+    assert result.incomplete == ()
+
+
+def test_floor_covers_itself():
+    floor = _profile(**_verdicts(patch_editing="ready"),
+                     speed={"decode_tps": 100.0},
+                     ceiling={"max_verified": 8192})
+    result = cover_profiles(floor, floor)
+    assert result.comparable
+    assert result.uncovered == ()
+    assert result.incomplete == ()
+    assert result.covered  # every measured cell, named

@@ -89,3 +89,40 @@ def cover_identity_gate(floor: dict, candidate: dict) -> tuple[bool, tuple[str, 
                          f"{old_value!r} -> {new_value!r}")
             fatal = True
     return (not fatal), tuple(notes)
+
+
+def cover_profiles(floor: dict, candidate: dict) -> CoverResult:
+    """One-directional coverage of `candidate` against `floor`.
+
+    A refused pair reports NOTHING beyond the notes — the
+    `diff_profiles` rule: cells printed beside a refusal invite
+    reading them anyway.
+    """
+    comparable, notes = cover_identity_gate(floor, candidate)
+    if not comparable:
+        return CoverResult(comparable=False, identity_notes=notes)
+    pair = _families(floor, candidate)
+    if pair.incomparable:
+        # Unreachable while the gate demands instrument equality —
+        # equal versions cannot straddle a registered break — but a
+        # future loosening of the gate must not decay into silent
+        # scoring here. Refuse, naming the cells.
+        return CoverResult(comparable=False, identity_notes=notes,
+                           incomparable=pair.incomparable)
+    # A self-diff of the floor puts exactly its measured cells into
+    # within_noise, under the walkers' own names — the floor-side
+    # membership test, byte-for-byte consistent with `pair` by
+    # construction.
+    floor_measured = frozenset(_families(floor, floor).within_noise)
+    uncovered = tuple(change for change in pair.changes
+                      if change.direction == "regression")
+    covered = pair.within_noise + tuple(
+        f"{change.family}.{change.cell}" for change in pair.changes
+        if change.direction != "regression")
+    incomplete = tuple(cell for cell in pair.dropped
+                       if cell in floor_measured)
+    ignored = tuple(cell for cell in pair.dropped
+                    if cell not in floor_measured)
+    return CoverResult(comparable=True, identity_notes=notes,
+                       uncovered=uncovered, covered=covered,
+                       incomplete=incomplete, ignored=ignored)
