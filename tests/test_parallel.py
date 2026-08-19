@@ -16,9 +16,9 @@ from assay.backends.base import Reply
 from assay.budget import Budget, BudgetMeter
 from assay.errors import BudgetExhausted, InfrastructureError
 from assay.parallel import (
-    OVERLAP_TOLERANCE_S,
+    OVERLAP_FRACTION,
+    OVERLAP_PROVENANCE,
     PARALLEL_SEED_BASE,
-    TOLERANCE_PROVENANCE,
     Parallel,
     ParallelRow,
     classify_mode,
@@ -157,7 +157,7 @@ def test_overlapping_spans_classify_parallel():
 
 
 def test_overlap_exactly_at_the_fraction_is_still_serialized():
-    # Pinned to the second decimal against OVERLAP_TOLERANCE_S = 0.25:
+    # Pinned to the second decimal against OVERLAP_FRACTION = 0.25:
     # both spans are 1.0 s long, so the overlap (1.0 - 0.75 = 0.25 s)
     # is exactly 0.25 of the shorter span. The rule is strict `>`, so
     # exactly-at-the-fraction still reads serialized.
@@ -168,7 +168,7 @@ def test_overlap_exactly_at_the_fraction_is_still_serialized():
     # The behavior first, the constant second: a moved fraction must
     # break the CLASSIFICATION here, not merely a bookkeeping equality.
     assert result.rows[0].mode == "serialized"
-    assert OVERLAP_TOLERANCE_S == 0.25  # the spans above are pinned to it
+    assert OVERLAP_FRACTION == 0.25  # the spans above are pinned to it
 
 
 def test_one_hundredth_past_the_fraction_is_parallel():
@@ -519,7 +519,7 @@ def test_seed_base_is_injectable_and_lanes_stay_distinguishable():
 # --- the envelope carries its provisional tolerance -------------------------
 
 
-def test_result_carries_the_tolerance_and_its_chosen_provenance():
+def test_result_carries_the_fraction_and_its_chosen_provenance():
     result = two_lanes(
         spans=((0.0, 1.0), (0.1, 1.1)),
         by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
@@ -534,10 +534,33 @@ def test_result_carries_the_tolerance_and_its_chosen_provenance():
     # is never absent, because a reader must be able to tell that from a
     # run whose budget quietly dropped a k.
     assert result.skipped == ()
-    assert result.tolerance_s == OVERLAP_TOLERANCE_S
+    # v10: a new run records the FRACTION it classified under, never a
+    # seconds tolerance — that field pair is v9-and-earlier only, and a
+    # live run leaves it None rather than populating a field whose name
+    # would misdescribe what was recorded.
+    assert result.overlap_fraction == OVERLAP_FRACTION
     # A CHOSEN threshold travels with the fact that it was chosen, so a
     # reader never mistakes it for a derived one.
-    assert result.tolerance_provenance == TOLERANCE_PROVENANCE == "chosen-2026-08-17"
+    assert result.overlap_provenance == OVERLAP_PROVENANCE == "chosen-2026-08-18"
+    assert result.tolerance_s is None
+    assert result.tolerance_provenance is None
+
+
+def test_a_new_run_records_the_fraction_and_not_a_seconds_tolerance():
+    """The rename is the point: a fraction stored in a field named
+    seconds would be a false claim, and — worse — `assay diff` would
+    compare `tolerance_s: 0.25` against `tolerance_s: 0.25`, find them
+    byte-equal, and report no change across a break where the whole
+    classification rule changed.
+    """
+    result = two_lanes(
+        spans=((0.0, 1.0), (0.0, 1.0)),
+        by_seed={1720: timed_reply(30.0), 1721: timed_reply(30.0)},
+    )
+    assert result.overlap_fraction == OVERLAP_FRACTION == 0.25
+    assert result.overlap_provenance == OVERLAP_PROVENANCE == "chosen-2026-08-18"
+    assert result.tolerance_s is None
+    assert result.tolerance_provenance is None
 
 
 def test_rows_are_frozen():

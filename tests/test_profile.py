@@ -152,8 +152,7 @@ def make_parallel(**overrides):
     this profile's own speed family would produce, so nothing in the
     fixture invites a reader to compare two unrelated numbers.
     """
-    from assay.parallel import (OVERLAP_TOLERANCE_S, TOLERANCE_PROVENANCE,
-                                Parallel, ParallelRow)
+    from assay.parallel import Parallel, ParallelRow
     fields = dict(
         rows=(
             ParallelRow(k=2, per_lane_decode_tps=12.0,
@@ -166,8 +165,16 @@ def make_parallel(**overrides):
                         evidence="server_timings"),
         ),
         baseline_decode_tps=16.0,
-        tolerance_s=OVERLAP_TOLERANCE_S,
-        tolerance_provenance=TOLERANCE_PROVENANCE,
+        # v9-shaped on purpose: this fixture is shared with
+        # test_report.py's HTML rendering tests, which pin the exact
+        # "0.25" / "chosen-2026-08-17" tolerance text that report.py
+        # (v1.9 Task 3's file, not this task's) still reads from
+        # `tolerance_s`/`tolerance_provenance`. The values are the old
+        # constants' historical literals, not a live import — the names
+        # OVERLAP_TOLERANCE_S/TOLERANCE_PROVENANCE no longer exist in
+        # assay.parallel after the v10 rename.
+        tolerance_s=0.25,
+        tolerance_provenance="chosen-2026-08-17",
     )
     fields.update(overrides)
     return Parallel(**fields)
@@ -963,18 +970,75 @@ def test_the_recovery_demotion_never_promotes():
 
 def test_schema_version_and_package_version_move_together():
     # The schema and the distribution version are one release, not two:
-    # a profile that says v9 must have been written by a 0.10.0 probe.
+    # a profile that says v10 must have been written by a 0.11.0 probe.
+    #
+    # v10 (Task 2, 2026-08-18): PROFILE_VERSION and __version__/pyproject
+    # move together in THIS commit, same as always. The README's own
+    # `assay_profile_version: N` line is Task 4's file in this wave (see
+    # task-2-brief.md's scope boundary) and lands in a later commit — so
+    # the assertion below is expected to stay red between this commit and
+    # that one, for a reason that has nothing to do with this task's
+    # correctness. It is left in place, unweakened, rather than removed,
+    # because it is real coverage Task 4 must satisfy before the wave is
+    # done.
     import assay
 
-    assert PROFILE_VERSION == 9
-    assert assay.__version__ == "0.10.0"
-    assert 'version = "0.10.0"' in (
+    assert PROFILE_VERSION == 10
+    assert assay.__version__ == "0.11.0"
+    assert 'version = "0.11.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite
     # (it said 3 while PROFILE_VERSION was 4) because nothing pinned it.
     assert f"assay_profile_version: {PROFILE_VERSION}" in (
         _REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+
+# --- schema v10: the overlap fraction replaces the seconds tolerance --------
+
+
+def test_a_v9_profile_still_loads_with_its_seconds_tolerance():
+    """The fifteen committed profiles are v9 and were measured under the
+    seconds rule. They are never rescored and never converted: a
+    tolerance in seconds and a dimensionless fraction are different
+    quantities, and mapping one onto the other would invent a
+    measurement nobody made.
+    """
+    from assay.profile import _parallel_from
+
+    v9 = {
+        "rows": [],
+        "baseline_decode_tps": 30.0,
+        "tolerance_s": 0.25,
+        "tolerance_provenance": "chosen-2026-08-17",
+    }
+    parallel = _parallel_from(v9)
+    assert parallel.tolerance_s == 0.25
+    assert parallel.tolerance_provenance == "chosen-2026-08-17"
+    assert parallel.overlap_fraction is None
+    assert parallel.overlap_provenance is None
+
+
+def test_a_v10_profile_loads_with_its_fraction():
+    from assay.profile import _parallel_from
+
+    v10 = {
+        "rows": [],
+        "baseline_decode_tps": 30.0,
+        "overlap_fraction": 0.25,
+        "overlap_provenance": "chosen-2026-08-18",
+    }
+    parallel = _parallel_from(v10)
+    assert parallel.overlap_fraction == 0.25
+    assert parallel.tolerance_s is None
+
+
+def test_schema_v10_and_the_package_version_move_together():
+    from assay.profile import PROFILE_VERSION
+    import assay
+
+    assert PROFILE_VERSION == 10
+    assert assay.__version__ == "0.11.0"
 
 
 def test_long_output_round_trips_as_tuples_of_rungs():
@@ -1831,9 +1895,15 @@ def _prow(k=2, ratio=1.0, mode="parallel", errors=(), evidence="server_timings",
 
 
 def _parallel(rows, skipped=()):
-    from assay.parallel import Parallel
+    # v10-shaped: the verdict ladder these build for reads neither the
+    # tolerance/fraction pair (only `mode`, `degradation_ratio`,
+    # `n_lanes_ok`, `lane_errors`, `skipped`), so the shape is free to
+    # match what a LIVE run actually produces today rather than
+    # perpetuate the v9 field pair a v1.9+ run never populates.
+    from assay.parallel import OVERLAP_FRACTION, OVERLAP_PROVENANCE, Parallel
     return Parallel(rows=tuple(rows), baseline_decode_tps=10.0,
-                    tolerance_s=0.25, tolerance_provenance="chosen-2026-08-17",
+                    overlap_fraction=OVERLAP_FRACTION,
+                    overlap_provenance=OVERLAP_PROVENANCE,
                     skipped=tuple(skipped))
 
 
@@ -1920,7 +1990,7 @@ def test_parallel_verdict_boundaries_are_inclusive():
 
 def test_parallel_lens_carries_its_floors_and_says_they_were_chosen():
     """A threshold nobody derived must say so at the point of use —
-    `OVERLAP_TOLERANCE_S`'s rule. No live row has ever crossed either
+    `OVERLAP_FRACTION`'s rule. No live row has ever crossed either
     floor, so the provenance is the honest half of the claim."""
     from assay.profile import _parallel_verdict
 
@@ -1952,11 +2022,19 @@ def test_compute_verdicts_parallel_defaults_to_unmeasured():
 
 
 def test_schema_v9_names_the_parallel_verdict():
-    """The bump exists FOR this cell. A v9 document that does not carry
-    it is not a v9 document."""
-    from assay.profile import PROFILE_VERSION, compute_verdicts
+    """The bump exists FOR this cell, first shipped at schema v9 (v1.8).
+    A schema that does not carry it is not this era's schema.
 
-    assert PROFILE_VERSION == 9
+    The version number is a historical marker (when the cell arrived),
+    not a live check — comparing it against the CURRENT `PROFILE_VERSION`
+    would fail at every future bump for a reason that has nothing to do
+    with this cell, the same staleness `test_the_campaign_corpus_is_the_
+    fifteen_v8_rows_the_matrix_publishes` already had to fix by dropping
+    the symbolic comparison. The substantive claim — that the cell is
+    present — is checked directly instead.
+    """
+    from assay.profile import compute_verdicts
+
     assert "parallel" in compute_verdicts(None, None, None, None)
 
 

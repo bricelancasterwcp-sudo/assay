@@ -2,7 +2,7 @@
 
 # __version__ is defined before the imports below: assay.run reads it
 # from this partially-initialized module during its own import.
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 from assay.budget import Budget
 from assay.profile import Profile

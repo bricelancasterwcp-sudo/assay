@@ -39,7 +39,7 @@ from assay.stats import ladder as _ladder
 from assay.stats import wilson95
 from assay.tools import TOOLS_INSTRUMENT, TOOLSET_NAME, Tools
 
-PROFILE_VERSION = 9
+PROFILE_VERSION = 10
 
 _FAMILIES = ("geometry", "ceiling", "ceiling_shapes", "envelope", "codecs",
              "speed", "loop", "long_output", "tools", "parallel")
@@ -68,7 +68,7 @@ _AGENT_READY_TPS = 200.0
 _AGENT_RISKY_TPS = 80.0
 
 #: The parallel family's degradation floors. CHOSEN, not derived, and
-#: the lens says so at every point of use — `OVERLAP_TOLERANCE_S`'s
+#: the lens says so at every point of use — `OVERLAP_FRACTION`'s
 #: rule. The 2026-08 campaign's thirty k-readings (15 models x k in
 #: {2, 4}, ninety lanes) all read `degradation_ratio` between 0.995 and
 #: 1.007 across a 10x span of single-lane speed, so every live row sits
@@ -249,15 +249,23 @@ def _parallel_from(payload: dict | None) -> Parallel | None:
     #
     # ``skipped`` is read with ``.get``, the ``stopping_rule``
     # convention: a payload written before the list existed named no
-    # skipped k, and the field's own default says exactly that.
+    # skipped k, and the field's own default says exactly that. The
+    # tolerance/fraction pairs follow the same idiom (v10): a v9
+    # document names only `tolerance_s`/`tolerance_provenance`, a v10+
+    # document names only `overlap_fraction`/`overlap_provenance`, and
+    # `.get` lets either payload parse without the other pair's absence
+    # reading as an error — a payload that never named a field is
+    # different from one that measured nothing and wrote null.
     return Parallel(
         rows=tuple(
             ParallelRow(**{**row, "lane_errors": tuple(row["lane_errors"])})
             for row in payload["rows"]
         ),
         baseline_decode_tps=payload["baseline_decode_tps"],
-        tolerance_s=payload["tolerance_s"],
-        tolerance_provenance=payload["tolerance_provenance"],
+        overlap_fraction=payload.get("overlap_fraction"),
+        overlap_provenance=payload.get("overlap_provenance"),
+        tolerance_s=payload.get("tolerance_s"),
+        tolerance_provenance=payload.get("tolerance_provenance"),
         skipped=tuple(payload.get("skipped") or ()),
     )
 

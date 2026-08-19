@@ -25,8 +25,8 @@ derives a rate from a span.)
 **Client clocks decide exactly one thing: the scheduling fact.**
 Whether the lanes' wall-clock spans stacked or overlapped is an
 observation about arrival and completion, not a rate, so it is the one
-place the caller's clock is trusted. The overlap tolerance is a CHOSEN
-constant, and it travels with ``TOLERANCE_PROVENANCE`` saying so — a
+place the caller's clock is trusted. The overlap fraction is a CHOSEN
+constant, and it travels with ``OVERLAP_PROVENANCE`` saying so — a
 threshold should be derived from measurement, and one that is not must
 be flagged until the campaign's live rows can sanity-check it.
 
@@ -53,9 +53,15 @@ from assay.budget import BudgetMeter
 from assay.errors import BudgetExhausted
 from assay.speed import DECODE_MAX_TOKENS, DECODE_PROMPT, server_timings
 
-OVERLAP_TOLERANCE_S = 0.25  # CHOSEN, not derived — sanity-checked by
-                            # the campaign's live rows (spec §3)
-TOLERANCE_PROVENANCE = "chosen-2026-08-17"
+#: The overlap a consecutive lane pair must exceed to count as
+#: concurrent, as a FRACTION of the shorter span. Dimensionless on
+#: purpose: an absolute seconds threshold reduces to "each lane must
+#: last longer than N seconds" for lanes launched together, which makes
+#: a fast endpoint read `serialized` while serving every lane at once.
+#: CHOSEN, not derived — every profile records it beside the provenance
+#: saying so.
+OVERLAP_FRACTION = 0.25
+OVERLAP_PROVENANCE = "chosen-2026-08-18"
 
 DEFAULT_KS = (2, 4)
 PARALLEL_SEED_BASE = 1700
@@ -95,8 +101,17 @@ class ParallelRow:
 class Parallel:
     rows: tuple[ParallelRow, ...]
     baseline_decode_tps: float
-    tolerance_s: float                  # == OVERLAP_TOLERANCE_S as run
-    tolerance_provenance: str           # == TOLERANCE_PROVENANCE
+    #: v10+: the overlap fraction this run classified under.
+    overlap_fraction: float | None = None
+    #: v10+: == OVERLAP_PROVENANCE.
+    overlap_provenance: str | None = None
+    #: v9 and earlier ONLY: the absolute seconds tolerance that era ran
+    #: under. Never populated by a new run, and never converted into a
+    #: fraction — the two are different quantities, and mapping one onto
+    #: the other would invent a measurement nobody made. A v9 document
+    #: read today keeps saying exactly what it said.
+    tolerance_s: float | None = None
+    tolerance_provenance: str | None = None
     # The k values the meter refused, NAMED — ``LongOutput.skipped``'s
     # rule applied here. An absent row is silent about why it is absent:
     # "only k=2 was asked for", "k=4 was refused by the budget" and "this
@@ -186,7 +201,7 @@ def _affordable(meter: BudgetMeter, lanes: int, prompt_tokens: int) -> bool:
 
 
 def classify_mode(
-    spans: list[tuple[float, float]], fraction: float = OVERLAP_TOLERANCE_S
+    spans: list[tuple[float, float]], fraction: float = OVERLAP_FRACTION
 ) -> str | None:
     """"serialized" if the lanes' spans stacked, "parallel" if they overlapped.
 
@@ -346,12 +361,12 @@ def probe_parallel(
                 for lane in range(k)
             ]
         )
-        rows.append(_row(k, results, baseline_decode_tps, OVERLAP_TOLERANCE_S))
+        rows.append(_row(k, results, baseline_decode_tps, OVERLAP_FRACTION))
 
     return Parallel(
         rows=tuple(rows),
         baseline_decode_tps=baseline_decode_tps,
-        tolerance_s=OVERLAP_TOLERANCE_S,
-        tolerance_provenance=TOLERANCE_PROVENANCE,
+        overlap_fraction=OVERLAP_FRACTION,
+        overlap_provenance=OVERLAP_PROVENANCE,
         skipped=tuple(skipped),
     )
