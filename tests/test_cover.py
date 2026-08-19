@@ -189,6 +189,55 @@ def test_refused_pair_reports_nothing_beyond_notes():
     assert result.incomplete == ()
 
 
+def test_equal_but_unparseable_instrument_refuses_naming_the_cells():
+    """The `incomparable` branch is LIVE, not defense-in-depth. A
+    `probe_version` that is not three decimal components parses to
+    None, so `_straddles` fail-safes it to straddling every registered
+    break — while the gate's equality check passes it, both sides being
+    the same unparseable string. Cover refuses, naming the cells."""
+    floor = _profile(probe_version="0.13",
+                     verdicts={"parallel": {"verdict": "ready"}})
+    candidate = _profile(name="qwen-b", probe_version="0.13",
+                         verdicts={"parallel": {"verdict": "ready"}})
+    result = cover_profiles(floor, candidate)
+    assert result.comparable is False
+    assert result.incomparable == ("verdict.parallel",)
+    assert result.uncovered == ()
+    assert result.covered == ()
+    assert result.incomplete == ()
+    assert result.ignored == ()
+
+
+def test_floor_only_provisional_rider_is_never_decisive():
+    """Spec §2: provisional flags ride along in the evidence and are
+    never decisive. A floor that recorded the flag against a candidate
+    that did not still has its verdict covered — spending exit 3 on the
+    rider would let a flag decide a pair whose verdict itself covers."""
+    floor = _profile(verdicts={"a": {"verdict": "ready",
+                                     "provisional": True}})
+    candidate = _profile(name="qwen-b",
+                         verdicts={"a": {"verdict": "ready"}})
+    result = cover_profiles(floor, candidate)
+    assert result.covered == ("verdict.a",)
+    assert result.incomplete == ()
+    assert not any(name.endswith(".provisional") for name in
+                   result.incomplete + result.ignored + result.covered)
+
+
+def test_candidate_only_provisional_rider_is_not_ignored_noise():
+    """The mirror: a rider the candidate alone carries is not an
+    ignored candidate-only CELL either. Same rule, same reason."""
+    floor = _profile(verdicts={"a": {"verdict": "ready"}})
+    candidate = _profile(name="qwen-b",
+                         verdicts={"a": {"verdict": "ready",
+                                         "provisional": True}})
+    result = cover_profiles(floor, candidate)
+    assert result.covered == ("verdict.a",)
+    assert result.ignored == ()
+    assert "verdict.a.provisional" not in result.ignored
+    assert "verdict.a.provisional" not in result.incomplete
+
+
 def test_floor_covers_itself():
     floor = _profile(**_verdicts(patch_editing="ready"),
                      speed={"decode_tps": 100.0},

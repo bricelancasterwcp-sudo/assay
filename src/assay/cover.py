@@ -31,10 +31,12 @@ class CoverResult:
     #: Candidate-only cells. Counted, named, decisive of nothing —
     #: coverage is one-directional.
     ignored: tuple[str, ...] = ()
-    #: Cells straddling a registered semantic break. Unreachable while
-    #: the gate demands instrument equality (equal versions cannot
-    #: straddle); refused rather than assumed if a future caller
-    #: loosens the gate.
+    #: Cells straddling a registered semantic break, or measured by an
+    #: instrument nobody can identify. Reachable through the gate: two
+    #: sides carrying the SAME unparseable `probe_version` satisfy its
+    #: equality check, and `_straddles` fail-safes an unparseable
+    #: version to straddling every registered break. Refused, never
+    #: assumed comparable.
     incomparable: tuple[str, ...] = ()
 
 
@@ -103,10 +105,14 @@ def cover_profiles(floor: dict, candidate: dict) -> CoverResult:
         return CoverResult(comparable=False, identity_notes=notes)
     pair = _families(floor, candidate)
     if pair.incomparable:
-        # Unreachable while the gate demands instrument equality —
-        # equal versions cannot straddle a registered break — but a
-        # future loosening of the gate must not decay into silent
-        # scoring here. Refuse, naming the cells.
+        # Reachable today, in exactly the case the gate's equality
+        # check does not close: a `probe_version` equal on both sides
+        # but unparseable (not three decimal components). Equality
+        # passes the gate, `_parse_version` returns None, and
+        # `_straddles` fail-safes an unidentifiable version to
+        # straddling every REGISTERED break. Refusing here is that
+        # fail-safe's other half — the rule that produced those cells
+        # was never established, so they are not comparable.
         return CoverResult(comparable=False, identity_notes=notes,
                            incomparable=pair.incomparable)
     # A self-diff of the floor puts exactly its measured cells into
@@ -119,9 +125,19 @@ def cover_profiles(floor: dict, candidate: dict) -> CoverResult:
     covered = pair.within_noise + tuple(
         f"{change.family}.{change.cell}" for change in pair.changes
         if change.direction != "regression")
-    incomplete = tuple(cell for cell in pair.dropped
+    # A `verdict.<name>.provisional` sub-cell is an evidence RIDER, not
+    # a cell: spec §2 holds the provisional flags are never decisive —
+    # a floor cell is the floor whether or not its Wilson interval had
+    # decided. Left in the partition, a floor that recorded the flag
+    # against a candidate that did not would land the rider in
+    # `incomplete` and spend exit 3 on a pair whose verdict itself
+    # covers, letting the flag decide after all. Both-measured flips
+    # still ride along in `covered` (§3), where they decide nothing.
+    dropped = tuple(cell for cell in pair.dropped
+                    if not cell.endswith(".provisional"))
+    incomplete = tuple(cell for cell in dropped
                        if cell in floor_measured)
-    ignored = tuple(cell for cell in pair.dropped
+    ignored = tuple(cell for cell in dropped
                     if cell not in floor_measured)
     return CoverResult(comparable=True, identity_notes=notes,
                        uncovered=uncovered, covered=covered,
