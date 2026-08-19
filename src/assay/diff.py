@@ -51,12 +51,20 @@ A cell measured on BOTH sides can still go unscored, for a different
 reason: ``incomparable`` (v1.10, ``SEMANTIC_BREAKS``). ``dropped`` is
 about ONE side having nothing to say — re-running the missing side is
 exactly what closes it. ``incomparable`` is about a cell where both
-sides spoke and are not speaking about the same thing, because the
-release that produced one of them changed what the cell MEANS; no
-amount of re-running the older document fixes that, only re-measuring
-under the newer rule does. The two never overlap on the same cell —
-one side missing is checked first, unconditionally — so every
-incomplete comparison lands in exactly one of the two, never both.
+sides spoke and it is not established that they spoke about the same
+thing; no amount of re-running the older document fixes that, only
+re-measuring under the newer rule does. Two routes lead here and the
+distinction matters when reading the output: a pair straddling a
+REGISTERED break, where the rule demonstrably changed, and a document
+whose ``probe_version`` could not be identified at all, where the rule
+is simply unestablished (the parser's ``None``). The render states only
+what covers both. The two never overlap on the same cell — one side
+missing is checked first, unconditionally — so every incomplete
+comparison lands in exactly one of the two, never both.
+
+``SEMANTIC_BREAKS`` covers the breaks it LISTS and no others: read its
+comment before trusting a clean ``incomparable: ()`` as evidence that
+two documents measured the same things.
 """
 
 from __future__ import annotations
@@ -82,11 +90,41 @@ BASIS_2SE = "beyond-2se"
 #: this module already uses (``f"{family}.{cell}"``); the value is the
 #: first version that used the NEW rule.
 #:
-#: Small BY CONSTRUCTION and expected to stay small: an entry is needed
-#: only when a release changes what an EXISTING cell means. Every bump
-#: before v1.9 was additive — a new cell the old side simply lacked,
-#: which `dropped` and exit 3 already handle — which is why one row
-#: covers eleven releases.
+#: **This table is NOT a complete inventory of this project's semantic
+#: breaks, and its single row is not evidence that v1.9 was the first.**
+#: An earlier draft of this comment claimed every bump before v1.9 was
+#: additive — a new cell the old side simply lacked, which `dropped` and
+#: exit 3 already handle. That claim is false, and this repository
+#: documents its own counter-evidence. At least five earlier releases
+#: redefined an EXISTING cell and are NOT registered here:
+#:
+#:   v1.1 (0.2.0)  `verdict.patch_editing` repointed to the
+#:                 applies-and-parses lens (commit 7367802). The v0.2
+#:                 CHANGELOG records the two lenses reading the same
+#:                 model at 0% and 100%.
+#:   v1.3 (0.4.0)  one fixture per codec cell became 5 heterogeneous
+#:                 tasks across 5 defect classes, plus changed refusal
+#:                 classification (commit 484bc4c) — redefining every
+#:                 `codec.*` cell and the codec-backed verdicts.
+#:   v1.5 (0.6.0)  fixed n=5 with provisional marking became sequential
+#:                 testing. The CHANGELOG says so in its own words:
+#:                 "This wave amends v1.3's verdict semantics."
+#:   v1.6 (0.7.0)  `scripted-loop-v1` became `v2`; `n_turns` 3 -> 5 into
+#:                 the shared denominator, plus a recovery demotion.
+#:   v1.7 (0.9.0)  the tools pool grew 5 -> 20 with a look schedule, in
+#:                 full mode.
+#:
+#: A pair straddling any of those is still scored today, silently. They
+#: are not backfilled here because two of the decisions sit above this
+#: table's type: several breaks are MODE-CONDITIONAL (v1.7 kept
+#: `--quick`'s pool verbatim), which a version-keyed registry cannot
+#: express, and the `codec.*` rows name a family `_diff_verdicts` never
+#: consults, so an entry for one would sit here and be ignored. Recorded
+#: in docs/CARRIED-DEBT.md, v1.10 "Diff" items 1 and 2, which compound.
+#:
+#: An entry is needed whenever a release changes what an EXISTING cell
+#: means. The table is small because it is incomplete, not because the
+#: history is.
 SEMANTIC_BREAKS: dict[str, tuple[int, ...]] = {
     # v1.9 (0.11.0): `classify_mode` moved from an absolute-seconds
     # overlap test to a fraction of the shorter span, so `mode` — and

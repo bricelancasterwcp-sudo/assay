@@ -620,11 +620,19 @@ It exits 2. Re-baseline with a marked run.
   as regression or improvement. Absence of evidence is absence.
 - **a cell both sides measured, but under two different rules** goes in
   `incomparable` — also never scored. `SEMANTIC_BREAKS` (`diff.py`)
-  names the handful of cells a release has redefined without changing
-  their name, type, or presence; a pair straddling a registered break —
-  or carrying an unparseable or missing `probe_version` on either
-  side — lands here instead of being scored as if the two sides agreed
-  on what they were measuring.
+  lists cells a release has redefined without changing their name,
+  type, or presence. It holds **one entry today**
+  (`verdict.parallel`), and it is **not a complete inventory**: at
+  least five earlier releases also redefined existing cells and are not
+  registered, so a pair straddling one of those is still scored
+  silently. See the registry's own comment for the list.
+  `incomparable` covers a **registered** cell only — either because the
+  pair straddles that cell's break, or because a `probe_version` is
+  missing or unparseable on either side, which makes every *registered*
+  break unestablished. Cells with no entry — `ceiling`,
+  `ceiling_shapes`, `codecs`, `speed`, and every unregistered verdict —
+  are compared normally regardless of version, so a version-less
+  profile is **not** protected across the board.
 
 **The verdict ladder:**
 
@@ -699,6 +707,22 @@ fires exactly as it does for `dropped`. `identity_gate` still does not
 check `probe_version` — a version difference is not a different
 endpoint — so this is deliberately narrow: it stops one instrument
 change from reading as an endpoint fact, not general version-awareness.
+
+**How narrow, stated plainly.** The registry is not a complete record
+of this project's rule changes. At least five earlier releases —
+v1.1, v1.3, v1.5, v1.6 and v1.7 — also redefined cells that already
+existed, and none of them is registered, so a pair straddling one of
+those is scored today with no warning. The v1.3 fixture-set change
+alone redefines every `codec.*` cell; the campaign evidence directory
+says so in its own words, that `diff` "deliberately does not gate on
+fixture-set name, so it will subtract across the change without saying
+so". They are not backfilled because doing so needs decisions the
+current design cannot express — several breaks apply only in some
+modes, and the `codec.*` family has no call site that reads the
+registry at all. Recorded as open debt in `docs/CARRIED-DEBT.md`
+(v1.10, "Diff", items 1 and 2). Read a clean `incomparable: ()` as
+"nothing REGISTERED was straddled", not as "the two runs measured the
+same things".
 
 ## The None-vs-zero rule
 

@@ -13,14 +13,14 @@ numbers*: `identity_gate` establishes that both documents describe the
 same model on the same class of machine, and says nothing about whether
 the two runs meant the same thing by what they wrote.
 
-Until v1.9 that was harmless, because every schema bump had been
-**additive** — a new release measured cells the old one did not, the old
-side simply lacked them, they landed in `dropped`, and exit 3 reported
-the comparison as incomplete. That machinery worked because absence is
-visible.
+Where a release only ADDS cells, that is harmless: the old side simply
+lacks them, they land in `dropped`, and exit 3 reports the comparison as
+incomplete. That machinery works because absence is visible.
 
-v1.9 was the first release to change **what an existing cell means**
-without changing its name, type, or presence: `classify_mode` moved from
+v1.9 is not the first release to change **what an existing cell means**
+without changing its name, type, or presence — see the honest scope
+note at the end of this entry — but it is the one this wave was built
+around: `classify_mode` moved from
 an absolute-seconds overlap test to a fraction of the shorter span, so
 `verdict.parallel` can read differently for an endpoint that did not
 change at all. Both sides measured the cell, so nothing was absent, so
@@ -32,10 +32,7 @@ change published as a fact about the endpoint — and `--gate` exited
 
 **`SEMANTIC_BREAKS` records which cells changed meaning and when.** A
 pair straddling a registered break does not score that cell: it lands in
-the new `DiffResult.incomparable`, and exit 3 fires. The registry is
-small by construction — one row covers eleven releases — because an
-entry is needed only when a release redefines an existing cell, which
-had never happened before v1.9.
+the new `DiffResult.incomparable`, and exit 3 fires.
 
 `incomparable` is a **new field, not a widened `dropped`.** v1.8 pinned,
 enumerated and mutation-tested `dropped` to mean "measured on exactly
@@ -58,6 +55,30 @@ cross-upgrade pair and destroy the instrument's central use. Exit-code
 meanings are unchanged; only the set of conditions producing 3 grows.
 Profile schema stays **v10** — this changes how two profiles are
 compared, not what a profile says.
+
+**What this does NOT cover, named rather than implied.** The registry
+holds one row and is **not a complete inventory of this project's rule
+changes**. An earlier draft of this entry claimed every bump before v1.9
+was additive and that one row therefore covered eleven releases; that
+claim was false, and this repository documents its own counter-evidence.
+At least five earlier releases redefined cells that already existed:
+**v1.1** (0.2.0) repointed `verdict.patch_editing` at the
+applies-and-parses lens; **v1.3** (0.4.0) replaced one fixture per codec
+cell with five heterogeneous tasks across five defect classes,
+redefining every `codec.*` cell and the verdicts behind them; **v1.5**
+(0.6.0) replaced fixed n=5 with sequential testing, and said so at the
+time — "this wave amends v1.3's verdict semantics"; **v1.6** (0.7.0)
+took `scripted-loop-v1` to `v2` with `n_turns` 3 → 5 in the shared
+denominator; **v1.7** (0.9.0) grew the tools pool 5 → 20 with a look
+schedule in full mode. None is registered, so a pair straddling one is
+still scored with no warning — including every `codec.*` cell across the
+v1.3 fixture change, which the campaign's own diff notes already flag as
+a movement in the instrument rather than in the model. They are not
+backfilled here because several are **mode-conditional** (v1.7 left
+`--quick`'s pool untouched), which a version-keyed table cannot express,
+and because the `codec.*` family has no call site that consults the
+registry — only `_diff_verdicts` does. Both gaps are recorded as open
+items in `docs/CARRIED-DEBT.md` (v1.10, "Diff").
 
 ## v0.11 (v1.9): the scale-free overlap rule
 

@@ -282,13 +282,14 @@ the same not-yet-written-ledger convention.
 
    **The v1.10 slice's own record.** `SEMANTIC_BREAKS` grows by one row
    per release that redefines an EXISTING cell's meaning, not per
-   release generally — every bump before v1.9 was additive (new field,
-   new family, new lens), which `dropped` and exit 3 already handled,
-   which is why one row covers eleven releases. The table's smallness is
-   a property of this project's history so far, not a guarantee about
-   its future: the next release that changes what an already-measured
-   cell means needs its own entry, or it repeats this item's defect for
-   that cell.
+   release generally. **This paragraph originally continued "every bump
+   before v1.9 was additive … which is why one row covers eleven
+   releases". That was false**, and is corrected by the v1.10 section's
+   Diff item 2 above, which enumerates five earlier releases that
+   redefined existing cells and are not registered. The table is small
+   because it is INCOMPLETE, not because the history is: any release
+   that changes what an already-measured cell means needs its own
+   entry, and five that already did are still missing theirs.
 
 3. **Spec §2's "strictly dominates ... changes none it got right" is
    an overclaim, corrected.** (I5, final fix wave, 2026-08-18.)
