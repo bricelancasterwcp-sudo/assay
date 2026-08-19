@@ -924,10 +924,50 @@ def test_the_render_names_incomparable_separately_from_dropped():
         parallel={"verdict": "ready", "lens": {}}))
     page = render_diff(diff_profiles(old, new))
 
-    assert "incomparable: 1 cell(s) measured under a different rule" in page
+    assert "incomparable: 1 cell(s) not established to share" in page
     assert "verdict.parallel" in page
     assert "incomplete: 1 cell(s) measured on one side only" in page
     assert "dropped: verdict.patch_editing" in page
+
+
+def test_the_incomparable_line_is_true_for_a_document_against_itself():
+    """One document cannot have been measured under two rules.
+
+    A version-less profile diffed against ITSELF lands `verdict.parallel`
+    in `incomparable` — correct, and §6's discipline: an instrument we
+    cannot identify is not a comparable one. But the render then said
+    "measured under a different rule" and "rule changed", asserting a
+    rule change on a single document, which no evidence supports. There
+    are two routes into `incomparable` and the line must be true for
+    both: a straddled registered break, where the rule is known to have
+    changed, and an unidentifiable instrument, where it simply is not
+    established either way. The weaker claim covers both; the stronger
+    one is false for this case.
+    """
+    profile = make_profile(probe_version=None, verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+    page = render_diff(diff_profiles(profile, profile))
+
+    assert "verdict.parallel" in page
+    assert "different rule" not in page
+    assert "rule changed" not in page
+    assert "not established to share a measurement rule" in page
+
+
+def test_the_incomparable_line_reads_the_same_for_a_registered_break():
+    """The same wording carries the straddle case — the one where the
+    rule demonstrably DID change. Understating it there is safe; the
+    render already says `incomparable` and exit 3 already says the
+    comparison is incomplete. Overstating it on the other route was
+    not."""
+    old = make_profile(probe_version="0.10.0", verdicts=make_verdicts(
+        parallel={"verdict": "risky", "lens": {}}))
+    new = make_profile(probe_version="0.11.0", verdicts=make_verdicts(
+        parallel={"verdict": "ready", "lens": {}}))
+    page = render_diff(diff_profiles(old, new))
+
+    assert "incomparable: 1 cell(s) not established to share" in page
+    assert "rule not established: verdict.parallel" in page
 
 
 def test_render_of_an_incomparable_pair_says_why():

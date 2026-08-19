@@ -693,10 +693,22 @@ def render_diff(result: DiffResult) -> str:
         lines.append("dropped: " + ", ".join(result.dropped))
     if result.incomparable:
         # A separate line from `dropped` on purpose: a one-sided cell is
-        # fixed by re-running, and this one is not fixable at all — the
-        # two documents were written by instruments that meant
-        # different things by the same name.
+        # fixed by re-running, and this one is not — the two sides
+        # cannot be shown to have measured the same thing.
+        #
+        # "not established", not "changed": there are TWO routes into
+        # this field and the line has to be true for both. A straddled
+        # registered break means the rule demonstrably DID change. An
+        # unidentifiable instrument (§6) means only that we could not
+        # establish which rule produced the numbers — and a version-less
+        # document diffed against ITSELF takes that route, where "rule
+        # changed" asserts of one document something no evidence
+        # supports. The weaker word is true in both cases; the stronger
+        # one was false in the second. Distinguishing them in the OUTPUT
+        # would need a reason code on `DiffResult`, which buys a reader
+        # nothing they can act on: neither route is fixable by
+        # re-running the old side, and both exit 3.
         lines.append(f"incomparable: {len(result.incomparable)} cell(s)"
-                     " measured under a different rule")
-        lines.append("rule changed: " + ", ".join(result.incomparable))
+                     " not established to share a measurement rule")
+        lines.append("rule not established: " + ", ".join(result.incomparable))
     return "\n".join(lines)
