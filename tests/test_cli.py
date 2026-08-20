@@ -771,8 +771,15 @@ def test_cli_diff_reads_the_committed_live_rerun_pair(tmp_path, capsys):
     assert json.loads(out.read_text(encoding="utf-8"))["comparable"] is True
 
 
-def test_cli_cover_exit_table(tmp_path):
-    """End-to-end through real files: the four exits, from the CLI."""
+def test_cli_cover_exit_table(tmp_path, capsys):
+    """End-to-end through real files: the four exits, from the CLI.
+
+    The exit code is half the interface; the RENDER is the other half,
+    and it is the half a person reads. Each leg's stdout is drained
+    immediately after its own call, so a headline can only satisfy the
+    leg that produced it — without that, one leftover buffer would let
+    a deleted `print` pass on a neighbour's output.
+    """
     from assay.cli import main
 
     def write(name, payload):
@@ -795,10 +802,19 @@ def test_cli_cover_exit_table(tmp_path):
 
     floor = write("floor.json", ready)
     assert main(["cover", floor, write("same.json", ready)]) == 0
+    assert "cover: covered" in capsys.readouterr().out
+
     assert main(["cover", floor, write("below.json", risky)]) == 1
+    covered_none = capsys.readouterr().out
+    assert "cover: not covered" in covered_none
+    assert "uncovered verdict.patch_editing" in covered_none
+
     assert main(["cover", floor, write("other.json",
                                        wrong_instrument)]) == 2
+    assert "not comparable" in capsys.readouterr().out
+
     assert main(["cover", floor, write("gap.json", empty)]) == 3
+    assert "cover: incomplete" in capsys.readouterr().out
 
 
 def test_cli_cover_json_writes_the_whole_result(tmp_path):
