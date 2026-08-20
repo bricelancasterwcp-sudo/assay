@@ -84,6 +84,7 @@ assay codecs   http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
 
 # Offline, on profiles already written — neither touches an endpoint:
 assay diff   before.json after.json          # what moved beyond noise
+assay cover  floor.json candidate.json       # does candidate cover floor?
 assay report profile-*.json --out report.html  # N profiles as one matrix page
 ```
 
@@ -103,6 +104,19 @@ before any probe family completed, `4` infrastructure failure before any
 measurement. `report` spends no budget and so can only exit `0` or `4`
 (an unreadable or version-less profile). `diff` measures nothing either,
 and uses its own codes — see [assay diff](#assay-diff).
+
+`assay cover <floor.json> <candidate.json>` measures nothing either,
+and asks the crossed-pair question `diff` refuses: does the candidate
+provide, at least as well, every cell the floor measured? Model name,
+quant and weights may differ — crossed models are the point — but
+hardware class (tier/emulated) and probe instrument must match
+exactly. Its own exit codes, same shape as `diff --gate`: `0` covered,
+`1` not covered, `2` refused (identity or instrument mismatch), `3`
+incomplete (the floor measured a cell the candidate did not),
+precedence `2 > 3 > 1 > 0`. A profile that cannot be read at all still
+exits `4`, the same infrastructure path every command shares — that
+failure is not a coverage answer, so it sits outside cover's 0/1/2/3
+taxonomy.
 
 As a library:
 

@@ -676,6 +676,19 @@ def _diff_speed(old: dict, new: dict) -> _Cells:
 # --- public entry points ---------------------------------------------
 
 
+def _families(old: dict, new: dict) -> _Cells:
+    """The five family walkers, merged. `diff_profiles` scores this
+    behind its identity gate; `cover` (cover.py) reinterprets it
+    one-directionally behind its own."""
+    return _merge(
+        _diff_ceiling(old, new),
+        _diff_shapes(old, new),
+        _diff_verdicts(old, new),
+        _diff_codecs(old, new),
+        _diff_speed(old, new),
+    )
+
+
 def diff_profiles(old: dict, new: dict) -> DiffResult:
     """Compare two raw profile payloads.
 
@@ -688,13 +701,7 @@ def diff_profiles(old: dict, new: dict) -> DiffResult:
         return DiffResult(comparable=False, identity_notes=notes,
                           changes=(), within_noise=(), dropped=(),
                           incomparable=())
-    cells = _merge(
-        _diff_ceiling(old, new),
-        _diff_shapes(old, new),
-        _diff_verdicts(old, new),
-        _diff_codecs(old, new),
-        _diff_speed(old, new),
-    )
+    cells = _families(old, new)
     return DiffResult(comparable=True, identity_notes=notes,
                       changes=cells.changes, within_noise=cells.within_noise,
                       dropped=cells.dropped, incomparable=cells.incomparable)

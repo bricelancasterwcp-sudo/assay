@@ -769,3 +769,103 @@ def test_cli_diff_reads_the_committed_live_rerun_pair(tmp_path, capsys):
     assert cli.main(["diff", old, new, "--gate"]) == 0
     assert "no drift beyond noise" in capsys.readouterr().out
     assert json.loads(out.read_text(encoding="utf-8"))["comparable"] is True
+
+
+def test_cli_cover_exit_table(tmp_path, capsys):
+    """End-to-end through real files: the four exits, from the CLI.
+
+    The exit code is half the interface; the RENDER is the other half,
+    and it is the half a person reads. Each leg's stdout is drained
+    immediately after its own call, so a headline can only satisfy the
+    leg that produced it — without that, one leftover buffer would let
+    a deleted `print` pass on a neighbour's output.
+    """
+    from assay.cli import main
+
+    def write(name, payload):
+        path = tmp_path / name
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return str(path)
+
+    base = {
+        "assay_profile_version": 10, "probe_version": "0.13.0",
+        "model": {"name": "a", "quant": "Q4", "weights_bytes": 1},
+        "provenance": {"tier": "enthusiast-16gb", "emulated": False},
+    }
+    ready = dict(base, verdicts={"patch_editing": {"verdict": "ready"}})
+    risky = dict(base, model={"name": "b", "quant": "Q4",
+                              "weights_bytes": 1},
+                 verdicts={"patch_editing": {"verdict": "risky"}})
+    empty = dict(base, model={"name": "c", "quant": "Q4",
+                              "weights_bytes": 1})
+    wrong_instrument = dict(ready, probe_version="0.12.0")
+
+    floor = write("floor.json", ready)
+    assert main(["cover", floor, write("same.json", ready)]) == 0
+    assert "cover: covered" in capsys.readouterr().out
+
+    assert main(["cover", floor, write("below.json", risky)]) == 1
+    covered_none = capsys.readouterr().out
+    assert "cover: not covered" in covered_none
+    assert "uncovered verdict.patch_editing" in covered_none
+
+    assert main(["cover", floor, write("other.json",
+                                       wrong_instrument)]) == 2
+    assert "not comparable" in capsys.readouterr().out
+
+    assert main(["cover", floor, write("gap.json", empty)]) == 3
+    assert "cover: incomplete" in capsys.readouterr().out
+
+
+def test_cli_cover_json_writes_the_whole_result(tmp_path):
+    from assay.cli import main
+
+    base = {
+        "assay_profile_version": 10, "probe_version": "0.13.0",
+        "model": {"name": "a", "quant": "Q4", "weights_bytes": 1},
+        "provenance": {"tier": "enthusiast-16gb", "emulated": False},
+        "verdicts": {"patch_editing": {"verdict": "ready"}},
+    }
+    floor = tmp_path / "floor.json"
+    floor.write_text(json.dumps(base), encoding="utf-8")
+    out = tmp_path / "cover.json"
+    code = main(["cover", str(floor), str(floor),
+                 "--json", str(out)])
+    assert code == 0
+    document = json.loads(out.read_text(encoding="utf-8"))
+    for field in ("comparable", "identity_notes", "uncovered",
+                  "covered", "incomplete", "ignored", "incomparable"):
+        assert field in document, field
+    assert document["comparable"] is True
+
+
+def test_cli_cover_unreadable_file_is_infrastructure_not_a_verdict(
+    tmp_path, capsys
+):
+    """Exit 4, never a coverage answer. `cover` inherits `_load_profile`
+    (the same gate `diff` and `report` use) and the reason is sharper
+    here: a candidate nobody could read has demonstrated nothing, and
+    the one consumer of these codes swaps a model on 0 and refuses on
+    1/2/3 — so a file that failed to parse must land outside the
+    taxonomy entirely rather than inside it as either answer."""
+    payload = {
+        "assay_profile_version": 10, "probe_version": "0.13.0",
+        "model": {"name": "a", "quant": "Q4", "weights_bytes": 1},
+        "provenance": {"tier": "enthusiast-16gb", "emulated": False},
+        "verdicts": {"patch_editing": {"verdict": "ready"}},
+    }
+    floor = tmp_path / "floor.json"
+    floor.write_text(json.dumps(payload), encoding="utf-8")
+    garbage = tmp_path / "garbage.json"
+    garbage.write_text("{not json at all", encoding="utf-8")
+    empty = tmp_path / "empty.json"
+    empty.write_text("{}", encoding="utf-8")
+
+    assert cli.main(["cover", str(floor), str(tmp_path / "absent.json")]) == 4
+    assert "infrastructure" in capsys.readouterr().err.lower()
+    assert cli.main(["cover", str(floor), str(garbage)]) == 4
+    assert "garbage.json" in capsys.readouterr().err
+    # The silent half: `{}` is an object, so it survives an isinstance
+    # check and would otherwise reach the gate as "unknown everything".
+    assert cli.main(["cover", str(floor), str(empty)]) == 4
+    assert "not a profile document" in capsys.readouterr().err

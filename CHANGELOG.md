@@ -5,6 +5,49 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
+## v0.13 (v1.11): the cover mode
+
+The swap question answered as itself. `diff` refuses crossed model
+pairs — `model.name` is identity-fatal, and rightly: a drift statement
+about two different models describes neither. But the decision that
+precedes every swap needs a crossed-pair comparison, and **`assay
+cover <floor> <candidate>`** is the one that is actually supported:
+one-directional coverage. For every cell the floor measured, the
+candidate must rank at least as high on that cell's own scale — the
+existing ladder for verdicts, the existing Welch/assumed-threshold
+bands for speed, the existing interval discipline for rates; cover
+adds no new statistics, it reinterprets `diff`'s own cells (a
+regression is uncovered; an improvement is covered but is not evidence
+of anything more; a floor cell the candidate did not measure is
+**incomplete and never a pass**; a candidate-only cell is ignored).
+
+Identity inverts `diff`'s gate deliberately: model name, quant and
+weights may differ — that is the point — while hardware class
+(tier/emulated) and **instrument** must match exactly. Instrument
+equality is strict (`probe_version` AND schema, absence fatal) rather
+than semantic-break-registry-tolerant, because the registry is not a
+complete inventory of this project's rule changes — its own record
+says so — and a version-tolerant cover would trust an incomplete
+table with exactly the silent pass it was built to refuse.
+
+Exit codes mirror `diff --gate`: 0 covered, 1 not covered, 2 refused,
+3 incomplete, precedence 2 > 3 > 1 > 0 — a consumer's four-code
+reading maps over unchanged. Profile schema unchanged at v10; no
+probe behaviour changes; no cell means anything new.
+
+A profile that cannot be read at all — missing, not valid JSON, no
+`assay_profile_version` key, no `model.name` — exits **4**, inherited
+whole from the CLI's shared infrastructure path, the same one `diff`
+and `report` use. That code sits outside cover's 0/1/2/3 verdict
+taxonomy on purpose: a file that is not a profile has not been
+covered, not-covered, refused, or found incomplete — it was never
+read, so cover never ran. And the render's headline always spells the
+exit code's own word — `covered`, `not covered`, `incomplete`, `not
+comparable` for 0/1/3/2 respectively, chosen by the same precedence
+that picks the exit code — so a human reading the printed verdict and
+a script reading `$?` are never told two different things about the
+same run.
+
 ## v0.12 (v1.10): the semantic-break registry
 
 `diff` compares five families and scores each cell by the strongest

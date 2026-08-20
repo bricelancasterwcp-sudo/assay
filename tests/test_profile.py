@@ -1024,14 +1024,16 @@ def test_schema_version_and_package_version_move_together():
     # it, and the README must state it in a line a reader who never opens
     # profile.py can still find. v1.10 (package 0.12.0) left the schema
     # at v10 — nothing about a profile changed this wave, only how two
-    # profiles are compared — so this commit updates the package-version
+    # profiles are compared. v1.11 (package 0.13.0) leaves it at v10
+    # again for the same reason: `cover` reads profiles, it does not add
+    # to them (spec §0). So this commit updates the package-version
     # literals below without touching PROFILE_VERSION or the README's
     # `assay_profile_version` line.
     import assay
 
     assert PROFILE_VERSION == 10
-    assert assay.__version__ == "0.12.0"
-    assert 'version = "0.12.0"' in (
+    assert assay.__version__ == "0.13.0"
+    assert 'version = "0.13.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite
