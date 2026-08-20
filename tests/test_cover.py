@@ -156,6 +156,26 @@ def test_reinterpretation_table():
         assert result.incomplete == expect_incomplete, why
 
 
+def test_neutral_change_is_covered_not_evidence():
+    """§3: a `neutral`-direction change is covered, same as an
+    improvement — and nothing in the pipeline is pinned to prove it.
+    An honest-to-honest `ceiling.failure_mode` flip (neither mode is a
+    lying mode) is the live neutral path a final review verified by
+    hand; this is that path, as a test. Mutating cover's `!=
+    "regression"` filter to `== "improvement"` would silently drop
+    this cell from every bucket and nothing else in the suite notices."""
+    floor = _profile(ceiling={"max_verified": 1024, "failure_mode": "loop"})
+    candidate = _profile(name="qwen-b",
+                         ceiling={"max_verified": 1024,
+                                  "failure_mode": "refusal"})
+    result = cover_profiles(floor, candidate)
+    assert result.comparable
+    assert "ceiling.failure_mode" in result.covered
+    assert result.uncovered == ()
+    assert result.incomplete == ()
+    assert _cover_exit_code(result) == 0
+
+
 def test_incomplete_never_passes_even_fully_covered_elsewhere():
     """Load-bearing: every measured cell covered, one floor cell
     unmeasured — the result must carry incomplete, and Task 3 pins
