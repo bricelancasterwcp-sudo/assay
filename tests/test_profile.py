@@ -1050,6 +1050,57 @@ def test_schema_version_and_package_version_move_together():
     # place to update per release instead of two.
 
 
+def test_the_unstamped_geometry_keys_owe_a_schema_bump():
+    """The hybrid geometry keys carry no schema stamp, and the obligation
+    to give them one is recorded rather than assumed.
+
+    `attention_layer_count`, `serving_block_count` and
+    `recurrent_state_bytes` are `None`-defaulted, so no committed profile
+    needed a bump to keep parsing — which is exactly why the branch that
+    added them could go green without one, and exactly why nothing else
+    would notice. Where the README's profile table records a field as
+    arriving later it names the schema version (`new in v5`, `v6`, `v7`,
+    `v8`, `v10`); the one previous time geometry keys landed without a
+    stamp the CHANGELOG filed it as a schema irregularity rather than a
+    convention (v1.6's two expert keys, for a window where
+    `assay_profile_version: 5` covered two geometry shapes).
+    The README once sat two versions stale through a green suite because
+    nothing pinned it; this is the same pin, one row further down the
+    same table.
+
+    The `PROFILE_VERSION == 10` line is the tripwire, not decoration: the
+    release that bumps the schema fails HERE, reads the recorded
+    obligation, stamps the README row, writes the `SEMANTIC_BREAKS` row
+    the same release owes, and strikes the debt item. Its sibling above
+    pins the other four literals that must move with it.
+    """
+    geometry_fields = {f.name for f in dataclasses.fields(Geometry)}
+    assert {"attention_layer_count", "serving_block_count",
+            "recurrent_state_bytes"} <= geometry_fields
+    assert PROFILE_VERSION == 10
+
+    # The README row says the three are unstamped, rather than implying a
+    # stamp by silence beside eleven rows that carry one.
+    readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    geometry_row = next(line for line in readme.splitlines()
+                        if line.startswith("| `geometry` |"))
+    assert "attention_layer_count" in geometry_row
+    assert "**unreleased**" in geometry_row
+
+    # ...and the obligation is written where a release reads it: the
+    # file runs newest-first, so the unreleased section is the FIRST one.
+    # Asserting the heading and not merely "text above v1.10's heading"
+    # was the fix for a surviving mutant — renaming the section left the
+    # items where they were and a prefix check could not see it.
+    debt = (_REPO_ROOT / "docs" / "CARRIED-DEBT.md").read_text(
+        encoding="utf-8")
+    assert debt.startswith("# Carried debt — unreleased")
+    unreleased = debt.split("# Carried debt — v1.10")[0]
+    assert "attention_layer_count" in unreleased
+    assert "PROFILE_VERSION" in unreleased
+    assert "SEMANTIC_BREAKS" in unreleased
+
+
 # --- schema v10: the overlap fraction replaces the seconds tolerance --------
 
 

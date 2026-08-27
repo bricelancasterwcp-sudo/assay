@@ -1,0 +1,27 @@
+{
+  "id": "codegemma-7b-instruct-q8_0",
+  "source": {
+    "gguf_sha256": "20b20ee7b4265a5872bd58d669c394206f50418f3523b47563c9b1d4a78f37cb",
+    "provenance": "assay docs/superpowers/evidence/e1-sweep/show-codegemma-7b-instruct-q8_0.json + results.json (captured 2026-08-17 from ollama 0.32.13; protocol docs/superpowers/evidence/e1-sweep/PROTOCOL.md) classifies this model AFFECTED (stated gemma.attention.key_length 256 vs derived 3072//16 = 192), direction window-over-promised; the corrected kv 448 KiB/token is the `corrected.kv_kib_per_token` of both e1-sweep profile rows for live/ and live-run2/, filed as errata beside the profiles in docs/superpowers/evidence/live/ERRATA.md and docs/superpowers/evidence/live-run2/ERRATA.md, and amended into docs/superpowers/evidence/2026-08-12-live-validation.md (the '6x qwen' ratio is really 8x). Parent erratum: assay docs/superpowers/evidence/tier-enthusiast/ERRATA.md (erratum E1). Marked `derived`, not `hardware-verified`: no post-0.7.0 live profile of this tag exists; the committed live profiles still carry the pre-fix 336 KiB, which is exactly the must_not_equal value below. gguf_sha256 recovered 2026-08-27 from the Ollama store manifest's model-layer digest (/mnt/extra/ollama-models; content-addressed, spot-verified by sha256sum on the 1.5b blob)."
+  },
+  "metadata": {
+    "general.architecture": "gemma",
+    "gemma.block_count": 28,
+    "gemma.context_length": 8192,
+    "gemma.embedding_length": 3072,
+    "gemma.attention.head_count": 16,
+    "gemma.attention.head_count_kv": 16,
+    "gemma.attention.key_length": 256
+  },
+  "expected": {
+    "kv_bytes_per_token": 458752,
+    "experts": null
+  },
+  "must_not_equal": {
+    "kv_bytes_per_token": [
+      344064
+    ],
+    "note": "E1: embedding//head_count head_dim; corrected by R1 key_length rule"
+  },
+  "verification": "derived"
+}

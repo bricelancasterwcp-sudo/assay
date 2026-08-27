@@ -1,0 +1,20 @@
+{
+  "id": "gemma-4-12b-it-qat-q4_0-latest",
+  "source": {
+    "sha_unavailable_reason": "e1-sweep records daemon digest 270afaa60b32853810c69bbf2998104a98c0de05bf455dec22379d0918a4909e, not raw GGUF sha (the /api/tags digest names the ollama manifest, which covers several layers, not the GGUF blob alone)",
+    "provenance": "assay docs/superpowers/evidence/e1-sweep/show-gemma-4-12b-it-qat-q4_0-latest.json + results.json (captured 2026-08-17 from ollama 0.32.13; protocol docs/superpowers/evidence/e1-sweep/PROTOCOL.md) classifies this profile NO-GEOMETRY: the committed profile docs/superpowers/evidence/tier-enthusiast/gemma-4-12b-it-qat-q4_0-latest.json carries `geometry: null` (probe 0.5.0), and the probe 0.9.0 re-run on real hardware (docs/superpowers/evidence/tier-enthusiast-2026-08/gemma-4-12b-it-qat-q4_0-latest.json) writes `geometry: null` again; so there is no kv number to correct. The metadata copied above shows why the R8 refusal is correct rather than a gap: the show capture states `gemma4.attention.head_count_kv: null`, an input R2 requires, while stating key_length 512 against a 3840//16 = 240 derivation; the largest stated-vs-derived gap the sweep found (2.1x), recorded in assay docs/superpowers/evidence/tier-enthusiast/ERRATA.md (erratum E1). An implementation that guesses head_count_kv here (from head_count, or from the *_swa keys) violates R8."
+  },
+  "metadata": {
+    "general.architecture": "gemma4",
+    "gemma4.block_count": 48,
+    "gemma4.context_length": 262144,
+    "gemma4.embedding_length": 3840,
+    "gemma4.attention.head_count": 16,
+    "gemma4.attention.head_count_kv": null,
+    "gemma4.attention.key_length": 512
+  },
+  "expected": {
+    "refuses": true
+  },
+  "verification": "hardware-verified"
+}

@@ -1,0 +1,27 @@
+{
+  "id": "gemma2-9b",
+  "source": {
+    "sha_unavailable_reason": "e1-sweep records daemon digest ff02c3702f322b9e075e9568332d96c0a7028002f1a5a056e0a6784320a4db0b, not raw GGUF sha (the /api/tags digest names the ollama manifest, which covers several layers, not the GGUF blob alone)",
+    "provenance": "assay docs/superpowers/evidence/e1-sweep/show-gemma2-9b.json + results.json (captured 2026-08-17 from ollama 0.32.13; protocol docs/superpowers/evidence/e1-sweep/PROTOCOL.md) classifies this model AFFECTED (stated gemma2.attention.key_length 256 vs derived 3584//16 = 224); corrected kv 336 KiB/token per assay docs/superpowers/evidence/tier-enthusiast/ERRATA.md (erratum E1), sweep table 'The sweep (2026-08-17)', and the e1-sweep profile row for tier-enthusiast/gemma2-9b.json (committed.kv_kib_per_token 294 -> corrected 336). Measured again on real hardware at probe 0.9.0 in docs/superpowers/evidence/tier-enthusiast-2026-08/gemma2-9b.json (geometry.kv_kib_per_token 336). The WINDOW HELD case: usable_window 8192 -> 8192, limited_by training_ctx under both readings; the kv figure was wrong and the promise still held, which is why a window number alone does not test the kv rule."
+  },
+  "metadata": {
+    "general.architecture": "gemma2",
+    "gemma2.block_count": 42,
+    "gemma2.context_length": 8192,
+    "gemma2.embedding_length": 3584,
+    "gemma2.attention.head_count": 16,
+    "gemma2.attention.head_count_kv": 8,
+    "gemma2.attention.key_length": 256
+  },
+  "expected": {
+    "kv_bytes_per_token": 344064,
+    "experts": null
+  },
+  "must_not_equal": {
+    "kv_bytes_per_token": [
+      301056
+    ],
+    "note": "E1: embedding//head_count head_dim; corrected by R1 key_length rule"
+  },
+  "verification": "hardware-verified"
+}

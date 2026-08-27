@@ -1,0 +1,20 @@
+{
+  "id": "qwen2.5-coder-1.5b-instruct-q8_0",
+  "source": {
+    "gguf_sha256": "58db9b8722fe2dec6918b842b05de814dd56c6a8bc55f35c5e8b66812206398e",
+    "provenance": "assay docs/superpowers/evidence/e1-sweep/show-qwen2.5-coder-1.5b-instruct-q8_0.json + results.json (captured 2026-08-17 from ollama 0.32.13; protocol docs/superpowers/evidence/e1-sweep/PROTOCOL.md) classifies this model UNAFFECTED-BY-CONSTRUCTION; kv 28 KiB/token committed in docs/superpowers/evidence/tier-enthusiast/qwen2-5-coder-1-5b-instruct-q8_0.json and measured again on real hardware at probe 0.9.0 in docs/superpowers/evidence/tier-enthusiast-2026-08/qwen2.5-coder-1.5b-instruct-q8_0.json (geometry.kv_kib_per_token 28, expert_count null, expert_used_count null). Errata for the swept directories: assay docs/superpowers/evidence/tier-enthusiast/ERRATA.md (erratum E1); no correction applies. gguf_sha256 recovered 2026-08-27 from the Ollama store manifest's model-layer digest (/mnt/extra/ollama-models; content-addressed, spot-verified by sha256sum on the 1.5b blob)."
+  },
+  "metadata": {
+    "general.architecture": "qwen2",
+    "qwen2.block_count": 28,
+    "qwen2.context_length": 32768,
+    "qwen2.embedding_length": 1536,
+    "qwen2.attention.head_count": 12,
+    "qwen2.attention.head_count_kv": 2
+  },
+  "expected": {
+    "kv_bytes_per_token": 28672,
+    "experts": null
+  },
+  "verification": "hardware-verified"
+}

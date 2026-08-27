@@ -5,6 +5,100 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
+## Unreleased: hybrid layer geometry (R3/R4/R6)
+
+`kv_bytes_per_token` charged `block_count` attention layers — every
+block the model file states. That is the dense answer, and it is the
+only answer this instrument had. A **hybrid** architecture interleaves
+attention and recurrent layers and says so in its metadata, and charging
+its raw block count over-states the cache by the attention interval:
+bloomery measured 4.00x on Qwen3.6-35B-A3B (40 blocks charged, 10
+attention layers) and fixed it in its turn 5. assay had the same defect,
+unmeasured, until the gguf-geometry conformance vectors put a number on
+it.
+
+Three rules now hold, named as the contract names them
+(`gguf-geometry/SPEC.md`, vectors vendored at
+`tests/data/gguf_geometry_v1/`):
+
+- **R6** — `serving_block_count = block_count −
+  <arch>.nextn_predict_layers`. An MTP layer is counted into the block
+  count by `convert_hf_to_gguf` and does not serve. (The REAP-48 prune
+  left `mtp_num_hidden_layers: 1` in an HF config, sized a 40-block
+  checkpoint at 41, and produced a GGUF that would not load.)
+- **R3** — `attention_layer_count = serving_block_count ÷
+  <arch>.full_attention_interval`, never the raw count. No interval
+  stated is the dense identity, so every dense model's kv figure is
+  **arithmetically unchanged**. An interval that cannot be applied —
+  not positive, or larger than the model — makes the geometry
+  unmeasurable rather than zero-layered: zero is not a smaller answer,
+  it is the claim that the model holds no cache.
+- **R4** — `recurrent_state_bytes`, the ssm/Gated-DeltaNet state, is a
+  fixed per-context term charged against the budget once. Zero **only**
+  where the architecture states no `ssm.*` keys; a partial set reads
+  `None`, because a file with recurrent layers whose size we cannot
+  compute has not been measured at 0.
+
+`ModelInfo` gains `attention_layer_count`, `recurrent_state_bytes` and
+`mtp_layer_count`; `Geometry` gains `attention_layer_count`,
+`serving_block_count` and `recurrent_state_bytes`. All six are
+`None`-defaulted, so every existing profile parses unchanged and every
+backend and caller that never sets them constructs unchanged.
+
+**No schema version is stamped on these fields, and that is a hold, not
+a decision.** `PROFILE_VERSION` still reads 10 because this entry has no
+release to bump it at — nothing here has shipped. It is **not** the
+claim that an additive geometry field needs no bump: this repository
+stamps them. Where the README's profile table records a field as having
+arrived later, it names the schema version it arrived in — `speed`'s
+sample arrays `new in v5`, `loop`'s recovery pair `v6`, `tools`'
+truncation counts `v7` and `stopping_rule` `v8`, `parallel`'s
+`overlap_provenance` "new in v1.9, schema v10". The exception is the
+`geometry` row, whose expert keys carry no stamp either, and that is not
+a second precedent: it is the same one. This file recorded it as a
+**schema irregularity** rather than a convention — v1.6's note below,
+"Geometry's two expert keys landed one commit *before* the version bump,
+so for that window `assay_profile_version: 5` covered two geometry
+shapes". Doing that deliberately is worse than the accident was, and it
+would make the geometry row the only place in the profile where a
+reader cannot date a field, so the release that
+ships this owes the bump and the README stamp that goes with it
+(`test_schema_version_and_package_version_move_together` pins the three
+literals and the README line together; the README already sat two
+versions stale through a green suite once, which is why it is pinned).
+
+The bump is owed twice over, because this change is not purely additive.
+`geometry.kv_kib_per_token` **changes meaning on a hybrid model** — the
+erratum below — so without a version boundary two documents could carry
+`assay_profile_version: 10`, name the same model on the same daemon, and
+report 260 and 64, with nothing in either document saying which rule
+produced the number. No such pair exists yet: the only committed hybrid
+profiles are v8 and v4, both written under earlier schemas, so the
+collision is **prospective** — which is exactly what makes it cheap to
+prevent and expensive to discover later. Recorded as a release
+obligation in [`docs/CARRIED-DEBT.md`](docs/CARRIED-DEBT.md), unreleased
+section, beside the `SEMANTIC_BREAKS` row the same release owes.
+
+**Erratum, filed 2026-08-27**: `kv_kib_per_token` DOES change meaning
+for a hybrid model, and the repository has committed evidence of exactly
+one — `qwen3.8:27b`, in two profiles, published at 260 and 216
+KiB/token where the conforming figure is 64. Both profiles are left as
+committed and the correction is filed beside them
+(`docs/superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md`, cross-
+referenced from `tier-enthusiast/ERRATA.md`), with the arithmetic pinned
+by tests rather than asserted in prose. The published matrix still shows
+260: rebuilding it is a publication decision, not a side effect of this
+fix. Leaving the profiles as measured and filing an erratum instead of
+editing them was ruled **before** this work began, not chosen while
+inside it — the erratum's "Decision provenance" names where that ruling
+is recorded and what it does and does not cover. No `SEMANTIC_BREAKS`
+row is written yet — the registry is keyed by release version and this
+change has none, and its only consumer is `_diff_verdicts`
+(CARRIED-DEBT, v1.10 Diff item 1), so a `geometry.*` row would sit
+unread. The release that ships this must write one, and must bump the
+schema (above); the two obligations are one release's work and are
+listed together in `docs/CARRIED-DEBT.md`.
+
 ## v0.13 (v1.11): the cover mode
 
 The swap question answered as itself. `diff` refuses crossed model

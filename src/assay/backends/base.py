@@ -208,6 +208,14 @@ class ModelInfo:
     MoE, so a dense model leaves both None rather than writing 0, which
     downstream would read as a measured routing fact. They default so
     that backends with no metadata access construct exactly as before.
+
+    The three hybrid fields carry the same discipline for architectures
+    that interleave attention and recurrent layers (rules R3, R4 and R6
+    of the gguf-geometry contract). They are derived where the metadata
+    states the keys and left None where it does not, and they default for
+    the same reason the expert fields do: a ModelInfo built by a backend
+    or a caller that never reads them constructs, and behaves, exactly as
+    before.
     """
 
     name: str
@@ -221,6 +229,18 @@ class ModelInfo:
     source: str  # "api_show" | "gguf_blob" | "openai_models"
     expert_count: int | None = None  # MoE: total experts; None = dense/unreported
     expert_used_count: int | None = None  # MoE: experts routed per token
+    #: R3: the layers that own a kv cache. Equals the serving block count
+    #: on a dense model; a fraction of it where the file states
+    #: `full_attention_interval`. None = not derived (no metadata, or a
+    #: stated interval this implementation refused to apply).
+    attention_layer_count: int | None = None
+    #: R4: per-context state of the recurrent (ssm / Gated-DeltaNet)
+    #: layers, in bytes. 0 ONLY for an architecture that states no ssm
+    #: keys — it has no recurrent layers to charge. None = unreported.
+    recurrent_state_bytes: int | None = None
+    #: R6: `<arch>.nextn_predict_layers` as stated. MTP layers are
+    #: counted into `block_count` by the converter and do not serve.
+    mtp_layer_count: int | None = None
 
 
 class Backend(Protocol):

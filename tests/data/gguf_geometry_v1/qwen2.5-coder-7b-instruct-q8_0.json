@@ -1,0 +1,61 @@
+{
+  "id": "qwen2.5-coder-7b-instruct-q8_0",
+  "source": {
+    "gguf_sha256": "24b532e5276503b147d0eea0e47cb1d2bcce7c9034edd657b624261862ca54a1",
+    "provenance": "assay docs/superpowers/evidence/e1-sweep/show-qwen2.5-coder-7b-instruct-q8_0.json + results.json (captured 2026-08-17 from ollama 0.32.13; protocol docs/superpowers/evidence/e1-sweep/PROTOCOL.md) classifies this model UNAFFECTED-BY-CONSTRUCTION (metadata states no attention.key_length, so the E1 fallback IS the stated value); kv 56 KiB/token published in assay docs/superpowers/evidence/2026-08-12-live-validation.md and measured again on real hardware at probe 0.9.0 in docs/superpowers/evidence/tier-enthusiast-2026-08/qwen2.5-coder-7b-instruct-q8_0.json (geometry.kv_kib_per_token 56). Errata for the swept directories: assay docs/superpowers/evidence/tier-enthusiast/ERRATA.md (erratum E1); this model carries no correction. Window scenarios below are SYNTHETIC: their terms are stated, not measured, and each note shows the arithmetic; only kv_bytes_per_token enters them from evidence. gguf_sha256 recovered 2026-08-27 from the Ollama store manifest's model-layer digest (/mnt/extra/ollama-models; content-addressed, spot-verified by sha256sum on the 1.5b blob)."
+  },
+  "metadata": {
+    "general.architecture": "qwen2",
+    "qwen2.block_count": 28,
+    "qwen2.context_length": 32768,
+    "qwen2.embedding_length": 3584,
+    "qwen2.attention.head_count": 28,
+    "qwen2.attention.head_count_kv": 4
+  },
+  "expected": {
+    "kv_bytes_per_token": 57344,
+    "experts": null,
+    "windows": [
+      {
+        "terms": {
+          "training_ctx": 32768,
+          "budget_bytes": 2147483648,
+          "weights_bytes": 0,
+          "fixed_overhead_bytes": 536870912,
+          "kv_bytes_per_token": 57344,
+          "user_cap": null
+        },
+        "usable_window": 28086,
+        "limited_by": "budget",
+        "note": "synthetic terms; arithmetic: (2147483648-536870912)//57344 = 28086 < 32768"
+      },
+      {
+        "terms": {
+          "training_ctx": 32768,
+          "budget_bytes": 8589934592,
+          "weights_bytes": 0,
+          "fixed_overhead_bytes": 536870912,
+          "kv_bytes_per_token": 57344,
+          "user_cap": null
+        },
+        "usable_window": 32768,
+        "limited_by": "training_ctx",
+        "note": "synthetic terms; arithmetic: (8589934592-536870912)//57344 = 140434 > 32768, so training_ctx binds"
+      },
+      {
+        "terms": {
+          "training_ctx": 32768,
+          "budget_bytes": 8589934592,
+          "weights_bytes": 0,
+          "fixed_overhead_bytes": 536870912,
+          "kv_bytes_per_token": 57344,
+          "user_cap": 8192
+        },
+        "usable_window": 8192,
+        "limited_by": "user_cap",
+        "note": "synthetic terms; arithmetic: (8589934592-536870912)//57344 = 140434, training_ctx 32768, user_cap 8192 = min, so user_cap binds"
+      }
+    ]
+  },
+  "verification": "hardware-verified"
+}

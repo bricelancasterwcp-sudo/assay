@@ -1,0 +1,43 @@
+{
+  "id": "qwen3.6-35b-a3b-reap48-mtp-trap",
+  "source": {
+    "sha_unavailable_reason": "trap state reconstructed from evidence; the patched artifact no longer carries it. The as-converted file's own sha256 IS published — 22a719baf09fdfbaffddfaf8dd6181ab96927111b2f47f8efa534d5277e13781 (prune-and-acceptance section 5, 'sha256 as produced on the pod'; repeated truncated in section 6's transfer table) — but it is deliberately not carried in gguf_sha256, because those bytes were overwritten in place by the two u32 metadata edits and no artifact reachable today hashes to it, and because the metadata below is a reconstruction rather than a dump of that file.",
+    "provenance": "bloomery docs/superpowers/evidence/2026-08-22-reap48-ours-prune-and-acceptance.md section 7, 'BUG #3 — the pruned checkpoint converts to an UNLOADABLE GGUF' (2026-08-22, local acceptance boot). The pruned config.json carried mtp_num_hidden_layers 1 inherited from the base while the text-only Qwen3_5MoeForCausalLM load dropped the MTP layer's weights, so convert_hf_to_gguf sized block_count = 40 + 1 = 41 and emitted qwen35moe.nextn_predict_layers = 1 while writing only 40 blocks of tensors. The GGUF was internally inconsistent and refused to load: `llama_model_load: error loading model: missing tensor 'blk.40.attn_norm.weight'`. A full KV diff against crucible's GGUF isolated it exactly — 733 tensors in both, every attention/expert KV identical (expert_count 133, expert_used_count 8, key_length 256, head_count_kv 2), differing only in qwen35moe.block_count (41 vs 40), qwen35moe.nextn_predict_layers (1 vs absent) and general.file_type. Fixed with two same-length u32 metadata edits (block_count 41 to 40, nextn_predict_layers 1 to 0), each asserted on the pre-value and re-read after, file size unchanged; post-patch sha 90e2181e8c3175c7f59f911ee70dfcc58cd068977fc657be3a4101d041f591a5. RECONSTRUCTION, stated plainly: the metadata below is the patched artifact's own dump (see vector qwen3.6-35b-a3b-reap48-ours-q4km) with exactly the two diffed keys restored to their as-converted values, 41 and 1 — the two the evidence names. It is not a verbatim dump of the as-converted file; nothing committed carries that file's full KV block, and the file itself no longer exists. verification is therefore 'derived', not 'hardware-verified': the trap state's own consequence WAS measured on hardware (the model would not load), but its expected geometry values were never read from a running daemon in this state, because no daemon can load it. The expected values carried here are the patched artifact's hardware-verified ones (kv 20480, attention_layers 10, recurrent_state_bytes 65863680, both boots, baselines section 7), and they carry across because the evidence's own arithmetic — '40 + 1 = 41', 40 blocks of tensors actually written plus the one MTP layer the converter counted — says the serving count in the trap state is the same 40 the patched artifact carries; no downstream term moves. serving_block_count 40 is cited, not computed here: it is the value the evidence patched the artifact back to. serving_block_count 40 and the banned 41 are the whole point of the case. Standing debt from the same finding: bloomery docs/CARRIED-DEBT.md (2026-08-23 turn-5 section; related manifestation — the prune tool zeroes the key). Note the key spelling: mtp_num_hidden_layers is the HF config.json key, qwen35moe.nextn_predict_layers is what the converter writes into the GGUF, and the GGUF key is the one an implementation of R6 actually reads. SPEC.md R6 named only the HF spelling when this vector was written and was amended 2026-08-27 to name the GGUF key (the HF name is kept there as the mirror), so rule and vector now agree on the input key."
+  },
+  "metadata": {
+    "general.architecture": "qwen35moe",
+    "qwen35moe.block_count": 41,
+    "qwen35moe.context_length": 262144,
+    "qwen35moe.embedding_length": 2048,
+    "qwen35moe.attention.head_count": 16,
+    "qwen35moe.attention.head_count_kv": 2,
+    "qwen35moe.attention.key_length": 256,
+    "qwen35moe.attention.value_length": 256,
+    "qwen35moe.full_attention_interval": 4,
+    "qwen35moe.nextn_predict_layers": 1,
+    "qwen35moe.expert_count": 133,
+    "qwen35moe.expert_used_count": 8,
+    "qwen35moe.ssm.conv_kernel": 4,
+    "qwen35moe.ssm.state_size": 128,
+    "qwen35moe.ssm.group_count": 16,
+    "qwen35moe.ssm.time_step_rank": 32,
+    "qwen35moe.ssm.inner_size": 4096
+  },
+  "expected": {
+    "kv_bytes_per_token": 20480,
+    "attention_layers": 10,
+    "serving_block_count": 40,
+    "recurrent_state_bytes": 65863680,
+    "experts": {
+      "count": 133,
+      "used": 8
+    }
+  },
+  "must_not_equal": {
+    "serving_block_count": [
+      41
+    ],
+    "note": "R6: MTP layer counted as a serving layer → unloadable GGUF, bloomery docs/CARRIED-DEBT.md (2026-08-23 turn-5 section; related manifestation — the prune tool zeroes the key)"
+  },
+  "verification": "derived"
+}
