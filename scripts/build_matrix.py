@@ -67,7 +67,7 @@ _REPO_URL = "https://github.com/bricelancasterwcp-sudo/assay"
 #: lives: the errata sit beside the evidence they correct, and a link
 #: that resolved only on github.com would be dead in the offline copy
 #: this page is otherwise able to be.
-_ERRATA_HREF = "../superpowers/evidence/tier-enthusiast/ERRATA.md"
+_ERRATA_HREF = "../superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md"
 
 #: The machine-readable errata sidecar, in a SUBDIRECTORY of the
 #: campaign rather than beside the profiles, and that placement is the

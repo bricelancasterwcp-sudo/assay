@@ -277,7 +277,7 @@ def test_the_intro_links_the_repo_and_the_errata(tmp_path):
 
     assert "https://github.com/bricelancasterwcp-sudo/assay" in page
     # relative to docs/matrix/index.html, which is where this page lives
-    assert "../superpowers/evidence/tier-enthusiast/ERRATA.md" in page
+    assert "../superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md" in page
 
 
 def test_the_intro_escapes_the_profile_sourced_values_it_quotes(tmp_path):
