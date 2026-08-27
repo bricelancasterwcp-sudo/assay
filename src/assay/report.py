@@ -16,12 +16,22 @@ versions, which describe the shape of the documents; the probe version
 is the instrument, it differs row by row on a campaign that spanned an
 instrument change, and until now it reached a reader only through
 ``profile.render_table``.
+
+The third knob is ``errata``, and it exists because the discipline that
+keeps this project honest had one edge a reader paid for. A profile is
+never rewritten after the fact, so a published figure a later fix
+superseded stays on the page — and used to stay on it unmarked. An
+erratum now renders as a VISIBLE FLAG beside the value, with a note
+saying the value is left exactly as measured and a link to the
+correction. Nothing here ever substitutes the corrected number: that
+would be the same forbidden edit, done one layer out where a reader
+comparing the page against the evidence cannot see it.
 """
 
 from __future__ import annotations
 
 import html
-from typing import Iterable
+from typing import Iterable, Mapping, Sequence
 
 VERDICT_ORDER = (
     "structured_extraction", "patch_editing", "loop_discipline",
@@ -104,6 +114,38 @@ table.grid { border-collapse:collapse; margin:.6rem 0; }
 .intro { max-width:70ch; margin:0 0 1.8rem; }
 .intro p { margin:.55rem 0; }
 """
+
+#: The erratum flag's styling, appended to the stylesheet ONLY on a page
+#: that actually renders a flag. Unconditional rules would change the
+#: bytes of every report this module has ever written for the sake of
+#: selectors nothing matches — and a page that carries no erratum must
+#: be the page it was before this mechanism existed, to the byte, or the
+#: diff between two builds stops being the place a real change shows.
+#: The flag borrows the ``unusable`` red rather than defining a colour:
+#: a superseded figure is the one thing on this page a reader must not
+#: act on.
+_ERRATA_CSS = """
+sup.erratum { font-size:.68rem; font-weight:700; margin-left:.1rem; }
+sup.erratum a { color:var(--unusable); text-decoration:none;
+  border-bottom:1px dotted var(--unusable); }
+.erratum-note { font-size:.85rem; color:var(--unusable);
+  border-left:2px solid var(--unusable); padding-left:.6rem; margin:.5rem 0; }
+.erratum-note a { color:inherit; }
+"""
+
+#: The profile field paths this module knows how to mark.
+#:
+#: Declared rather than implied, and PUBLIC, because it is the caller's
+#: contract: a sidecar naming a path that is not in here renders no flag
+#: at all, and a correction the page silently failed to show is worse
+#: than no mechanism — the reader then sees an unflagged number on a
+#: page that looks checked. ``scripts/build_matrix.py`` refuses such a
+#: sidecar instead of building. Extend this set and the render site
+#: together; one without the other is the silent failure itself.
+MARKABLE_FIELDS = frozenset({
+    "geometry.kv_kib_per_token",
+    "geometry.usable_window",
+})
 
 #: The page's name when the caller does not give it one. A constant
 #: rather than a literal in the template because it appears twice — the
@@ -203,6 +245,79 @@ def _badge(entry: dict | None) -> str:
                  f'{_num(interval[1])}]</span>')
     return (f'<span class="{classes}" title="{_esc(_lens_title(entry))}">'
             f'{label}</span>{extra}')
+
+
+def _entries_for(errata: Mapping | None, model: object) -> list[dict]:
+    """The errata filed against one model, in the order the sidecar
+    lists them.
+
+    Order is the sidecar's, never a set's or a dict's iteration: this
+    page is committed and two builds of the same inputs must produce the
+    same bytes.
+    """
+    if not errata:
+        return []
+    entries = errata.get(str(model)) or []
+    return [e for e in entries if isinstance(e, dict)]
+
+
+def _erratum_flag(entry: dict) -> str:
+    """One flag: the erratum's id, linked to where it is written out, with
+    its note on hover.
+
+    The sidecar is author-supplied and repo-committed — the same trust
+    class as ``intro_html`` — and every value out of it is escaped
+    anyway. It is read from the directory a campaign writes into, and
+    the input that is trusted "because we wrote it" is the one that ships
+    the markup.
+    """
+    return (f'<sup class="erratum" title="{_esc(entry.get("note", ""))}">'
+            f'<a href="{_esc(entry.get("href", ""))}">'
+            f'{_esc(entry.get("id", "erratum"))}</a></sup>')
+
+
+def _field_flags(entries: list[dict], field: str) -> str:
+    """The flags for ONE field — never for the line it sits on.
+
+    A marker beside ``kv_kib_per_token`` says that number is superseded.
+    Spreading it across the whole geometry line would say the same about
+    ``limited_by``, which no erratum here claims, and would make the
+    sidecar's ``fields`` list decorative.
+    """
+    return "".join(_erratum_flag(e) for e in entries
+                   if field in (e.get("fields") or []))
+
+
+def _row_flags(entries: list[dict]) -> str:
+    """The flags for a matrix ROW.
+
+    The corrected fields live inside a collapsed ``<details>``. A flag a
+    reader only meets after opening that block is a flag most readers
+    never meet, so the row wears one for every erratum filed against it
+    regardless of which field it lands on.
+    """
+    return "".join(_erratum_flag(e) for e in entries)
+
+
+def _erratum_notes(entries: list[dict]) -> str:
+    """The note block at the top of a flagged profile's detail.
+
+    It has to say the one thing a marker alone cannot: that the figure
+    below is LEFT AS PUBLISHED. A reader who takes a flagged number for
+    a quietly-corrected one has been misled in the more dangerous
+    direction, because they would then trust it.
+    """
+    return "".join(
+        f'<p class="erratum-note"><a href="{_esc(e.get("href", ""))}">'
+        f'erratum {_esc(e.get("id", "?"))}</a> · '
+        # ``·`` rather than a full stop between the note and the sentence
+        # after it: the note is author text and this module does not get
+        # to assume how it is punctuated. The separator is the page's own
+        # idiom (the geometry, loop and tools lines all use it).
+        f'{_esc(", ".join(str(f) for f in (e.get("fields") or [])))} · '
+        f'{_esc(e.get("note", ""))} · the figure(s) below are left exactly '
+        f'as measured and are not corrected here.</p>'
+        for e in entries)
 
 
 def _tier_cell(profile: dict) -> str:
@@ -479,7 +594,7 @@ def _loop_detail(loop: dict) -> str:
         f"(error runs={_num(loop.get('n_error_runs'), 'g')})</p>")
 
 
-def _detail(profile: dict) -> str:
+def _detail(profile: dict, errata: Mapping | None = None) -> str:
     """One profile's expanded detail. Every number on it goes through
     ``_num``, the two oldest lines included: ``ceiling.max_verified`` is
     None when the ladder verified nothing and ``envelope.fidelity`` is
@@ -494,12 +609,19 @@ def _detail(profile: dict) -> str:
     envelope = profile.get("envelope")
     loop = profile.get("loop")
     prov = profile.get("provenance") or {}
+    entries = _entries_for(errata, model)
     bits = [f"<details><summary>{_esc(model)}</summary>"]
+    # First inside the block, before any figure it qualifies: a caveat a
+    # reader meets after the number is a caveat that arrived too late.
+    bits.append(_erratum_notes(entries))
     if geo:
         bits.append(
             f"<p><span class='k'>geometry</span> "
-            f"{_esc(geo['kv_kib_per_token'])} KiB/token · usable "
-            f"{_esc(geo['usable_window'])} "
+            f"{_esc(geo['kv_kib_per_token'])}"
+            f"{_field_flags(entries, 'geometry.kv_kib_per_token')}"
+            f" KiB/token · usable "
+            f"{_esc(geo['usable_window'])}"
+            f"{_field_flags(entries, 'geometry.usable_window')} "
             f"(limited by {_esc(geo['limited_by'])})"
             f"{_moe_detail(geo)}</p>")
     if ceiling:
@@ -545,7 +667,8 @@ def _detail(profile: dict) -> str:
 
 
 def render_report(profiles: Iterable[dict], *, page_title: str | None = None,
-                  intro_html: str | None = None) -> str:
+                  intro_html: str | None = None,
+                  errata: Mapping[str, Sequence[Mapping]] | None = None) -> str:
     """The page. ``None`` for both extras is this version's standard
     report: neither parameter adds anything to it — no title change, no
     intro, not even an empty wrapper.
@@ -566,6 +689,18 @@ def render_report(profiles: Iterable[dict], *, page_title: str | None = None,
     owns escaping that value (``scripts/build_matrix.py`` does, with
     ``html.escape``). Nothing in this file ever routes document text
     into it.
+
+    **``errata`` annotates; it never edits.** It maps a model name to the
+    errata filed against that model — ``{"id", "fields", "note", "href"}``
+    each — and every one of them renders as a VISIBLE FLAG beside the
+    published value, plus a note saying the value is left as measured.
+    Nothing in this module replaces a figure from an erratum, and there
+    is no field in the mapping through which it could: a profile is
+    never rewritten after the fact, and doing it here — one layer out,
+    where the evidence file still reads as it was measured — would be
+    the same edit done where nobody can see it. ``None`` renders the
+    page this function rendered before the parameter existed, to the
+    byte, stylesheet included.
     """
     profiles = list(profiles)
     title = _DEFAULT_TITLE if page_title is None else _esc(page_title)
@@ -576,21 +711,28 @@ def render_report(profiles: Iterable[dict], *, page_title: str | None = None,
              else f'<section class="intro">{intro_html}</section>\n')
     header = "".join(f"<th>{_esc(v)}</th>" for v in VERDICT_ORDER)
     rows = []
+    flagged = False
     for p in profiles:
         model = (p.get("model") or {}).get("name", "?")
+        entries = _entries_for(errata, model)
+        flagged = flagged or bool(entries)
         verdicts = p.get("verdicts") or {}
         cells = "".join(f"<td>{_badge(verdicts.get(v))}</td>"
                         for v in VERDICT_ORDER)
         rows.append(
-            f"<tr><td><strong>{_esc(model)}</strong><br>{_tier_cell(p)}</td>"
+            f"<tr><td><strong>{_esc(model)}</strong>{_row_flags(entries)}"
+            f"<br>{_tier_cell(p)}</td>"
             f"<td>{_speed_cell(p)}</td>{cells}</tr>")
-    details = "".join(_detail(p) for p in profiles)
+    details = "".join(_detail(p, errata) for p in profiles)
+    # The rules ride only on a page that has something to style with
+    # them — see ``_ERRATA_CSS``.
+    style = _CSS + (_ERRATA_CSS if flagged else "")
     versions = {p.get("assay_profile_version") for p in profiles}
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
-<style>{_CSS}</style></head><body>
+<style>{style}</style></head><body>
 <h1>{title}</h1>
 <p class="sub">{len(profiles)} profile(s) · schema version(s)
 {_esc(sorted(v for v in versions if v is not None))} · every verdict wears its

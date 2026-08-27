@@ -24,6 +24,17 @@ tier list is sorted. A page that churned on every rebuild would make the
 diff between two builds unreadable, and the diff is exactly where a real
 change would have shown.
 
+**Errata are annotations, never edits.** A profile is not rewritten
+after the fact, so a figure a later fix superseded stays on this page —
+and, until now, stayed on it unmarked. An optional
+``errata/matrix-errata.json`` sidecar under the campaign directory
+(``_load_errata``) names the model, the fields and the note, and the
+renderer flags the value where it appears while leaving it exactly as
+measured. The markdown ``ERRATA.md`` beside the profiles remains the
+human record and is never parsed: prose changes shape whenever someone
+improves it, and a build that scraped it would stop flagging things the
+day a heading moved.
+
 **The escape contract.** ``render_report``'s ``intro_html`` is
 author-supplied markup and is inserted verbatim — it carries links,
 which is why it is HTML at all. The trust stops at ``_intro_html``:
@@ -40,7 +51,7 @@ import json
 import sys
 from pathlib import Path
 
-from assay.report import render_report
+from assay.report import MARKABLE_FIELDS, render_report
 
 #: Where the campaign writes its profiles, and where Pages serves the
 #: page from (master ``/docs``). Both are wired to these literals
@@ -57,6 +68,40 @@ _REPO_URL = "https://github.com/bricelancasterwcp-sudo/assay"
 #: that resolved only on github.com would be dead in the offline copy
 #: this page is otherwise able to be.
 _ERRATA_HREF = "../superpowers/evidence/tier-enthusiast/ERRATA.md"
+
+#: The machine-readable errata sidecar, in a SUBDIRECTORY of the
+#: campaign rather than beside the profiles, and that placement is the
+#: whole of what this constant has to get right.
+#:
+#: The evidence directory's contract with everything that reads it is
+#: "every ``*.json`` here is a profile", and it is not this script's
+#: contract to relax: ``assay report docs/.../tier-enthusiast-2026-08/
+#: *.json`` is a supported thing to run, the CLI refuses a document that
+#: does not declare ``assay_profile_version`` (exit 4), and a sidecar
+#: sitting in that glob would have broken the published corpus for every
+#: consumer to spare this one script a subdirectory. A test caught it;
+#: the placement is the fix.
+#:
+#: The markdown ``ERRATA.md`` beside the profiles remains the human
+#: record and is NOT parsed: prose is written for a reader and changes
+#: shape whenever a human improves it, and a build that scraped it would
+#: silently stop flagging things the day a heading moved.
+#:
+#: Its job is the one thing house discipline leaves open. Profiles are
+#: never rewritten after the fact, so the published matrix keeps showing
+#: a figure a later fix superseded — with nothing on the page saying so.
+#: The sidecar makes the page say so WITHOUT touching the evidence: the
+#: value stays exactly as measured and wears a flag pointing at the
+#: correction. It never carries a replacement value, and there is no
+#: field in its schema through which it could; substituting a number out
+#: here would be the forbidden edit done one layer further out, where a
+#: reader comparing the page against the profile cannot see it.
+_SIDECAR_PATH = Path("errata") / "matrix-errata.json"
+
+#: The keys an entry must carry, all of them non-empty. A flag with no
+#: note and no pointer tells a reader something is wrong and nothing
+#: about what or where to read it, which is a worse page than no flag.
+_SIDECAR_TEXT_KEYS = ("id", "model", "note", "href")
 
 
 class BuildError(Exception):
@@ -103,6 +148,11 @@ def _load_profiles(directory: Path) -> list[dict]:
     An empty match is a REFUSAL rather than an empty page. A matrix with
     a header and no rows publishes "a campaign ran and found nothing",
     which is the opposite of what a directory nobody has filled means.
+
+    ``glob`` is not recursive, which is why the errata sidecar lives in a
+    subdirectory: every ``*.json`` at this level is a profile, here and
+    for every other consumer of the published evidence, and this function
+    needs no exception to say so.
     """
     paths = sorted(directory.glob("*.json"))
     if not paths:
@@ -111,6 +161,86 @@ def _load_profiles(directory: Path) -> list[dict]:
             f"publish an empty matrix (a page with no rows reads as a "
             f"campaign that measured nothing)")
     return [_load_profile(path) for path in paths]
+
+
+def _sidecar_entry_error(entry, index: int, known: set) -> str | None:
+    """Why this entry cannot be published, or ``None``.
+
+    Every branch here guards the same failure — a flag that does not
+    appear. A typo'd model, an unmarkable field, a missing note: each one
+    leaves the superseded figure on the page looking exactly as checked
+    as its neighbours, and a build that shrugged would publish that. The
+    refusals are the mechanism's honesty; without them the sidecar is a
+    file that only LOOKS like it did something.
+    """
+    where = f"{_SIDECAR_PATH} entry {index}"
+    if not isinstance(entry, dict):
+        return f"{where} is not an object"
+    for key in _SIDECAR_TEXT_KEYS:
+        value = entry.get(key)
+        if not isinstance(value, str) or not value.strip():
+            return f"{where} has no {key} (a non-empty string is required)"
+    fields = entry.get("fields")
+    if not isinstance(fields, list) or not fields:
+        return (f"{where} names no fields — an erratum that marks nothing "
+                f"is a file that only looks like it flagged something")
+    for field in fields:
+        if field not in MARKABLE_FIELDS:
+            return (f"{where} names field {field!r}, which the renderer "
+                    f"cannot mark (it knows "
+                    f"{sorted(MARKABLE_FIELDS)}) — the flag would not appear "
+                    f"anywhere on the page")
+    if entry["model"] not in known:
+        return (f"{where} names model {entry['model']!r}, which no profile "
+                f"in this directory carries — the flag would not appear on "
+                f"any row")
+    return None
+
+
+def _load_errata(directory: Path,
+                 profiles: list[dict]) -> dict[str, list[dict]] | None:
+    """The sidecar, keyed by model name — or ``None`` when there is none.
+
+    ``None`` is not an empty mapping: it is the page as it was before
+    this mechanism existed, down to the stylesheet, which is what makes
+    the annotation auditable by diff.
+
+    ``errata_sidecar_version`` is ``_load_profile``'s gate restated: a
+    document must SAY what it is, or any JSON object in this directory
+    is an errata sidecar that happens to annotate nothing.
+
+    ``href`` is resolved by the BROWSER, relative to the published page —
+    the same contract ``_ERRATA_HREF`` above already carries, and the
+    reason both are page-relative literals rather than repository paths:
+    this page is meant to work as an offline copy, where a link that only
+    resolved on github.com is dead.
+    """
+    path = directory / _SIDECAR_PATH
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise BuildError(f"cannot read {path}: {error}") from error
+    except json.JSONDecodeError as error:
+        raise BuildError(f"{path} is not valid JSON: {error}") from error
+    if not isinstance(payload, dict) or "errata_sidecar_version" not in payload:
+        raise BuildError(
+            f"{path} is not an errata sidecar: no errata_sidecar_version key")
+    entries = payload.get("errata")
+    if not isinstance(entries, list) or not entries:
+        raise BuildError(
+            f"{path} lists no errata — a sidecar with no entries says "
+            f"'corrections were considered' and flags nothing; deleting the "
+            f"file says the same thing more honestly")
+    known = {(p.get("model") or {}).get("name") for p in profiles}
+    by_model: dict[str, list[dict]] = {}
+    for index, entry in enumerate(entries):
+        problem = _sidecar_entry_error(entry, index, known)
+        if problem is not None:
+            raise BuildError(problem)
+        by_model.setdefault(entry["model"], []).append(entry)
+    return by_model
 
 
 def _unique(values) -> list[str]:
@@ -166,7 +296,35 @@ def _field_phrase(values: list, one: str, many: str, none: str,
     return f"{phrase} {absent.format(missing, len(values))}"
 
 
-def _intro_html(profiles: list[dict]) -> str:
+def _errata_lede(errata: dict[str, list[dict]] | None) -> str:
+    """The Corrections paragraph's extra sentence, on a page that has
+    flags to explain.
+
+    A marker a reader has not been told about is a marker they have to
+    guess at, and the wrong guess — "this number has been fixed" — is the
+    dangerous one, because it makes a superseded figure look safe to
+    use. The whole sentence lives inside the span, leading space
+    included, so removing the span leaves the unflagged paragraph
+    byte-for-byte.
+    """
+    if not errata:
+        return ""
+    # FIGURES, not errata: one erratum can supersede several numbers (E2
+    # moves both the kv charge and the window derived from it), and a
+    # reader counting flags down the page must find as many as the
+    # sentence promised. Counting entries here would have said "1" over
+    # two visible marks.
+    figures = sum(len(entry.get("fields") or [])
+                  for entries in errata.values() for entry in entries)
+    rows = len(errata)
+    return (f'<span class="erratum-lede"> {figures} figure(s) on {rows} '
+            f'row(s) here are superseded by an erratum. Each is flagged where '
+            f'it appears and is shown exactly as measured, never replaced — '
+            f'the flag links to the correction.</span>')
+
+
+def _intro_html(profiles: list[dict],
+                errata: dict[str, list[dict]] | None = None) -> str:
     """The paragraph above the matrix: what it is, what it does not say,
     what measured it, and where the corrections live.
 
@@ -230,7 +388,7 @@ def _intro_html(profiles: list[dict]) -> str:
         "<p><strong>Corrections.</strong> Profiles are never rewritten after "
         "the fact; evidence is not edited to suit a later fix. Where a fix "
         "changed what a number means, it is filed in "
-        f"<a href=\"{_ERRATA_HREF}\">the errata</a>.</p>"
+        f"<a href=\"{_ERRATA_HREF}\">the errata</a>.{_errata_lede(errata)}</p>"
     )
 
 
@@ -251,11 +409,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         profiles = _load_profiles(args.profiles_dir)
+        errata = _load_errata(args.profiles_dir, profiles)
     except BuildError as error:
         print(f"build_matrix: {error}", file=sys.stderr)
         return 1
     page = render_report(profiles, page_title=_PAGE_TITLE,
-                         intro_html=_intro_html(profiles))
+                         intro_html=_intro_html(profiles, errata),
+                         errata=errata)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     # ``newline="\n"`` so the committed bytes do not depend on the
     # platform that built them, which is the same law as the clock.

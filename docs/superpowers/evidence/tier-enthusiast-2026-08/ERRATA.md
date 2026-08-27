@@ -102,9 +102,24 @@ non-geometry family (codecs, envelope, ceiling, loop, speed,
 long_output, tools, parallel) was never computed from a layer count.
 
 The published matrix (`docs/matrix/`) is built from this directory's
-rows and therefore still shows 260 KiB/token for this model. It is left
-as built: rebuilding it is an outward-facing publication decision, taken
-deliberately rather than as a side effect of a code fix.
+rows and **still shows 260 KiB/token and a 3749-token window for this
+model**. The profile is not rewritten, so neither is the page's number.
+What changed on 2026-08-27 is that the page now *says so*: the matrix
+build reads a machine-readable sidecar
+([`errata/matrix-errata.json`](errata/matrix-errata.json)) and renders a
+flag beside each figure this erratum supersedes, linking back to this
+file, with a note stating that the value below it is left exactly as
+measured.
+
+The sidecar is the machine-readable half and this file is the human
+one; the build never parses the markdown. Prose is written for a reader
+and changes shape whenever someone improves it, and a build that scraped
+it would stop flagging things the day a heading moved.
+
+The page annotates and never substitutes. Writing 64 into the matrix
+would be the same edit this file exists to avoid, performed one layer
+out — where a reader comparing the page against the profile beside it
+could not see that it had happened.
 
 ### Decision provenance
 
@@ -136,3 +151,14 @@ Brice's, and the same ledger's approval record of 2026-08-27 covers
 merging this branch to assay master — approving a merge is not
 approving a rebuild, and this file states the gap rather than closing
 it quietly.
+
+**Update, 2026-08-27, after the merge to master.** The rebuild was then
+directed as its own decision, which is the gap above being closed rather
+than the ruling being reinterpreted — the quoted ledger text stands as
+written, and it was written when no rebuild had been asked for. The
+matrix was regenerated with the errata-aware build described in "What is
+NOT wrong": every published figure is unchanged (a rebuild does not
+correct a profile, and this one was byte-identical to its predecessor
+outside the flags it added), and the two superseded figures now carry
+one. The Pages publish — pushing master — is not part of that change and
+remains Brice's.

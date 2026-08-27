@@ -87,8 +87,8 @@ committed and the correction is filed beside them
 (`docs/superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md`, cross-
 referenced from `tier-enthusiast/ERRATA.md`), with the arithmetic pinned
 by tests rather than asserted in prose. The published matrix still shows
-260: rebuilding it is a publication decision, not a side effect of this
-fix. Leaving the profiles as measured and filing an erratum instead of
+260 — and now says so, which is the entry below. Leaving the profiles as
+measured and filing an erratum instead of
 editing them was ruled **before** this work began, not chosen while
 inside it — the erratum's "Decision provenance" names where that ruling
 is recorded and what it does and does not cover. No `SEMANTIC_BREAKS`
@@ -98,6 +98,63 @@ change has none, and its only consumer is `_diff_verdicts`
 unread. The release that ships this must write one, and must bump the
 schema (above); the two obligations are one release's work and are
 listed together in `docs/CARRIED-DEBT.md`.
+
+## Unreleased: the matrix can say a number is superseded
+
+House discipline says a profile is never rewritten after the fact. The
+cost of that discipline was borne entirely by the reader: the published
+matrix went on showing a figure a later fix had superseded, with nothing
+on the page saying so, and a reader had no way to learn the correction
+existed. E2 above is exactly that case — `qwen3.8:27b` at 260
+KiB/token — and the answer is not to edit the page.
+
+`scripts/build_matrix.py` now reads an optional **errata sidecar**,
+`errata/matrix-errata.json` under the campaign directory, and the
+renderer FLAGS the figures it names. Each entry gives an `id`, a
+`model`, the `fields` it corrects, a one-line `note` and an `href`; the
+page renders a marker on the matrix row and beside each affected value,
+plus a note block saying the value above it is left exactly as measured.
+
+**It annotates; it never substitutes.** The sidecar has no field for a
+replacement value and `assay.report` has no path that would apply one.
+Writing the corrected number into the page would be the forbidden edit
+performed one layer out, where a reader comparing the page against the
+profile could not see it had happened — worse than the stale figure,
+because it would look checked.
+
+The markdown `ERRATA.md` is **not** parsed and remains the human
+record. Prose changes shape whenever someone improves it, and a build
+that scraped it would stop flagging things the day a heading moved.
+
+Three things make the mechanism honest rather than decorative:
+
+- **No sidecar is byte-identical to no mechanism.** `render_report`'s
+  new `errata=` argument defaults to `None`, and a page built without a
+  sidecar is the page the previous build made down to the stylesheet —
+  the erratum CSS rides only on a page that has a flag to style. A test
+  builds the same profiles with and without a sidecar, strips every
+  erratum-classed element from the annotated one, and requires the
+  remainder to equal the plain page exactly.
+- **A flag that would not appear stops the build.** A model no profile
+  carries, a field the renderer cannot mark, an entry with no note or no
+  pointer, a sidecar declaring no `errata_sidecar_version`, a sidecar
+  with no entries: each is a refusal. The failure this mechanism is most
+  exposed to is a typo that annotates nothing while the page looks
+  checked, so `assay.report.MARKABLE_FIELDS` is public and the build
+  validates against it.
+- **The sidecar is not a `*.json` beside the profiles.** It sits one
+  level down because the evidence directory's contract with every
+  consumer is that each `*.json` in it is a profile — `assay report
+  docs/…/tier-enthusiast-2026-08/*.json` is supported and the CLI
+  refuses a document without `assay_profile_version` (exit 4). The first
+  placement broke that and a test caught it.
+
+`docs/matrix/index.html` is rebuilt: E2 is flagged on `qwen3.8:27b`'s
+`geometry.kv_kib_per_token` and `geometry.usable_window`. Every
+published figure is unchanged, and provably so — the rebuilt page is
+byte-identical to its predecessor outside the flags it adds. No schema
+version moves and no profile is touched; this is a change to what the
+published page can SAY, not to anything it measures.
 
 ## v0.13 (v1.11): the cover mode
 

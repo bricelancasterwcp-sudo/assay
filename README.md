@@ -28,6 +28,11 @@ read
 [`diffs/README.md`](docs/superpowers/evidence/tier-enthusiast-2026-08/diffs/README.md)
 before treating any movement between the two campaigns as a model
 change — the instrument changed too, and that file names every confound.
+Corrections filed after publication live in
+[`ERRATA.md`](docs/superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md)
+beside the profiles: the profiles and the matrix are never rewritten to
+suit a later fix, so a superseded figure stays on the page and wears a
+flag linking to the erratum that supersedes it.
 
 ## Why it exists
 

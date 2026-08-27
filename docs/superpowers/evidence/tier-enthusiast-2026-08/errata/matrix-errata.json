@@ -1,0 +1,15 @@
+{
+  "errata_sidecar_version": 1,
+  "errata": [
+    {
+      "id": "E2",
+      "model": "qwen3.8:27b",
+      "fields": [
+        "geometry.kv_kib_per_token",
+        "geometry.usable_window"
+      ],
+      "note": "hybrid over-charge: 65 blocks charged, 16 attention layers conform — see ERRATA.md E2",
+      "href": "../superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md"
+    }
+  ]
+}

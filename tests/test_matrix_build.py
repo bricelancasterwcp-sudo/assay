@@ -14,9 +14,11 @@ the script has to keep working as `python scripts/build_matrix.py`.
 
 import importlib.util
 import json
+import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from assay import report
 from test_profile import make_profile
 
 _REPO = Path(__file__).resolve().parents[1]
@@ -64,6 +66,59 @@ def write_profile(directory: Path, filename: str, *, model: str,
     (directory / filename).write_text(json.dumps(doc, indent=2),
                                       encoding="utf-8")
     return doc
+
+
+def make_erratum(**overrides) -> dict:
+    """One machine-readable erratum entry, as the sidecar carries it.
+
+    ``fields`` names the profile paths the correction lands on, and every
+    one of them must be a path the renderer knows how to mark — a
+    correction the page silently failed to flag is the exact failure this
+    mechanism exists to prevent."""
+    entry = dict(
+        id="E9",
+        model="model-a",
+        fields=["geometry.kv_kib_per_token"],
+        note="charged the wrong layer count — see ERRATA.md E9",
+        href="../evidence/ERRATA.md",
+    )
+    entry.update(overrides)
+    return entry
+
+
+def write_sidecar(directory: Path, entries=None, *, version=1,
+                  key: str = "errata") -> Path:
+    """The errata sidecar, in the subdirectory the build reads it from.
+
+    NOT beside the profiles, and the placement is load-bearing rather
+    than tidy: the evidence directory's contract with every consumer is
+    that each ``*.json`` in it is a profile, and `assay report` refuses
+    one that is not (exit 4)."""
+    path = directory / "errata" / "matrix-errata.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc: dict = {}
+    if version is not None:
+        doc["errata_sidecar_version"] = version
+    doc[key] = [make_erratum()] if entries is None else entries
+    path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    return path
+
+
+def strip_errata_markup(page: str) -> str:
+    """Everything the errata mechanism adds to a page, removed.
+
+    Every addition is class-marked ``erratum`` precisely so this function
+    can be surgical: what is left must be the page the build made before
+    the mechanism existed, to the byte. The stylesheet block is stripped
+    by identity against the module constant rather than by pattern —
+    a regex over CSS would be the kind of approximate check that lets
+    a real difference through."""
+    page = page.replace(report._ERRATA_CSS, "")
+    for pattern in (r'<sup class="erratum".*?</sup>',
+                    r'<p class="erratum-note">.*?</p>',
+                    r'<span class="erratum-lede">.*?</span>'):
+        page = re.sub(pattern, "", page, flags=re.S)
+    return page
 
 
 def build(tmp_path: Path, out_name: str = "index.html") -> Path:
@@ -342,6 +397,331 @@ def test_the_out_directory_is_created_if_it_does_not_exist(tmp_path):
     assert build_matrix.main(["--profiles-dir", str(tmp_path / "profiles"),
                               "--out", str(out)]) == 0
     assert out.exists()
+
+
+# --- errata: the published number stays, and wears a flag -------------------
+#
+# House discipline is that a profile is NEVER rewritten after the fact:
+# evidence is not edited to suit a later fix. That leaves the published
+# matrix showing a figure a later fix has superseded, with nothing on the
+# page saying so — which is the worst of both worlds, because a reader
+# has no way to know the correction exists. The sidecar closes that gap
+# WITHOUT touching the evidence: the wrong value stays visible, and a
+# marker beside it says it is corrected by erratum and where to read the
+# correction. A silent value replacement would be the same edit the
+# discipline forbids, done one layer further out where nobody can see it.
+
+
+def test_the_sidecar_flags_the_field_it_names_beside_the_published_value(
+        tmp_path):
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles)
+
+    page = build(tmp_path).read_text(encoding="utf-8")
+
+    # the published number is STILL THERE, and the flag is attached to it
+    assert '56<sup class="erratum"' in page
+    assert "KiB/token" in page
+    # the note and the pointer both reach the reader
+    assert "charged the wrong layer count" in page
+    assert "../evidence/ERRATA.md" in page
+    assert "E9" in page
+
+
+def test_the_note_says_the_flagged_figure_is_left_as_measured(tmp_path):
+    """The one thing a marker alone cannot say. A reader who takes a
+    flagged number for a quietly-corrected one has been misled in the
+    dangerous direction — they would then trust it — so the block spells
+    out that the value below is the measurement, unchanged."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles)
+
+    detail = build(tmp_path).read_text(
+        encoding="utf-8").split("<summary>model-a</summary>")[1]
+
+    assert 'class="erratum-note"' in detail
+    assert "left exactly as measured" in detail
+    # ...and it stands ABOVE the figure it qualifies, not after it
+    assert detail.index("erratum-note") < detail.index("KiB/token")
+
+
+def test_an_erratum_marks_every_field_it_names_and_no_other(tmp_path):
+    """Two fields named, two flags — and the third value on the same line
+    carries none. A marker that spread to the whole line would say the
+    ``limited_by`` classification was corrected too, which no erratum
+    here claims."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles, [make_erratum(fields=["geometry.kv_kib_per_token",
+                                                  "geometry.usable_window"])])
+
+    page = build(tmp_path).read_text(encoding="utf-8")
+
+    assert '56<sup class="erratum"' in page
+    assert '32768<sup class="erratum"' in page
+    assert '(limited by training_ctx)<sup' not in page
+
+
+def test_a_field_the_sidecar_does_not_name_is_left_unflagged(tmp_path):
+    """The counterpart: naming one field flags one field. A mechanism
+    that flagged the whole row's geometry would make the sidecar's
+    ``fields`` list decorative."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles, [make_erratum(fields=["geometry.usable_window"])])
+
+    page = build(tmp_path).read_text(encoding="utf-8")
+
+    assert '32768<sup class="erratum"' in page
+    assert '56<sup class="erratum"' not in page
+
+
+def test_the_flagged_row_is_marked_in_the_matrix_not_only_in_its_detail(
+        tmp_path):
+    """The corrected fields live inside a collapsed ``<details>``. A flag
+    that only appears once that block is opened is a flag a reader
+    scanning the matrix never sees, so the row carries one too."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles)
+
+    matrix = build(tmp_path).read_text(encoding="utf-8").split("</table>")[0]
+
+    assert 'class="erratum"' in matrix
+    assert "model-a" in matrix
+
+
+def test_only_the_named_model_is_flagged(tmp_path):
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_profile(profiles, "b.json", model="model-b")
+    write_sidecar(profiles)
+
+    page = build(tmp_path).read_text(encoding="utf-8")
+    b_detail = page.split("<summary>model-b</summary>")[1]
+
+    assert "erratum" not in b_detail
+
+
+def test_the_intro_says_the_page_carries_flags_and_what_they_mean(tmp_path):
+    """The count is of FIGURES, not of errata. One erratum can supersede
+    several numbers — the real E2 moves both the kv charge and the window
+    derived from it — and a reader who counts the marks down the page
+    must find as many as the sentence promised."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_profile(profiles, "b.json", model="model-b")
+    write_sidecar(profiles, [make_erratum(fields=["geometry.kv_kib_per_token",
+                                                  "geometry.usable_window"])])
+
+    page = build(tmp_path).read_text(encoding="utf-8")
+    head = page.split('<table class="matrix">')[0]
+
+    assert "2 figure(s) on 1 row(s)" in head
+    assert head.count("2 figure(s)") == 1
+    # the sentence must say the value was NOT replaced, or a reader will
+    # assume a flagged number has quietly been corrected in place
+    assert "never replaced" in head
+
+
+def test_the_sidecar_stays_out_of_the_profile_glob(tmp_path):
+    """The placement, pinned — and it was a bug first.
+
+    The sidecar started out beside the profiles as ``ERRATA.json``, and
+    `test_cli_still_loads_the_committed_evidence_profiles` failed
+    immediately: `assay report <dir>/*.json` is a supported thing to run
+    against the published corpus, and the CLI refuses any document
+    without `assay_profile_version` (exit 4). One script's convenience
+    would have broken the evidence directory for every consumer of it,
+    so the sidecar lives one level down. `glob` is not recursive, which
+    is the whole mechanism.
+    """
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles)
+
+    assert [p.name for p in sorted(profiles.glob("*.json"))] == ["a.json"]
+
+    page = build(tmp_path).read_text(encoding="utf-8")
+
+    assert "1 profile(s)" in page
+    # ...and it is READ, not merely out of the way: the flag is there
+    assert 'class="erratum"' in page
+
+
+# --- errata: no sidecar changes nothing ------------------------------------
+
+
+def test_a_directory_with_no_sidecar_renders_no_erratum_markup(tmp_path):
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+
+    page = build(tmp_path).read_text(encoding="utf-8")
+
+    assert "erratum" not in page
+
+
+def test_the_sidecar_adds_the_flags_and_nothing_else_to_the_page(tmp_path):
+    """The byte-identity law, stated as a difference: build the same
+    profiles with and without a sidecar, remove every erratum-classed
+    addition from the annotated page, and what is left must be the
+    unannotated page EXACTLY. Anything else — a reordered row, a changed
+    count, a stray wrapper — would mean the mechanism edits the page it
+    is only supposed to annotate."""
+    plain_dir = tmp_path / "plain"
+    flagged_dir = tmp_path / "flagged"
+    for directory in (plain_dir, flagged_dir):
+        write_profile(directory, "a.json", model="model-a")
+        write_profile(directory, "b.json", model="model-b")
+    write_sidecar(flagged_dir, [make_erratum(
+        fields=["geometry.kv_kib_per_token", "geometry.usable_window"])])
+
+    def render(directory: Path, name: str) -> str:
+        out = tmp_path / name
+        assert build_matrix.main(["--profiles-dir", str(directory),
+                                  "--out", str(out)]) == 0
+        return out.read_text(encoding="utf-8")
+
+    plain = render(plain_dir, "plain.html")
+    flagged = render(flagged_dir, "flagged.html")
+
+    assert flagged != plain
+    assert strip_errata_markup(flagged) == plain
+
+
+def test_two_builds_with_the_same_sidecar_are_byte_identical(tmp_path):
+    """Determinism is not suspended for annotations: the sidecar's own
+    order is the page's order, and nothing about a flag may come from a
+    dict iteration that differs between runs."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles)
+
+    assert (build(tmp_path, "one.html").read_bytes()
+            == build(tmp_path, "two.html").read_bytes())
+
+
+# --- errata: the refusals that keep a flag from silently not appearing ------
+
+
+def test_a_sidecar_naming_a_model_no_profile_carries_stops_the_build(
+        tmp_path, capsys):
+    """The quiet failure this mechanism is most exposed to: a model name
+    that does not match any row annotates nothing, and the page publishes
+    the superseded figure looking exactly as checked as its neighbours.
+    A typo must be loud."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles, [make_erratum(model="model-typo")])
+    out = tmp_path / "site" / "index.html"
+
+    assert build_matrix.main(["--profiles-dir", str(profiles),
+                              "--out", str(out)]) != 0
+    assert "model-typo" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_a_sidecar_naming_a_field_the_page_cannot_mark_stops_the_build(
+        tmp_path, capsys):
+    """Same failure, other axis. The renderer marks the field paths it
+    knows; a path it does not know renders no flag at all, so the build
+    refuses rather than publishing a correction nobody can see."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles, [make_erratum(fields=["codecs.whole_file.tiny"])])
+    out = tmp_path / "site" / "index.html"
+
+    assert build_matrix.main(["--profiles-dir", str(profiles),
+                              "--out", str(out)]) != 0
+    assert "codecs.whole_file.tiny" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_an_entry_without_a_note_or_a_pointer_stops_the_build(tmp_path,
+                                                              capsys):
+    """A bare marker is a worse page than no marker: it tells a reader
+    something is wrong and nothing about what or where to read it."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    entry = make_erratum()
+    entry.pop("note")
+    write_sidecar(profiles, [entry])
+    out = tmp_path / "site" / "index.html"
+
+    assert build_matrix.main(["--profiles-dir", str(profiles),
+                              "--out", str(out)]) != 0
+    assert "note" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_an_unreadable_sidecar_stops_the_build(tmp_path, capsys):
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    sidecar = profiles / "errata" / "matrix-errata.json"
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    sidecar.write_text("{not json", encoding="utf-8")
+    out = tmp_path / "site" / "index.html"
+
+    assert build_matrix.main(["--profiles-dir", str(profiles),
+                              "--out", str(out)]) != 0
+    assert "matrix-errata.json" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_a_sidecar_that_declares_no_version_stops_the_build(tmp_path, capsys):
+    """``_load_profile``'s gate, restated for the sidecar: a document
+    must SAY what it is. Any JSON object would otherwise be accepted as
+    an errata sidecar that annotates nothing."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles, version=None)
+    out = tmp_path / "site" / "index.html"
+
+    assert build_matrix.main(["--profiles-dir", str(profiles),
+                              "--out", str(out)]) != 0
+    assert "errata_sidecar_version" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_a_sidecar_with_no_entries_stops_the_build(tmp_path, capsys):
+    """An empty sidecar is a file that says "corrections were considered"
+    and flags nothing. Deleting it says the same thing more honestly."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles, [])
+    out = tmp_path / "site" / "index.html"
+
+    assert build_matrix.main(["--profiles-dir", str(profiles),
+                              "--out", str(out)]) != 0
+    assert "errata" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_the_sidecar_is_escaped_like_every_other_document_it_annotates(
+        tmp_path):
+    """The sidecar is author-supplied and repo-committed, which is the
+    same trust class as ``intro_html`` — and it is escaped anyway. It is
+    read from a directory a campaign writes into, and the one input that
+    is trusted "because we wrote it" is the one that ships the markup."""
+    profiles = tmp_path / "profiles"
+    write_profile(profiles, "a.json", model="model-a")
+    write_sidecar(profiles, [make_erratum(
+        id="<script>alert(1)</script>",
+        note='"><img src=x onerror=alert(2)>',
+        href='" onmouseover=alert(3) x="')])
+
+    page = build(tmp_path).read_text(encoding="utf-8")
+
+    assert "<script>alert(1)</script>" not in page
+    assert "<img src=x" not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
+    # the href is an ATTRIBUTE value: what matters is that the quote
+    # cannot close it. The payload survives as inert text inside the
+    # attribute, which is exactly what escaping is supposed to do.
+    assert '" onmouseover=' not in page
+    assert "&quot; onmouseover=alert(3) x=&quot;" in page
 
 
 # --- the committed page ----------------------------------------------------
