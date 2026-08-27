@@ -152,6 +152,24 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
             '        if path.name == "MANIFEST.json"\n',
             [f"{TESTMOD}::test_the_suite_actually_covers_the_frozen_set"],
         ),
+        (
+            # Turns M8 into a no-op mutant (its "mutation" becomes its own
+            # original), which is the way a mutation table rots without
+            # anyone noticing: the case still runs, still reports, and
+            # proves nothing. The suite's guard test must catch it.
+            #
+            # Mutating this very file works because the guard test re-reads
+            # it from disk while this already-imported process keeps running
+            # the original table. The anchor is spelled as a concatenation
+            # on purpose: written as one literal it would occur twice in
+            # this file — here and in M8 — and an ambiguous anchor is
+            # refused before anything is edited.
+            "M10 a harness case's mutant equals its original (no-op-mutant guard)",
+            root / "scripts/mutate_geometry_conformance.py",
+            '"set_version": ' + '"v2"',
+            '"set_version": "v1"',
+            [f"{TESTMOD}::test_the_mutation_harness_still_aims_at_real_lines"],
+        ),
     ]
 
 

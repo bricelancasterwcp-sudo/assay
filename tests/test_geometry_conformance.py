@@ -30,6 +30,7 @@ R6 still surface here indirectly, as the kv figure they distort.
 """
 
 import hashlib
+import importlib.util
 import json
 import pathlib
 
@@ -209,3 +210,37 @@ def test_the_suite_actually_covers_the_frozen_set():
     assert len(VECTORS) == 10
     assert sum(1 for v in VECTORS if v["expected"].get("refuses")) == 1
     assert len(list(window_scenarios())) == 3
+
+
+def test_the_mutation_harness_still_aims_at_real_lines():
+    """`scripts/mutate_geometry_conformance.py` must not rot silently.
+
+    That script is the evidence that the assertions above are
+    load-bearing, and it finds its targets by exact string. A refactor
+    that reworded one of those lines would leave a harness whose anchors
+    no longer match — discovered only when someone next runs it, long
+    after the assertions stopped being proven. This is the same check the
+    harness makes at run time, paid for on every suite run instead.
+
+    Loaded from its path, not imported: `scripts/` is not a package, the
+    same pin `test_matrix_build.py` keeps.
+    """
+    repo = pathlib.Path(__file__).resolve().parents[1]
+    script = repo / "scripts" / "mutate_geometry_conformance.py"
+    spec = importlib.util.spec_from_file_location("mutate_conformance", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    cases = module.cases(repo)
+    assert len(cases) == 10, "a mutant was added or dropped — say so deliberately"
+    for label, path, original, mutant, selection in cases:
+        assert path.is_file(), f"{label}: target {path} is gone"
+        assert path.read_text().count(original) == 1, (
+            f"{label}: anchor no longer occurs exactly once in {path.name} — "
+            "the mutation would be unattributable"
+        )
+        assert original != mutant, f"{label}: mutant is identical to the original"
+        assert all(
+            item.startswith(f"tests/{pathlib.Path(__file__).name}::")
+            for item in selection
+        ), f"{label}: selection has drifted off this module"
