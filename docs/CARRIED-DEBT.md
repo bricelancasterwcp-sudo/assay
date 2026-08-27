@@ -1,3 +1,75 @@
+# Carried debt — unreleased: hybrid layer geometry (recorded 2026-08-27)
+
+Branch `geometry-conformance`, **MERGE HOLD**, package and schema
+untouched (0.13.0 / v10). This section is not a wave's close: it is the
+list of obligations that **cannot be discharged on a branch with no
+release**, written down now so the release that ships the branch
+inherits them instead of rediscovering them. Every item here is closed
+by that release, not by more work on the branch.
+
+## Deferred, by area
+
+### Geometry (release obligations)
+
+1. **The three new `geometry` keys are unstamped: the shipping release
+   owes a schema bump.** `attention_layer_count`, `serving_block_count`
+   and `recurrent_state_bytes` are `None`-defaulted, so every committed
+   profile parses unchanged and the branch needed no bump to be green.
+   That is not the same as no bump being *owed*. This repository stamps
+   additive profile fields with the schema version they arrived in —
+   `new in v5`, `v6`, `v7`, `v8`, and v1.9's `overlap_provenance` at
+   schema v10, on every README profile-table row that records a field
+   as arriving later — and the one previous time geometry keys landed
+   without a stamp (the `geometry` row's own expert keys, still the
+   table's only undated field) the CHANGELOG filed it as a **schema
+   irregularity** rather than a convention (v1.6:
+   "`assay_profile_version: 5` covered two geometry shapes … recorded
+   rather than tidied away"). The bump is owed twice over, because the
+   change is not purely additive: `geometry.kv_kib_per_token` changes
+   MEANING on a hybrid model, so two documents could both read
+   `assay_profile_version: 10`, name the same model on the same daemon,
+   and report 260 and 64 with nothing distinguishing the derivation. No
+   such pair exists today — the only committed hybrid profiles are v8
+   (`tier-enthusiast-2026-08/qwen3.8-27b.json`) and v4
+   (`tier-enthusiast/qwen3-8-27b.json`) — so the collision is
+   **prospective**, and preventable for the cost of one bump. What the
+   release must move: `PROFILE_VERSION`, `assay.__version__`,
+   `pyproject.toml`, the README's `assay_profile_version: N` line and
+   the geometry row's stamp. The first four are pinned together by
+   `tests/test_profile.py::test_schema_version_and_package_version_move_together`;
+   the fifth is pinned by
+   `test_the_unstamped_geometry_keys_owe_a_schema_bump`, which fails the
+   moment `PROFILE_VERSION` moves so that whoever bumps it reads this
+   item.
+
+2. **`SEMANTIC_BREAKS` row for `geometry.kv_kib_per_token`.** Same
+   release, same reason. Not written on the branch because the registry
+   is keyed by release version and the branch has none, and because its
+   only consumer is `_diff_verdicts` (v1.10 Diff item 1 below), so a
+   `geometry.*` row would type-check and sit unread — this item
+   compounds with that one: writing the row is not enough without the
+   wiring item 1 of the v1.10 section describes.
+
+3. **A conforming hardware measurement of `qwen3.8:27b`.** The
+   erratum's corrected figures (64 KiB/token, 156,893,184 bytes of
+   recurrent state, the two windows) are **derived from the committed
+   `/api/show` capture through the corrected extractor, not measured**
+   — deterministic given that capture, and untested against a live
+   daemon, because no GPU or model load was available to the work that
+   filed them. A live run under the corrected code would supersede
+   them, would let the withheld `qwen3.8-27b` gguf-geometry vector enter
+   a set, and is the input the matrix-rebuild decision wants.
+
+4. **The README's gguf-geometry link is a forward reference.** The
+   "Hybrid geometry" section links the contract at
+   `https://github.com/bricelancasterwcp-sudo/gguf-geometry`. That
+   repository is local and unpublished — no git remote is configured on
+   it — and its publish is a separately gated step. Merging this branch
+   before that publish ships a link that 404s. The rules the section
+   describes do not depend on the link: the vectors are vendored at
+   `tests/data/gguf_geometry_v1/` and asserted in
+   `tests/test_geometry_conformance.py`.
+
 # Carried debt — v1.10 (recorded 2026-08-18 at the wave's close)
 
 Package 0.12.0. Profile schema unchanged at **v10** — this wave changes

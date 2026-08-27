@@ -105,3 +105,34 @@ The published matrix (`docs/matrix/`) is built from this directory's
 rows and therefore still shows 260 KiB/token for this model. It is left
 as built: rebuilding it is an outward-facing publication decision, taken
 deliberately rather than as a side effect of a code fix.
+
+### Decision provenance
+
+Filing this rather than editing the two profiles was ruled **before** the
+fix work began, not chosen inside it. The ruling is recorded in the
+gguf-geometry SDD ledger,
+`~/workspace/gguf-geometry/.superpowers/sdd/2026-08-27-gguf-geometry/progress.md`,
+under "Hold release + Tasks 8-10 (2026-08-27)":
+
+> Ruling (pre-ruled Task 9 STOP clause): committed hybrid-affected assay
+> artifacts EXIST (qwen3.8-27b: e1-sweep results + tier-enthusiast
+> ERRATA line 36 + tier-enthusiast-2026-08 profile + matrix). Per the
+> E1-erratum precedent, Task 9 appends an ERRATA.md row (profiles left
+> as committed) citing gguf-geometry's
+> docs/upstream-errata/2026-08-27-assay-qwen3.8-27b-hybrid-overcharge.md;
+> NO matrix rebuild (Pages publish = outward-facing, Brice's);
+> branch-only.
+
+That ledger is deliberately untracked in its own repository (SDD
+workspaces stay local in public repos), which is why this is a quoted
+citation by path rather than a link — the same shape of citation that
+repository's `.gitignore` carries for the same reason.
+
+What the ruling settles: leave the profiles as measured, file the
+correction beside them, do not rebuild the matrix, keep the work on a
+branch. What it does **not** settle, and what no ruling here can: the
+publication decisions. Rebuilding the matrix and pushing anything remain
+Brice's, and the same ledger's approval record of 2026-08-27 covers
+merging this branch to assay master — approving a merge is not
+approving a rebuild, and this file states the gap rather than closing
+it quietly.

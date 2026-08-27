@@ -42,10 +42,42 @@ Three rules now hold, named as the contract names them
 `ModelInfo` gains `attention_layer_count`, `recurrent_state_bytes` and
 `mtp_layer_count`; `Geometry` gains `attention_layer_count`,
 `serving_block_count` and `recurrent_state_bytes`. All six are
-`None`-defaulted, exactly as v1.6's expert fields were: every existing
-profile parses unchanged, every backend and caller that never sets them
-constructs unchanged, and **the profile schema is not bumped** — this
-adds cells, it does not redefine one that a reader already has.
+`None`-defaulted, so every existing profile parses unchanged and every
+backend and caller that never sets them constructs unchanged.
+
+**No schema version is stamped on these fields, and that is a hold, not
+a decision.** `PROFILE_VERSION` still reads 10 because this entry has no
+release to bump it at — nothing here has shipped. It is **not** the
+claim that an additive geometry field needs no bump: this repository
+stamps them. Where the README's profile table records a field as having
+arrived later, it names the schema version it arrived in — `speed`'s
+sample arrays `new in v5`, `loop`'s recovery pair `v6`, `tools`'
+truncation counts `v7` and `stopping_rule` `v8`, `parallel`'s
+`overlap_provenance` "new in v1.9, schema v10". The exception is the
+`geometry` row, whose expert keys carry no stamp either, and that is not
+a second precedent: it is the same one. This file recorded it as a
+**schema irregularity** rather than a convention — v1.6's note below,
+"Geometry's two expert keys landed one commit *before* the version bump,
+so for that window `assay_profile_version: 5` covered two geometry
+shapes". Doing that deliberately is worse than the accident was, and it
+would make the geometry row the only place in the profile where a
+reader cannot date a field, so the release that
+ships this owes the bump and the README stamp that goes with it
+(`test_schema_version_and_package_version_move_together` pins the three
+literals and the README line together; the README already sat two
+versions stale through a green suite once, which is why it is pinned).
+
+The bump is owed twice over, because this change is not purely additive.
+`geometry.kv_kib_per_token` **changes meaning on a hybrid model** — the
+erratum below — so without a version boundary two documents could carry
+`assay_profile_version: 10`, name the same model on the same daemon, and
+report 260 and 64, with nothing in either document saying which rule
+produced the number. No such pair exists yet: the only committed hybrid
+profiles are v8 and v4, both written under earlier schemas, so the
+collision is **prospective** — which is exactly what makes it cheap to
+prevent and expensive to discover later. Recorded as a release
+obligation in [`docs/CARRIED-DEBT.md`](docs/CARRIED-DEBT.md), unreleased
+section, beside the `SEMANTIC_BREAKS` row the same release owes.
 
 **Erratum, filed 2026-08-27**: `kv_kib_per_token` DOES change meaning
 for a hybrid model, and the repository has committed evidence of exactly
@@ -56,10 +88,16 @@ committed and the correction is filed beside them
 referenced from `tier-enthusiast/ERRATA.md`), with the arithmetic pinned
 by tests rather than asserted in prose. The published matrix still shows
 260: rebuilding it is a publication decision, not a side effect of this
-fix. No `SEMANTIC_BREAKS` row is written yet — the registry is keyed by
-release version and this change has none, and its only consumer is
-`_diff_verdicts` (CARRIED-DEBT, v1.10 Diff item 1), so a `geometry.*`
-row would sit unread. The release that ships this must write one.
+fix. Leaving the profiles as measured and filing an erratum instead of
+editing them was ruled **before** this work began, not chosen while
+inside it — the erratum's "Decision provenance" names where that ruling
+is recorded and what it does and does not cover. No `SEMANTIC_BREAKS`
+row is written yet — the registry is keyed by release version and this
+change has none, and its only consumer is `_diff_verdicts`
+(CARRIED-DEBT, v1.10 Diff item 1), so a `geometry.*` row would sit
+unread. The release that ships this must write one, and must bump the
+schema (above); the two obligations are one release's work and are
+listed together in `docs/CARRIED-DEBT.md`.
 
 ## v0.13 (v1.11): the cover mode
 
