@@ -1,0 +1,27 @@
+{
+  "id": "mistral-nemo-latest",
+  "source": {
+    "sha_unavailable_reason": "e1-sweep records daemon digest e7e06d107c6c86ed0cf45445f1790720b5092149c4c95f4d965844e9afbfdc89, not raw GGUF sha (the /api/tags digest names the ollama manifest, which covers several layers, not the GGUF blob alone)",
+    "provenance": "assay docs/superpowers/evidence/e1-sweep/show-mistral-nemo-latest.json + results.json (captured 2026-08-17 from ollama 0.32.13; protocol docs/superpowers/evidence/e1-sweep/PROTOCOL.md) classifies this model AFFECTED with direction window-CONSERVATIVE: stated llama.attention.key_length 128 is SMALLER than the derived 5120//32 = 160, so the pre-fix kv was too LARGE and the window under-promised (usable_window 32711 -> 40889, 20.0% of the true window given away). Corrected kv 160 KiB/token per assay docs/superpowers/evidence/tier-enthusiast/ERRATA.md (erratum E1) and the e1-sweep profile row for tier-enthusiast/mistral-nemo-latest.json (committed 200 -> corrected 160); measured again on real hardware at probe 0.9.0 in docs/superpowers/evidence/tier-enthusiast-2026-08/mistral-nemo-latest.json (geometry.kv_kib_per_token 160). This is the opposite sign to every other affected row in the corpus, which is why it is here."
+  },
+  "metadata": {
+    "general.architecture": "llama",
+    "llama.block_count": 40,
+    "llama.context_length": 1024000,
+    "llama.embedding_length": 5120,
+    "llama.attention.head_count": 32,
+    "llama.attention.head_count_kv": 8,
+    "llama.attention.key_length": 128
+  },
+  "expected": {
+    "kv_bytes_per_token": 163840,
+    "experts": null
+  },
+  "must_not_equal": {
+    "kv_bytes_per_token": [
+      204800
+    ],
+    "note": "E1: embedding//head_count head_dim; corrected by R1 key_length rule"
+  },
+  "verification": "hardware-verified"
+}
