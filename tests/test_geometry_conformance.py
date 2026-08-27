@@ -45,7 +45,7 @@ from assay.geometry import kv_bytes_per_token, plan_window, serving_block_count
 DATA = pathlib.Path(__file__).resolve().parent / "data" / "gguf_geometry_v1"
 
 VENDORED_MANIFEST_SHA = (
-    "d50e7c36ea714cfc837fc9bc0f8b3d1a573bb3a031dd7fbe776e3a252ee29ddc"
+    "44f8af208d4bd79055cdaa9e0b9c4e9fa81f305d5f81ab6e87457de6c3fa470a"
 )
 """sha256 of the vendored MANIFEST.json, pinned at vendoring.
 

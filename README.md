@@ -270,8 +270,8 @@ that cannot read architecture metadata.
 
 **This is an erratum against the two committed `qwen3.8:27b` profiles**,
 the only hybrid model in this repository's evidence: they publish 260
-and 216 KiB/token where the conforming figure is **64** (65 blocks
-charged, 16 serve), and neither carries the recurrent term
+and 216 KiB/token where the conforming figure is **64** (64 blocks
+serve; 16 of them own a kv cache), and neither carries the recurrent term
 (156,893,184 bytes) at all. This one **under**-promises — the corrected
 window is ~3.4× the published one — which is the harmless direction and
 is corrected anyway. The profiles stand as measured; the corrections are

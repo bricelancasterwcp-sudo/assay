@@ -1,8 +1,8 @@
 {
   "id": "qwen2.5-coder-14b-instruct-q4_K_M",
   "source": {
-    "sha_unavailable_reason": "e1-sweep records daemon digest 9ec8897f747e246e970bc5cfdda85d22f1123dc2e3d34978a010a75968716849, not raw GGUF sha (the /api/tags digest names the ollama manifest, which covers several layers, not the GGUF blob alone)",
-    "provenance": "assay docs/superpowers/evidence/e1-sweep/show-qwen2.5-coder-14b-instruct-q4_K_M.json + results.json (captured 2026-08-17 from ollama 0.32.13; protocol docs/superpowers/evidence/e1-sweep/PROTOCOL.md) classifies this model UNAFFECTED-BY-CONSTRUCTION; kv 192 KiB/token committed in docs/superpowers/evidence/tier-enthusiast/qwen2.5-coder-14b-q4-quick.json and measured again on real hardware at probe 0.9.0 in docs/superpowers/evidence/tier-enthusiast-2026-08/qwen2.5-coder-14b-instruct-q4_K_M.json (geometry.kv_kib_per_token 192). Errata for the swept directories: assay docs/superpowers/evidence/tier-enthusiast/ERRATA.md (erratum E1); no correction applies."
+    "gguf_sha256": "ac9bc7a69dab38da1c790838955f1293420b55ab555ef6b4615efa1c1507b1ed",
+    "provenance": "assay docs/superpowers/evidence/e1-sweep/show-qwen2.5-coder-14b-instruct-q4_K_M.json + results.json (captured 2026-08-17 from ollama 0.32.13; protocol docs/superpowers/evidence/e1-sweep/PROTOCOL.md) classifies this model UNAFFECTED-BY-CONSTRUCTION; kv 192 KiB/token committed in docs/superpowers/evidence/tier-enthusiast/qwen2.5-coder-14b-q4-quick.json and measured again on real hardware at probe 0.9.0 in docs/superpowers/evidence/tier-enthusiast-2026-08/qwen2.5-coder-14b-instruct-q4_K_M.json (geometry.kv_kib_per_token 192). Errata for the swept directories: assay docs/superpowers/evidence/tier-enthusiast/ERRATA.md (erratum E1); no correction applies. gguf_sha256 recovered 2026-08-27 from the Ollama store manifest's model-layer digest (/mnt/extra/ollama-models; content-addressed, spot-verified by sha256sum on the 1.5b blob)."
   },
   "metadata": {
     "general.architecture": "qwen2",
