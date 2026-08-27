@@ -5,6 +5,62 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
+## Unreleased: hybrid layer geometry (R3/R4/R6)
+
+`kv_bytes_per_token` charged `block_count` attention layers — every
+block the model file states. That is the dense answer, and it is the
+only answer this instrument had. A **hybrid** architecture interleaves
+attention and recurrent layers and says so in its metadata, and charging
+its raw block count over-states the cache by the attention interval:
+bloomery measured 4.00x on Qwen3.6-35B-A3B (40 blocks charged, 10
+attention layers) and fixed it in its turn 5. assay had the same defect,
+unmeasured, until the gguf-geometry conformance vectors put a number on
+it.
+
+Three rules now hold, named as the contract names them
+(`gguf-geometry/SPEC.md`, vectors vendored at
+`tests/data/gguf_geometry_v1/`):
+
+- **R6** — `serving_block_count = block_count −
+  <arch>.nextn_predict_layers`. An MTP layer is counted into the block
+  count by `convert_hf_to_gguf` and does not serve. (The REAP-48 prune
+  left `mtp_num_hidden_layers: 1` in an HF config, sized a 40-block
+  checkpoint at 41, and produced a GGUF that would not load.)
+- **R3** — `attention_layer_count = serving_block_count ÷
+  <arch>.full_attention_interval`, never the raw count. No interval
+  stated is the dense identity, so every dense model's kv figure is
+  **arithmetically unchanged**. An interval that cannot be applied —
+  not positive, or larger than the model — makes the geometry
+  unmeasurable rather than zero-layered: zero is not a smaller answer,
+  it is the claim that the model holds no cache.
+- **R4** — `recurrent_state_bytes`, the ssm/Gated-DeltaNet state, is a
+  fixed per-context term charged against the budget once. Zero **only**
+  where the architecture states no `ssm.*` keys; a partial set reads
+  `None`, because a file with recurrent layers whose size we cannot
+  compute has not been measured at 0.
+
+`ModelInfo` gains `attention_layer_count`, `recurrent_state_bytes` and
+`mtp_layer_count`; `Geometry` gains `attention_layer_count`,
+`serving_block_count` and `recurrent_state_bytes`. All six are
+`None`-defaulted, exactly as v1.6's expert fields were: every existing
+profile parses unchanged, every backend and caller that never sets them
+constructs unchanged, and **the profile schema is not bumped** — this
+adds cells, it does not redefine one that a reader already has.
+
+**Erratum, filed 2026-08-27**: `kv_kib_per_token` DOES change meaning
+for a hybrid model, and the repository has committed evidence of exactly
+one — `qwen3.8:27b`, in two profiles, published at 260 and 216
+KiB/token where the conforming figure is 64. Both profiles are left as
+committed and the correction is filed beside them
+(`docs/superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md`, cross-
+referenced from `tier-enthusiast/ERRATA.md`), with the arithmetic pinned
+by tests rather than asserted in prose. The published matrix still shows
+260: rebuilding it is a publication decision, not a side effect of this
+fix. No `SEMANTIC_BREAKS` row is written yet — the registry is keyed by
+release version and this change has none, and its only consumer is
+`_diff_verdicts` (CARRIED-DEBT, v1.10 Diff item 1), so a `geometry.*`
+row would sit unread. The release that ships this must write one.
+
 ## v0.13 (v1.11): the cover mode
 
 The swap question answered as itself. `diff` refuses crossed model

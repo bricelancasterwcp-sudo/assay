@@ -153,7 +153,7 @@ a measurement, a `None` with a named reason, or provenance.
 |---|---|
 | `endpoint` | `kind` (`ollama`/`openai`), `base_url`, whether the kind was autodetected |
 | `model` | `name`, `quant`, `weights_bytes`, `training_ctx` — as reported, never guessed |
-| `geometry` | `kv_kib_per_token`, `vram_free_mib`, `usable_window`, and `limited_by` — **which** term (`training_ctx` / `vram` / `user_cap`) actually bound the window; plus `expert_count` / `expert_used_count` where the metadata reports MoE routing (`None` on a dense model — see [MoE geometry](#moe-geometry)) |
+| `geometry` | `kv_kib_per_token`, `vram_free_mib`, `usable_window`, and `limited_by` — **which** term (`training_ctx` / `vram` / `user_cap`) actually bound the window; plus `expert_count` / `expert_used_count` where the metadata reports MoE routing (`None` on a dense model — see [MoE geometry](#moe-geometry)); plus `attention_layer_count`, `serving_block_count` and `recurrent_state_bytes`, the layer terms the kv figure was computed from (see [Hybrid geometry](#hybrid-geometry)) |
 | `ceiling` | `max_verified`, `first_failure`, `failure_mode` (`hard_error` / `missing_stats` / `silent_truncation` / `canary_loss` / `none_up_to_cap` / `budget`), plus per-call evidence |
 | `ceiling_shapes` | the same question asked at each **pinned** `num_ctx` an application might set (2k/4k/8k), because a daemon can serve 16k right-sized and error above ~1.8k at a fixed 8k |
 | `envelope` | exact-format fidelity over N one-line probes, with failures classified (`prose` / `shape` / `refusal`) |
@@ -235,6 +235,50 @@ was the MoE: `qwen3.8:27b` (architecture `qwen35`) reports **no**
 `expert_*` keys at all and correctly reads `None`/`None`, while
 `deepseek-coder-v2:16b-lite` (`deepseek2`) reports **64 experts, 6
 routed** — the numbers the renderer prints as `MoE 6-of-64`.
+
+`qwen3.8:27b`'s **260** above is corrected about `head_dim` and still
+wrong about the layer count — it is a hybrid, and E1 was not looking at
+layers. See [Hybrid geometry](#hybrid-geometry).
+
+## Hybrid geometry
+
+A hybrid architecture interleaves attention and recurrent layers: only
+some of its blocks own a kv cache, and the rest hold recurrent state.
+Charging every block is a straight over-charge, and it is a measured one
+— bloomery published 4.00× on Qwen3.6-35B-A3B before fixing it. Three
+rules apply, from the [gguf-geometry
+contract](https://github.com/bricelancasterwcp-sudo/gguf-geometry)
+(`SPEC.md` R3/R4/R6), whose frozen vectors are vendored under
+`tests/data/gguf_geometry_v1/` and asserted against in
+`tests/test_geometry_conformance.py`:
+
+- `serving_block_count = block_count − <arch>.nextn_predict_layers` —
+  an MTP layer is counted into `block_count` by the converter and does
+  not serve.
+- `attention_layer_count = serving_block_count ÷
+  <arch>.full_attention_interval` — never the raw count. A model that
+  states no interval is dense, and the rule is the identity there, so
+  **no dense model's kv figure moves**.
+- `recurrent_state_bytes` — the `ssm.*` state, charged once per context
+  against the budget rather than per token. `0` only where the
+  architecture states no `ssm.*` keys at all; `None` where it states
+  some but not enough to size them.
+
+All three ride in `geometry` so a window number can be read back to the
+layer counts that produced it, and all three are `None` on a backend
+that cannot read architecture metadata.
+
+**This is an erratum against the two committed `qwen3.8:27b` profiles**,
+the only hybrid model in this repository's evidence: they publish 260
+and 216 KiB/token where the conforming figure is **64** (65 blocks
+charged, 16 serve), and neither carries the recurrent term
+(156,893,184 bytes) at all. This one **under**-promises — the corrected
+window is ~3.4× the published one — which is the harmless direction and
+is corrected anyway. The profiles stand as measured; the corrections are
+filed beside them at
+[`evidence/tier-enthusiast-2026-08/ERRATA.md`](docs/superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md),
+derived from the committed captures rather than re-measured, and pinned
+by tests that recompute them from those bytes.
 
 ## Sequential testing
 

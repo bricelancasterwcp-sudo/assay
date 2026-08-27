@@ -106,9 +106,8 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
         (
             "M4 plan_window: drop the fixed-overhead subtraction (R7 term)",
             geometry,
-            "            kv_budget_bytes = (vram_free_mib - overhead_mib) * _MIB"
-            " - weights_bytes\n",
-            "            kv_budget_bytes = vram_free_mib * _MIB - weights_bytes\n",
+            "                (vram_free_mib - overhead_mib) * _MIB\n",
+            "                vram_free_mib * _MIB\n",
             [
                 f"{TESTMOD}::test_window_law_conforms"
                 "[qwen2.5-coder-7b-instruct-q8_0-0-budget]"
@@ -169,6 +168,44 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
             '"set_version": ' + '"v2"',
             '"set_version": "v1"',
             [f"{TESTMOD}::test_the_mutation_harness_still_aims_at_real_lines"],
+        ),
+        (
+            # The historical regression itself: charge the raw serving
+            # count instead of dividing by the stated interval. The
+            # vector's `must_not_equal` 81920 is exactly what this
+            # produces, so the ban assertion fires as well as the value.
+            "M11 attention_layer_count: charge every block, not 1 in N (R3)",
+            geometry,
+            "    layers = serving_blocks // full_attention_interval\n",
+            "    layers = serving_blocks\n",
+            [
+                f"{TESTMOD}::test_attention_layer_count_conforms"
+                "[qwen3.6-35b-a3b-reap48-ours-q4km]",
+                f"{TESTMOD}::test_kv_interpretation_conforms"
+                "[qwen3.6-35b-a3b-reap48-ours-q4km]",
+            ],
+        ),
+        (
+            # R6 is pinned by the serving-count assertion ALONE on this
+            # corpus: 41 // 4 and 40 // 4 are both 10, so dropping the
+            # subtraction leaves the trap vector's kv figure correct and
+            # only its block count wrong — which is precisely the state
+            # that produced an unloadable GGUF.
+            "M12 serving_block_count: keep the MTP layer as a serving block (R6)",
+            geometry,
+            "    return block_count - mtp_layer_count\n",
+            "    return block_count\n",
+            [
+                f"{TESTMOD}::test_serving_block_count_conforms"
+                "[qwen3.6-35b-a3b-reap48-mtp-trap]"
+            ],
+        ),
+        (
+            "M13 recurrent_state_bytes: drop the conv-state term (R4)",
+            geometry,
+            "    per_layer = conv_state + state_size * inner_size\n",
+            "    per_layer = state_size * inner_size\n",
+            [f"{TESTMOD}::test_recurrent_state_conforms"],
         ),
     ]
 

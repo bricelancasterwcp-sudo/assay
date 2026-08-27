@@ -286,6 +286,123 @@ def test_dense_model_reports_no_experts_rather_than_zero():
     assert info.expert_used_count is None
 
 
+# --- hybrid architecture metadata: R3 / R4 / R6 ----------------------------
+
+HYBRID_MODEL = "qwen3.6:35b-a3b-reap48"
+#: The REAP-48 Qwen3.6-35B-A3B shape AS CONVERTED: one attention layer in
+#: four, an MTP layer the converter counted into ``block_count`` (40 + 1),
+#: and a full ``ssm.*`` set for the Gated-DeltaNet layers. Keys and values
+#: as the artifact states them (gguf-geometry vector
+#: ``qwen3.6-35b-a3b-reap48-mtp-trap``); one fixture exercises all three
+#: rules because on this file they compose.
+HYBRID_SHOW_BODY = {
+    "details": {"quantization_level": "Q4_K_M"},
+    "model_info": {
+        "general.architecture": "qwen35moe",
+        "qwen35moe.block_count": 41,
+        "qwen35moe.context_length": 262144,
+        "qwen35moe.embedding_length": 2048,
+        "qwen35moe.attention.head_count": 16,
+        "qwen35moe.attention.head_count_kv": 2,
+        "qwen35moe.attention.key_length": 256,
+        "qwen35moe.full_attention_interval": 4,
+        "qwen35moe.nextn_predict_layers": 1,
+        "qwen35moe.expert_count": 133,
+        "qwen35moe.expert_used_count": 8,
+        "qwen35moe.ssm.conv_kernel": 4,
+        "qwen35moe.ssm.state_size": 128,
+        "qwen35moe.ssm.group_count": 16,
+        "qwen35moe.ssm.time_step_rank": 32,
+        "qwen35moe.ssm.inner_size": 4096,
+    },
+}
+
+
+def hybrid_backend(model_info: dict | None = None) -> OllamaNative:
+    body = (
+        HYBRID_SHOW_BODY
+        if model_info is None
+        else {"details": {}, "model_info": model_info}
+    )
+    transport = FakeTransport(
+        post_routes={"/api/show": (200, body)},
+        get_routes={
+            "/api/tags": (200, {"models": []}),
+            "/api/ps": (200, {"models": []}),
+        },
+    )
+    return OllamaNative(
+        BASE_URL, HYBRID_MODEL, http_post=transport.post, http_get=transport.get
+    )
+
+
+def test_model_info_derives_the_hybrid_layer_geometry():
+    info = hybrid_backend().model_info()
+
+    # The raw count is REPORTED as the file states it...
+    assert info.block_count == 41
+    assert info.mtp_layer_count == 1
+    # ...and the count the kv cache is charged on is neither that nor the
+    # serving count: R6 takes the MTP layer off (41 - 1 = 40), R3 divides
+    # by the stated interval (40 // 4 = 10).
+    assert info.attention_layer_count == 10
+    # R4: the 30 layers that are not attention layers hold recurrent
+    # state, sized from the ssm dimensions.
+    assert info.recurrent_state_bytes == 65_863_680
+
+
+def test_dense_metadata_reports_every_block_as_an_attention_layer():
+    transport = FakeTransport(
+        post_routes={"/api/show": (200, QWEN_SHOW_BODY)},
+        get_routes={
+            "/api/tags": (200, QWEN_TAGS_BODY),
+            "/api/ps": (200, {"models": []}),
+        },
+    )
+
+    info = make_backend(transport).model_info()
+
+    # No interval key: the dense identity, so the kv arithmetic is
+    # unchanged for every model that was already correct.
+    assert info.attention_layer_count == 28
+    assert info.mtp_layer_count is None
+    # No ssm keys: this architecture HAS no recurrent layers, which is
+    # the one case where 0 is a measurement rather than a default.
+    assert info.recurrent_state_bytes == 0
+
+
+def test_metadata_free_show_body_reports_no_layer_geometry_at_all():
+    # None-vs-zero: nothing was read, so nothing is claimed — including
+    # the recurrent term, which must not read as "measured: none".
+    info = hybrid_backend(model_info={}).model_info()
+
+    assert info.block_count is None
+    assert info.attention_layer_count is None
+    assert info.mtp_layer_count is None
+    assert info.recurrent_state_bytes is None
+
+
+def test_an_interval_that_cannot_be_applied_withholds_the_layer_count():
+    # R8. `full_attention_interval` 4 over 2 serving blocks means no
+    # layer satisfies llama.cpp's `(i+1) % 4 == 0` rule. The raw block
+    # count is withheld along with the derived one: `kv_bytes_per_token`
+    # falls back to `block_count` when no attention count was derived,
+    # so reporting 2 here would route this file straight into the
+    # all-blocks charge R3 exists to forbid.
+    stated = dict(HYBRID_SHOW_BODY["model_info"])
+    stated["qwen35moe.block_count"] = 2
+    stated["qwen35moe.nextn_predict_layers"] = 0
+
+    info = hybrid_backend(model_info=stated).model_info()
+
+    assert info.attention_layer_count is None
+    assert info.block_count is None
+    assert info.recurrent_state_bytes is None
+    # The key itself is still reported: the refusal is about the derived
+    # counts, not about hiding what the file said.
+    assert info.mtp_layer_count == 0
+
+
 # --- chat_tools (v1.6) -----------------------------------------------------
 
 MESSAGES = [{"role": "user", "content": "read tiny.py, then tell me the bug"}]

@@ -217,4 +217,11 @@ class OpenAICompat:
             # No metadata access: MoE routing is unreported, not absent.
             expert_count=None,
             expert_used_count=None,
+            # ...and so is the hybrid layer geometry (R3/R4/R6). None
+            # here is "this wire cannot say", which is why 0 recurrent
+            # bytes — the answer for an architecture that states no ssm
+            # keys — must not be written by a backend that read no keys.
+            attention_layer_count=None,
+            recurrent_state_bytes=None,
+            mtp_layer_count=None,
         )

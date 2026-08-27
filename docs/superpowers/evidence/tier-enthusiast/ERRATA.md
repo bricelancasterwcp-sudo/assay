@@ -135,3 +135,32 @@ long-output measurements in these profiles were not computed from
 `head_dim` and stand as written. `expert_count` / `expert_used_count` are
 absent from these profiles because schema v4 had no such fields — that is
 a missing column, not a wrong value.
+
+---
+
+## E2 — hybrid layer geometry: `qwen3-8-27b.json` is wrong a second time
+
+**Filed** 2026-08-27 · **Affects** [`qwen3-8-27b.json`](qwen3-8-27b.json)
+in this directory · **Filed in full** beside the newer profile of the
+same model:
+[`../tier-enthusiast-2026-08/ERRATA.md`](../tier-enthusiast-2026-08/ERRATA.md)
+
+E1 above corrects this profile's `kv_kib_per_token` from 216 to **260**
+and its window from 4922 to **4096**, and that correction is right about
+`head_dim` and still wrong about the layer count. `qwen3.8:27b` is a
+**hybrid**: its metadata states `qwen35.full_attention_interval: 4` and
+`qwen35.nextn_predict_layers: 1`, so 16 of its 65 blocks own a kv cache,
+not 65 — a further **4.0625×** over-charge — and its 48 recurrent layers
+hold 156,893,184 bytes of per-context state that no figure here charges
+at all.
+
+| profile | `kv_kib_per_token` | `usable_window` |
+|---|---|---|
+| as committed (v1.4, derived `head_dim`) | 216 | 4922 |
+| after E1 (stated `key_length`, all blocks charged) | 260 | 4096 |
+| conforming (E1 + R3/R4/R6) | **64** | **14246** |
+
+Derived under this profile's own recorded `vram_free_mib` (1552) and
+residency, not re-measured on hardware. E1's table and percentages are
+left exactly as filed: they are correct statements about the head_dim
+defect, which is the thing they were computed to measure.

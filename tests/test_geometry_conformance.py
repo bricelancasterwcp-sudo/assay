@@ -15,18 +15,21 @@ implementation of the contract, and this suite would then be measuring
 the test rather than assay. No daemon, no GPU, no network: the transport
 is replaced, the interpretation is not.
 
-Known reds at authoring time (2026-08-27), both hybrid vectors:
+Reds at authoring time (2026-08-27), both hybrid vectors:
 ``qwen3.6-35b-a3b-reap48-ours-q4km`` (R3: every block charged as an
 attention layer where ``full_attention_interval`` says 1 in 4 is) and
 ``qwen3.6-35b-a3b-reap48-mtp-trap`` (R3 + R6: the MTP layer counted as a
-serving block). geometry.py has no hybrid handling; the fix is a real
-assay change, not a test change.
+serving block). Both were divergences in ``geometry.py``, which had no
+hybrid handling at all, and both were closed by a real assay change —
+``ModelInfo.attention_layer_count`` / ``mtp_layer_count`` /
+``recurrent_state_bytes`` and the rules behind them — never by a test
+change.
 
-Three quantities the vectors state have no assay surface to assert
-against at all yet — ``attention_layers`` and ``serving_block_count``
-(R3/R6) and ``recurrent_state_bytes`` (R4). They are absent from this
-suite rather than asserted against an invented field name; both R3 and
-R6 still surface here indirectly, as the kv figure they distort.
+The three quantities that had no assay surface to assert against when
+this module was written — ``attention_layers`` and
+``serving_block_count`` (R3/R6) and ``recurrent_state_bytes`` (R4) —
+have one now and are asserted directly below, on the two vectors whose
+evidence states them.
 """
 
 import hashlib
@@ -37,7 +40,7 @@ import pathlib
 import pytest
 
 from assay.backends.ollama import OllamaNative
-from assay.geometry import kv_bytes_per_token, plan_window
+from assay.geometry import kv_bytes_per_token, plan_window, serving_block_count
 
 DATA = pathlib.Path(__file__).resolve().parent / "data" / "gguf_geometry_v1"
 
@@ -154,6 +157,45 @@ def test_expert_fields_conform(vec):
     assert info.expert_used_count == experts["used"]
 
 
+def stating(field: str) -> list:
+    """The vectors whose ``expected`` block states ``field``.
+
+    A vector states a quantity only where its evidence measured one, so
+    each rule below is asserted exactly on the corpus that carries it —
+    never on a default standing in for a measurement.
+    """
+    return [v for v in VECTORS if field in v["expected"]]
+
+
+@pytest.mark.parametrize("vec", stating("attention_layers"), ids=lambda v: v["id"])
+def test_attention_layer_count_conforms(vec):
+    """R3: the layers that own a kv cache, never the raw block count."""
+    info = vector_backend(vec).model_info()
+
+    assert info.attention_layer_count == vec["expected"]["attention_layers"]
+
+
+@pytest.mark.parametrize("vec", stating("serving_block_count"), ids=lambda v: v["id"])
+def test_serving_block_count_conforms(vec):
+    """R6: MTP layers are counted by the converter and do not serve."""
+    info = vector_backend(vec).model_info()
+    serving = serving_block_count(info.block_count, info.mtp_layer_count)
+
+    banned = vec.get("must_not_equal", {}).get("serving_block_count", [])
+    assert serving not in banned, (
+        f"banned historical value: {vec.get('must_not_equal', {}).get('note')}"
+    )
+    assert serving == vec["expected"]["serving_block_count"]
+
+
+@pytest.mark.parametrize("vec", stating("recurrent_state_bytes"), ids=lambda v: v["id"])
+def test_recurrent_state_conforms(vec):
+    """R4: the ssm term is charged per context, never defaulted to 0."""
+    info = vector_backend(vec).model_info()
+
+    assert info.recurrent_state_bytes == vec["expected"]["recurrent_state_bytes"]
+
+
 def window_scenarios():
     for vec in VECTORS:
         for index, scenario in enumerate(vec["expected"].get("windows", [])):
@@ -206,10 +248,21 @@ def test_the_suite_actually_covers_the_frozen_set():
     Pins the counts the vendored set carries: 10 vectors, one of them the
     R8 refusal, and the three window scenarios. If a re-vendor changes
     them, this fails and the numbers are re-read deliberately.
+
+    The per-rule selections are pinned for the same reason: each of R3,
+    R4 and R6 is stated by exactly the two hybrid vectors, and a
+    selection that silently emptied would report green having asserted
+    nothing about the rule it names.
     """
     assert len(VECTORS) == 10
     assert sum(1 for v in VECTORS if v["expected"].get("refuses")) == 1
     assert len(list(window_scenarios())) == 3
+    assert len(stating("attention_layers")) == 2
+    assert len(stating("serving_block_count")) == 2
+    assert len(stating("recurrent_state_bytes")) == 2
+    assert sum(
+        1 for v in VECTORS if "serving_block_count" in v.get("must_not_equal", {})
+    ) == 1
 
 
 def test_the_mutation_harness_still_aims_at_real_lines():
@@ -232,7 +285,7 @@ def test_the_mutation_harness_still_aims_at_real_lines():
     spec.loader.exec_module(module)
 
     cases = module.cases(repo)
-    assert len(cases) == 10, "a mutant was added or dropped — say so deliberately"
+    assert len(cases) == 13, "a mutant was added or dropped — say so deliberately"
     for label, path, original, mutant, selection in cases:
         assert path.is_file(), f"{label}: target {path} is gone"
         assert path.read_text().count(original) == 1, (

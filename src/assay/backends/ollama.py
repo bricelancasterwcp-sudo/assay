@@ -29,6 +29,11 @@ from assay.backends.base import (
     validate_reply,
 )
 from assay.errors import ContractViolation, InfrastructureError
+from assay.geometry import (
+    attention_layer_count,
+    recurrent_state_bytes,
+    serving_block_count,
+)
 
 HttpPost = Callable[[str, dict], tuple[int, dict]]  # (url, payload) -> (status, body)
 HttpGet = Callable[[str], tuple[int, dict]]
@@ -116,6 +121,47 @@ def _head_dim(arch_info: dict) -> int | None:
     if embedding_length is None or not head_count:
         return None
     return embedding_length // head_count
+
+
+def _layer_geometry(
+    arch_info: dict,
+) -> tuple[int | None, int | None, int | None, int | None]:
+    """(block_count, attention_layer_count, mtp_layer_count, recurrent_bytes).
+
+    Reads the keys; ``geometry.py`` owns the rules they feed, in the
+    order they compose — R6 takes the MTP layers off the raw block
+    count, R3 divides what serves by the stated attention interval, and
+    R4 sizes the layers that are left, which are the recurrent ones.
+
+    When the file states an interval this implementation cannot apply,
+    the raw block count is WITHHELD along with the derived one.
+    ``kv_bytes_per_token`` falls back to ``block_count`` when no
+    attention count was derived — correct for a dense file, which states
+    no interval — so reporting the raw count for a file that states one
+    would route it straight into the all-blocks charge R3 exists to
+    forbid. Unmeasurable, and reported as such (R8): ``plan_window``
+    then returns None and the run records the geometry as unavailable.
+    """
+    block_count = _arch_value(arch_info, "block_count")
+    mtp_layer_count = _arch_value(arch_info, "nextn_predict_layers")
+    serving = serving_block_count(block_count, mtp_layer_count)
+    attention = attention_layer_count(
+        serving, _arch_value(arch_info, "full_attention_interval")
+    )
+    if attention is None:
+        return None, None, mtp_layer_count, None
+    return (
+        block_count,
+        attention,
+        mtp_layer_count,
+        recurrent_state_bytes(
+            serving - attention,
+            conv_kernel=_arch_value(arch_info, "ssm.conv_kernel"),
+            state_size=_arch_value(arch_info, "ssm.state_size"),
+            group_count=_arch_value(arch_info, "ssm.group_count"),
+            inner_size=_arch_value(arch_info, "ssm.inner_size"),
+        ),
+    )
 
 
 class OllamaNative:
@@ -259,13 +305,16 @@ class OllamaNative:
         arch_info = arch_info if isinstance(arch_info, dict) else {}
         details = show.get("details")
         details = details if isinstance(details, dict) else {}
+        block_count, attention_layers, mtp_layers, recurrent_bytes = (
+            _layer_geometry(arch_info)
+        )
 
         return ModelInfo(
             name=self.model,
             quant=details.get("quantization_level"),
             weights_bytes=self._weights_bytes(),
             training_ctx=_arch_value(arch_info, "context_length"),
-            block_count=_arch_value(arch_info, "block_count"),
+            block_count=block_count,
             kv_head_count=_arch_value(arch_info, "attention.head_count_kv"),
             head_dim=_head_dim(arch_info),
             loaded=self._loaded(),
@@ -274,6 +323,12 @@ class OllamaNative:
             # and keeps both None (never 0 — see ModelInfo).
             expert_count=_arch_value(arch_info, "expert_count"),
             expert_used_count=_arch_value(arch_info, "expert_used_count"),
+            # Hybrid layer geometry (R3/R4/R6). A dense file states none
+            # of these keys and lands on the dense identity: every block
+            # an attention layer, no MTP layer, no recurrent state.
+            attention_layer_count=attention_layers,
+            recurrent_state_bytes=recurrent_bytes,
+            mtp_layer_count=mtp_layers,
         )
 
     def _is_this_model(self, entry) -> bool:

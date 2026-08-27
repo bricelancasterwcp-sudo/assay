@@ -15,6 +15,7 @@ import pytest
 
 from dataclasses import replace
 
+from assay.backends.base import ModelInfo
 from assay.backends.ollama import OllamaNative, _arch_value
 from assay.geometry import plan_window
 
@@ -47,6 +48,29 @@ def sweep_backend(name: str) -> OllamaNative:
 
     return OllamaNative("http://sweep", name, http_post=http_post,
                         http_get=http_get)
+
+
+def sweep_info(name: str) -> ModelInfo:
+    """The sweep's ModelInfo, read the way the sweep's probe read it.
+
+    Every profile the sweep classifies predates the 2026-08-27
+    hybrid-geometry fix (R3/R4/R6), so its kv figures charge every RAW
+    block as an attention layer and charge nothing for recurrent state.
+    On 17 of the sweep's 18 models that is exactly today's derivation and
+    this is the identity; `qwen3.8:27b` is the exception — 65 raw blocks,
+    `qwen35.full_attention_interval: 4`, `qwen35.nextn_predict_layers: 1`
+    and a full `ssm.*` set — and its committed figures therefore carry a
+    hybrid over-charge underneath the E1 head_dim defect this module is
+    about. That second defect is filed beside the profiles
+    (`tier-enthusiast-2026-08/ERRATA.md`, 2026-08-27) and pinned as
+    arithmetic in `test_the_sweeps_hybrid_row_carries_a_second_defect`.
+    Reproducing an E1 claim under a derivation the E1 run never used
+    would measure the wrong thing; the committed numbers are not edited
+    to suit the fix.
+    """
+    info = sweep_backend(name).model_info()
+    return replace(info, attention_layer_count=info.block_count,
+                   recurrent_state_bytes=0)
 
 
 def row_loaded(row: dict) -> bool:
@@ -169,7 +193,7 @@ def test_each_affected_row_is_checked_against_the_profile_itself(row):
     # Identity gate part 1: today's blob is the committed blob.
     assert record["tags_entry"]["size"] == profile["model"]["weights_bytes"]
 
-    info = sweep_backend(row["model"]).model_info()
+    info = sweep_info(row["model"])
     loaded = row_loaded(row)
     conditions = dict(vram_free_mib=geometry["vram_free_mib"],
                       user_cap=None)
@@ -256,6 +280,49 @@ def test_the_confirmed_erratum_rows_replayed_to_their_published_figures():
         "window_shortfall_pct_of_committed_promise"] == 16.8
 
 
+def test_the_sweeps_hybrid_row_carries_a_second_defect():
+    """One sweep row is a hybrid, and its corrected kv is still wrong.
+
+    The sweep corrected `qwen3-8-27b.json`'s head_dim (216 -> 260
+    KiB/token) and stopped there, because head_dim was all it was
+    looking at. The same metadata states `full_attention_interval: 4`,
+    `nextn_predict_layers: 1` and a full `ssm.*` set, so BOTH published
+    figures charge 65 attention layers where 16 serve, and neither
+    carries R4's recurrent term at all. Pinned here as arithmetic — off
+    the committed capture, through today's extractor — so the erratum
+    filed beside the profiles is checkable rather than assertable, and
+    so a re-measurement has a number to disagree with.
+
+    The 260 figure stands as published; what is recorded here is that it
+    is the all-blocks derivation, not this model's kv geometry.
+    """
+    row = next(r for r in affected_rows()
+               if r["file"] == "tier-enthusiast/qwen3-8-27b.json")
+    assert row["corrected"]["kv_kib_per_token"] == 260
+
+    info = sweep_backend(row["model"]).model_info()
+
+    assert info.block_count == 65        # as the file states it
+    assert info.mtp_layer_count == 1     # R6: 64 serving blocks
+    assert info.attention_layer_count == 16  # R3: 64 // 4
+    assert info.recurrent_state_bytes == 156_893_184  # R4, 48 recurrent layers
+
+    conforming = plan_window(replace(info, loaded=True), vram_free_mib=1_552,
+                             user_cap=None)
+    published = plan_window(replace(sweep_info(row["model"]), loaded=True),
+                            vram_free_mib=1_552, user_cap=None)
+
+    assert published.kv_kib_per_token == 260
+    assert conforming.kv_kib_per_token == 64
+    assert published.kv_kib_per_token / conforming.kv_kib_per_token == 4.0625
+    assert conforming.recurrent_state_bytes == 156_893_184
+    # ...and R4's term is missing from the committed file itself, not
+    # merely absent from this replay: the schema it was written under had
+    # no such field, so the charge was never made.
+    profile = json.loads((EVIDENCE / row["file"]).read_text())
+    assert "recurrent_state_bytes" not in profile["geometry"]
+
+
 def test_the_inconsistent_row_is_residency_not_a_wrong_profile():
     """The gate failure is real, its explanation is checked, and the
     row was not forced into a bucket.
@@ -276,7 +343,7 @@ def test_the_inconsistent_row_is_residency_not_a_wrong_profile():
     geometry = profile["geometry"]
     record = RESULTS["models"][row["model"]]
     assert record["stated_key_length"] is None
-    info = sweep_backend(row["model"]).model_info()
+    info = sweep_info(row["model"])
     assert info.head_dim == record["derived_head_dim"]
     conditions = dict(vram_free_mib=geometry["vram_free_mib"],
                       user_cap=None)
