@@ -194,8 +194,9 @@
         "head_dim": 192,
         "head_dim_source": "deepseek2.attention.key_length",
         "head_dim_if_derived": 128,
-        "kv_bytes_per_token": 331776,
-        "kv_kib_per_token": 324,
+        "kv_bytes_per_token": 276480,
+        "kv_kib_per_token": 270,
+        "r9_repin_2026_08_28": "kv/window re-pinned per R9 (MLA, separate K/V widths) and erratum E3 (docs/superpowers/evidence/tier-enthusiast/ERRATA.md): 331776 B (324 KiB) was R2 arithmetic (2x head_dim) over stated key_length, never an observed allocation. Measured 276480 B (270 KiB), exact and identical at 3 ctx points, docs/superpowers/evidence/mla-kv-2026-08-27/ (verdict H-b).",
         "quant": "Q5_K_M",
         "training_ctx": 163840,
         "tags_entry": {
@@ -207,7 +208,7 @@
         "measured_geometry": {
           "loaded": true,
           "vram_free_mib": 1220,
-          "usable_window": 2237,
+          "usable_window": 2685,
           "limited_by": "vram"
         },
         "v14_profile": {
@@ -218,12 +219,12 @@
           "limited_by": "vram"
         },
         "v16_recomputed_under_v14_conditions": {
-          "kv_kib_per_token": 324,
-          "usable_window": 5394,
+          "kv_kib_per_token": 270,
+          "usable_window": 6473,
           "limited_by": "vram",
           "kv_bytes_per_token_if_derived": 221184,
-          "window_shortfall_pct_of_v14_promise": 33.3,
-          "kv_excess_pct_over_v14": 50.0
+          "window_shortfall_pct_of_v14_promise": 20.0,
+          "kv_excess_pct_over_v14": 25.0
         }
       },
       {

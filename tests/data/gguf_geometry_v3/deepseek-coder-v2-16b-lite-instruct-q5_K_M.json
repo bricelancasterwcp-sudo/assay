@@ -1,0 +1,36 @@
+{
+  "id": "deepseek-coder-v2-16b-lite-instruct-q5_K_M",
+  "source": {
+    "gguf_sha256": "bc286970a24072cf23a4c905f28adb9f6a28c71743b07790185275a86dc72406",
+    "provenance": "assay docs/superpowers/evidence/e1-sweep/show-deepseek-coder-v2-16b-lite-instruct-q5_K_M.json + results.json (captured 2026-08-17 from ollama 0.32.13; protocol docs/superpowers/evidence/e1-sweep/PROTOCOL.md) classifies this model AFFECTED (stated deepseek2.attention.key_length 192 vs derived 2048//16 = 128), direction window-over-promised, window_shortfall_pct_of_committed_promise 33.3 (usable_window 8092 -> 5394); the largest window over-promise in the sweep. Corrected kv 324 KiB/token per assay docs/superpowers/evidence/tier-enthusiast/ERRATA.md (erratum E1) ('Confirmed affected profiles' table) and the e1-sweep profile row for tier-enthusiast/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json (committed 216 -> corrected 324); measured again on real hardware at probe 0.9.0 in docs/superpowers/evidence/tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json (geometry.kv_kib_per_token 324, expert_count 64, expert_used_count 6). The real-MoE case for R5: the expert fields are STATED here, and kv is expert-invariant (R2); 64/6 must not leak into the kv number. gguf_sha256 recovered 2026-08-27 from the Ollama store manifest's model-layer digest (/mnt/extra/ollama-models; content-addressed, spot-verified by sha256sum on the 1.5b blob). v2 addition (2026-08-27): deepseek2.attention.value_length 128 is now stated beside the deepseek2.attention.key_length 192 the v1 block already carried, both verbatim from that same show capture. This is an MLA architecture whose value head width differs from its key width, and a vector stating only one half of the pair hides that. expected does NOT move and was not re-derived: 331776 is assay's published, hardware-verified 324 KiB/token, which is R2's 2 * layers * head_count_kv * head_dim * bytes_per_element with R1's head_dim = key_length = 192 and the 2 standing for K and V — SPEC.md R1 and R2 consume key_length alone and state no rule for value_length != key_length. Stating the input does not license deriving an output here (design spec section 0: this repo computes no geometry), so the gap is left visible rather than closed by arithmetic nobody measured; closing it needs a rule and a measurement, not an edit to this file. v3 (2026-08-28): expected re-pinned per R9 — measured 276480 B/token under ollama 0.32.13 (llama runner, non-FA lens; assay docs/superpowers/evidence/mla-kv-2026-08-27/, protocol c379c9f -> captures cf6222e -> verdict d25af18, instrument 1 log lines); disproved candidates pinned. Exact and identical at all three measured ctx points (2048/4096/8192); the log's own K/V split independently reproduces both halves, K 165888 + V 110592 = 276480. This is the first time this vector's kv_bytes_per_token is an OBSERVED allocation rather than R2 arithmetic applied to stated metadata (the disproved 331776 was geometry.source api_show — metadata read, never a measured KV buffer). See SPEC.md R9 and docs/upstream-errata/2026-08-27-assay-deepseek-mla-kv-overcharge.md."
+  },
+  "metadata": {
+    "general.architecture": "deepseek2",
+    "deepseek2.block_count": 27,
+    "deepseek2.context_length": 163840,
+    "deepseek2.embedding_length": 2048,
+    "deepseek2.attention.head_count": 16,
+    "deepseek2.attention.head_count_kv": 16,
+    "deepseek2.attention.key_length": 192,
+    "deepseek2.attention.value_length": 128,
+    "deepseek2.expert_count": 64,
+    "deepseek2.expert_used_count": 6
+  },
+  "expected": {
+    "kv_bytes_per_token": 276480,
+    "experts": {
+      "count": 64,
+      "used": 6
+    }
+  },
+  "must_not_equal": {
+    "kv_bytes_per_token": [
+      221184,
+      331776,
+      31104,
+      62208
+    ],
+    "note": "E1: embedding//head_count head_dim; corrected by R1 key_length rule; MLA candidates disproved by measurement (assay mla-kv-2026-08-27): 331776 (k-width for both K and V — the v1/v2 pin), 31104 (MLA latent), 62208 (MLA latent, transposed copy) — see SPEC R9 and docs/upstream-errata/2026-08-27-assay-deepseek-mla-kv-overcharge.md"
+  },
+  "verification": "hardware-verified"
+}

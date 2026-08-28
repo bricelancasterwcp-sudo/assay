@@ -164,3 +164,113 @@ Derived under this profile's own recorded `vram_free_mib` (1552) and
 residency, not re-measured on hardware. E1's table and percentages are
 left exactly as filed: they are correct statements about the head_dim
 defect, which is the thing they were computed to measure.
+
+---
+
+## E3 — deepseek2 MLA: kv was R2 arithmetic, not an observed allocation
+
+**Filed** 2026-08-28 · **Affects**
+[`deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`](deepseek-coder-v2-16b-lite-instruct-q5_K_M.json)
+in this directory and, in the neighbouring directory,
+[`../tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`](../tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json)
+· **Fixed in** branch `mla-kv-rule`, unreleased (SPEC.md rule R9,
+`src/assay/geometry.py`'s R9 branch) · **Evidence**
+[`../mla-kv-2026-08-27/`](../mla-kv-2026-08-27/) — protocol `c379c9f`
+(pre-registered before any capture), captures `cf6222e`, verdict
+`d25af18` · **Contract** gguf-geometry `SPEC.md` rule R9, whose vectors
+are vendored at `../../../../tests/data/gguf_geometry_v3/` (v3, from
+that repo's master `84f042b`; deepseek re-pinned, the other ten vectors
+carried forward byte-identical from v2).
+
+### What was published
+
+`324 KiB/token`, `source: api_show`. This is E1's own correction above —
+the row that changed this model's `head_dim` from a derived 128 to the
+stated `deepseek2.attention.key_length` 192 — carried forward
+unquestioned into the tools-anchor replay
+(`../tools-anchor/results.json`) and into a fresh hardware run at probe
+0.9.0
+([`../tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`](../tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json),
+`assay_profile_version` 8), which published `geometry.kv_kib_per_token:
+324` carrying the same **hardware-verified** framing every other figure
+in that directory earns from having been measured on a live daemon. That
+framing was wrong about what kind of number 324 was: it is `2 x
+attention_layers x kv_head_count x head_dim x bytes/element` — R2's
+arithmetic, run against a metadata field the daemon states — and
+deepseek2 is an MLA architecture whose K and V caches are stated at
+**different** widths (`deepseek2.attention.key_length` 192 alongside
+`deepseek2.attention.value_length` 128, both present in the same show
+capture E1 already read half of). "Hardware-verified" described the
+*daemon connection*, not the *kv number*: nothing in the v1.4-through-0.9.0
+lineage ever read a KV-buffer allocation off the runtime for this model.
+It was R1/R2 metadata arithmetic that happened to run against a real
+daemon, republished at a newer probe version without becoming a
+different kind of claim.
+
+### What the measurement showed
+
+`docs/superpowers/evidence/mla-kv-2026-08-27/` reads ollama 0.32.13's
+own KV-buffer log lines under the llama runner (non-FA lens; this box)
+at three context points and finds **276,480 bytes/token (270
+KiB/token)**, exact and identical at 2048, 4096 and 8192 — the log's own
+K/V split (165,888 + 110,592 B/token) independently reproduces both
+stated widths digit for digit
+(`27 x 16 x 192 x 2 = 165,888`, `27 x 16 x 128 x 2 = 110,592`). Four
+candidates were pre-registered before any capture
+(`../mla-kv-2026-08-27/PROTOCOL.md`, committed `c379c9f`): `H-a` 331,776
+(the dense 2x-head_dim guess this repository's v1/v2 vector pinned),
+`H-b` 276,480 (separate K/V widths), `H-c` 31,104 and `H-c'` 62,208 (two
+MLA-latent readings). Exactly one candidate landed in the pre-registered
+±5% band — **H-b** — deviation from the measured figure **0.000%**. Full
+arithmetic and verbatim log lines:
+[`../mla-kv-2026-08-27/VERDICT.md`](../mla-kv-2026-08-27/VERDICT.md),
+[`READING.md`](../mla-kv-2026-08-27/READING.md).
+
+### Direction — the opposite sign from E1
+
+E1's dominant direction was window-over-promise: a `head_dim` read too
+small made every kv number too small and every window computed from it
+too large. E3 runs the other way. 324 KiB/token was an **over-charge**
+against the true 270, so every `usable_window` computed from it was
+**under-promised** — the daemon can serve more context than the
+published figure said, on both affected profiles:
+
+| profile | `kv_kib_per_token` published | `usable_window` published (own conditions) | conforming `kv_kib_per_token` | conforming `usable_window` (same conditions) |
+|---|---|---|---|---|
+| [`deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`](deepseek-coder-v2-16b-lite-instruct-q5_K_M.json) (this dir, v1.4 committed 216; E1-corrected 324 at `vram_free_mib` 2219, per `../tools-anchor/results.json`'s `v16_recomputed_under_v14_conditions`) | 324 | 5394 | **270** | **6473** |
+| [`../tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`](../tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json) (probe 0.9.0, published as measured, `vram_free_mib` 3414) | 324 | 9171 | **270** | **11006** |
+
+Both conforming columns are derived under each profile's own recorded
+`vram_free_mib` and residency, through today's extractor
+(`OllamaNative.model_info()` -> `geometry.py`'s R9 branch) — not
+re-measured a second time on hardware; the 276,480 B/token figure itself
+is the one hardware measurement this erratum rests on, and every window
+above is arithmetic over it. `docs/superpowers/evidence/e1-sweep/results.json`'s
+deepseek row carries the same re-pin (`corrected.kv_kib_per_token: 270`,
+`corrected.usable_window: 6473`, `window_shortfall_pct_of_committed_promise:
+20.0`, down from 33.3 — the shortfall itself shrank, because less of
+E1's original head_dim promise turns out to have been wrong).
+
+### What is NOT wrong
+
+`deepseek-r1-14b.json`, the other deepseek-family profile in both
+directories, is unaffected: its architecture states no
+`attention.value_length` distinct from its `key_length`, so R9 never
+fires for it and its kv figure (192 KiB/token) is unchanged. Nothing
+outside `geometry.kv_kib_per_token` and the `usable_window` it feeds
+moves for either affected profile — `expert_count`/`expert_used_count`
+(64/6) are unaffected, kv is expert-invariant by R2, unchanged by R9.
+
+### Corrected value
+
+| quantity | published | corrected |
+|---|---|---|
+| `kv_bytes_per_token` | 331,776 | **276,480** |
+| `kv_kib_per_token` | 324 | **270** |
+
+Both affected profiles stand exactly as committed — evidence is not
+rewritten to suit a later fix, per this file's own header. This erratum,
+`docs/superpowers/evidence/mla-kv-2026-08-27/`, and SPEC.md's R9 are the
+correction; `tests/test_geometry_conformance.py`'s vendored v3 vector and
+`tests/test_e1_sweep.py` / `tests/test_geometry.py`'s replay tests pin
+the corrected figures as checked arithmetic rather than prose.

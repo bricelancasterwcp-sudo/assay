@@ -694,11 +694,12 @@
     "vram_free_mib": 2219
    },
    "corrected": {
-    "kv_kib_per_token": 324,
-    "usable_window": 5394,
+    "kv_kib_per_token": 270,
+    "usable_window": 6473,
     "limited_by": "vram",
-    "window_shortfall_pct_of_committed_promise": 33.3
-   }
+    "window_shortfall_pct_of_committed_promise": 20.0
+   },
+   "r9_repin_2026_08_28": "kv/window re-pinned per R9 (MLA, separate K/V widths) and erratum E3 (docs/superpowers/evidence/tier-enthusiast/ERRATA.md): 324 KiB/token was R2 arithmetic over stated key_length, never an observed allocation. Measured 270 KiB/token, docs/superpowers/evidence/mla-kv-2026-08-27/ (verdict H-b)."
   },
   {
    "file": "tier-enthusiast/deepseek-r1-14b.json",

@@ -199,7 +199,10 @@ def test_each_affected_row_is_checked_against_the_profile_itself(row):
                       user_cap=None)
 
     derived_geo = plan_window(
-        replace(info, head_dim=record["derived_head_dim"], loaded=loaded),
+        # era-faithful: the pre-R9 ModelInfo this replay simulates had no
+        # value_length field at all.
+        replace(info, head_dim=record["derived_head_dim"], value_length=None,
+                loaded=loaded),
         **conditions)
     assert derived_geo.kv_kib_per_token == geometry["kv_kib_per_token"]
     assert derived_geo.usable_window == geometry["usable_window"]
@@ -269,10 +272,15 @@ def test_the_confirmed_erratum_rows_replayed_to_their_published_figures():
     by_file = {r["file"]: r for r in affected_rows()}
     deepseek = by_file[
         "tier-enthusiast/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json"]
-    assert deepseek["corrected"]["kv_kib_per_token"] == 324
-    assert deepseek["corrected"]["usable_window"] == 5394
+    # Re-pinned 2026-08-28 per R9 + erratum E3: 324 KiB/token was R2
+    # arithmetic (2x head_dim) applied to a stated key_length, never an
+    # observed allocation; the measured figure (mla-kv-2026-08-27,
+    # verdict H-b) is 270 KiB/token, and this row's own conditions
+    # recompute the window that follows from it.
+    assert deepseek["corrected"]["kv_kib_per_token"] == 270
+    assert deepseek["corrected"]["usable_window"] == 6473
     assert deepseek["corrected"][
-        "window_shortfall_pct_of_committed_promise"] == 33.3
+        "window_shortfall_pct_of_committed_promise"] == 20.0
     qwen35 = by_file["tier-enthusiast/qwen3-8-27b.json"]
     assert qwen35["corrected"]["kv_kib_per_token"] == 260
     assert qwen35["corrected"]["usable_window"] == 4096

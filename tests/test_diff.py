@@ -1356,6 +1356,38 @@ def test_a_cell_with_no_registered_break_never_straddles():
     assert not _straddles("speed.decode_tps", "0.1.0", "0.11.0")
 
 
+def test_a_geometry_kv_break_straddles_r9():
+    """R9 (MLA, separate widths) changed what `geometry.kv_kib_per_token`
+    means for a deepseek2-class file whose stated `value_length` differs
+    from its `head_dim`: the same endpoint, a different rule (erratum
+    E3, docs/superpowers/evidence/tier-enthusiast/ERRATA.md — 324
+    KiB/token was R2 arithmetic on stated metadata, never an observed
+    allocation; 270 KiB/token is the measured figure, H-b,
+    docs/superpowers/evidence/mla-kv-2026-08-27/).
+
+    No diff family reads `geometry.*` cells today — `_diff_ceiling`,
+    `_diff_shapes`, `_diff_verdicts`, `_diff_codecs` and `_diff_speed`
+    are the only five, and none of them touches the `geometry` family at
+    all (CARRIED-DEBT.md's top "unreleased" section, item 2, and v1.10
+    "Diff" item 1: only `_diff_verdicts` ever consults
+    `SEMANTIC_BREAKS`). So this test pins the registry + `_straddles`
+    contract the row is actually responsible for today, not an
+    end-to-end `diff_profiles` claim the missing wiring cannot make —
+    adding that wiring is a separate, still-open piece of work.
+    """
+    from assay.diff import _straddles
+
+    assert _straddles("geometry.kv_kib_per_token", "0.12.0", "0.13.0")
+    # Order does not matter: an upgrade and a downgrade are equally
+    # incomparable, because the two documents still answer different
+    # questions.
+    assert _straddles("geometry.kv_kib_per_token", "0.13.0", "0.12.0")
+    # Both sides under the same rule, either side of the break: no
+    # straddle.
+    assert not _straddles("geometry.kv_kib_per_token", "0.13.0", "0.13.0")
+    assert not _straddles("geometry.kv_kib_per_token", "0.10.0", "0.11.0")
+
+
 def test_an_unknown_instrument_straddles_every_break():
     """Absence is not evidence of sameness. "We could not establish
     which rule produced this" must resolve to NOT comparable, never to

@@ -71,7 +71,7 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
     ollama = root / "src/assay/backends/ollama.py"
     geometry = root / "src/assay/geometry.py"
     testfile = root / TESTMOD
-    data = root / "tests/data/gguf_geometry_v2"
+    data = root / "tests/data/gguf_geometry_v3"
 
     return [
         (
@@ -140,8 +140,8 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
         (
             "M8 vendored MANIFEST edited (sha pin)",
             data / "MANIFEST.json",
+            '"set_version": "v3"',
             '"set_version": "v2"',
-            '"set_version": "v1"',
             [f"{TESTMOD}::test_vendored_manifest_is_pinned"],
         ),
         (
@@ -165,8 +165,8 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
             # refused before anything is edited.
             "M10 a harness case's mutant equals its original (no-op-mutant guard)",
             root / "scripts/mutate_geometry_conformance.py",
-            '"set_version": ' + '"v1"',
-            '"set_version": "v2"',
+            '"set_version": ' + '"v2"',
+            '"set_version": "v3"',
             [f"{TESTMOD}::test_the_mutation_harness_still_aims_at_real_lines"],
         ),
         (
@@ -206,6 +206,34 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
             "    per_layer = conv_state + state_size * inner_size\n",
             "    per_layer = state_size * inner_size\n",
             [f"{TESTMOD}::test_recurrent_state_conforms"],
+        ),
+        (
+            # R9 (MLA, separate widths), guard flip. deepseek's vector is
+            # the only one of the 11 whose stated value_length (128)
+            # differs from its head_dim (192) — the only vector this
+            # branch touches — so it is the whole selection.
+            "M14 R9 guard: flip != to == (MLA, separate widths)",
+            geometry,
+            "    if info.value_length is not None and "
+            "info.value_length != info.head_dim:\n",
+            "    if info.value_length is not None and "
+            "info.value_length == info.head_dim:\n",
+            [
+                f"{TESTMOD}::test_kv_interpretation_conforms"
+                "[deepseek-coder-v2-16b-lite-instruct-q5_K_M]"
+            ],
+        ),
+        (
+            "M15 R9 sum: drop the + info.value_length term (MLA)",
+            geometry,
+            "        return layers * info.kv_head_count * "
+            "(info.head_dim + info.value_length) * (kv_bits // 8)\n",
+            "        return layers * info.kv_head_count * "
+            "(info.head_dim) * (kv_bits // 8)\n",
+            [
+                f"{TESTMOD}::test_kv_interpretation_conforms"
+                "[deepseek-coder-v2-16b-lite-instruct-q5_K_M]"
+            ],
         ),
     ]
 

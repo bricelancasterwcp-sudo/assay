@@ -1,32 +1,55 @@
-"""gguf-geometry v2 conformance: assay's extraction against the contract.
+"""gguf-geometry v3 conformance: assay's extraction against the contract.
 
-The vectors under ``tests/data/gguf_geometry_v2/`` are a vendored,
-sha-pinned copy of the current v2 set, taken byte-for-byte from
-gguf-geometry master ``7f858c8`` on 2026-08-27 (rules R1-R8 in that
-repo's SPEC.md). Every ``expected`` value in them was measured on real
-hardware and cited there; nothing in this file computes geometry, and
-nothing here may be edited to make a red go green — a red is a
-divergence between assay and the contract, i.e. a work order.
+The vectors under ``tests/data/gguf_geometry_v3/`` are a vendored,
+sha-pinned copy of the current v3 set, taken byte-for-byte from
+gguf-geometry master ``84f042b`` (pushed, public CI green, run
+33163833319), vendored 2026-08-28. Every ``expected`` value in them was
+measured on real hardware and cited there; nothing in this file computes
+geometry, and nothing here may be edited to make a red go green — a red
+is a divergence between assay and the contract, i.e. a work order.
 
 One set is vendored, not a pile of them: that repo's consumer model is a
-single current directory, and v2 contains v1's content — eight of v1's
-ten vectors carried forward with identical shas, two (gemma-4,
-deepseek-coder-v2) stating metadata keys their v1 copies cited but
-omitted with no ``expected`` value moved, plus the eleventh,
-``qwen3.8-27b``. So ``tests/data/gguf_geometry_v1/`` was deleted in the
-same commit that added this set; nothing it asserted stopped being
-asserted.
+single current directory. v3 carries all ten of v2's other vectors
+forward byte-identical (same shas — verified by the manifest pin below)
+and re-pins exactly one: ``deepseek-coder-v2-16b-lite-instruct-q5_K_M``,
+whose ``kv_bytes_per_token`` moves from 331776 (R2 arithmetic: 2 x
+head_dim, guessed from stated metadata, never observed) to 276480 (R9:
+the measured allocation — deepseek2 is an MLA architecture whose K and V
+caches are stated at different widths, ``attention.key_length`` 192 and
+``attention.value_length`` 128, and the runtime materialises both at
+their own width rather than symmetrically at the K width). So
+``tests/data/gguf_geometry_v2/`` was deleted in the same commit that
+added this set; nothing it asserted stopped being asserted — the one
+vector that changed changed because the number it pinned was wrong, not
+because the contract stopped caring about it.
 
-``qwen3.8-27b`` is the case v1 withheld, and it is this repository's own
-defect coming back as a contract: the published 260 KiB/token figure it
-bans (266240 bytes, all 65 raw blocks charged) is what
-``docs/superpowers/evidence/tier-enthusiast-2026-08/`` carried until
-erratum E2, and its ``expected`` values are what assay's fixed extractor
-read live off the daemon holding that blob
-(``docs/superpowers/evidence/qwen38-27b-live-2026-08-27/``). It passed
-on the first run of this suite against the v2 set, with no change to any
-production module — the vector arriving from outside and landing on the
-numbers assay already produces is the point of vendoring it.
+The re-pin is grounded in a real measurement, not a second guess:
+``docs/superpowers/evidence/mla-kv-2026-08-27/`` (protocol c379c9f,
+captures cf6222e, verdict d25af18) reads ollama 0.32.13's own KV-buffer
+log lines under the llama runner at three context points (2048/4096/
+8192) and finds 276,480 bytes/token exact and identical at all three,
+with the K/V split (165,888 + 110,592) independently reproducing both
+halves digit for digit. The verdict is H-b — separate K and V widths —
+against a pre-registered band test, and it is what SPEC.md's R9 and
+``src/assay/geometry.py``'s R9 branch implement. Erratum E3
+(``docs/superpowers/evidence/tier-enthusiast/ERRATA.md``) files the
+correction against the two committed profiles that published the old
+331776/324 KiB figure; the profiles themselves are left exactly as
+measured.
+
+The deepseek vector now conforms through the production seam with NO
+test-side mapping: this module still only drives
+``OllamaNative.model_info()`` followed by ``geometry.py`` — nothing here
+computes geometry or special-cases MLA. That the vector actually bites
+was proven by construction, not merely claimed: Task 7 (commit
+``d2c8e13``, this branch) landed the R9 branch in ``geometry.py`` and
+ran the full suite before this vendor step touched the conformance
+directory at all — the OLD conformance suite, still pinned to the v2
+vector's 331776, went red against the NEW R9 code
+(``tests/test_geometry_conformance.py::test_kv_interpretation_conforms[deepseek-coder-v2-16b-lite-instruct-q5_K_M]``,
+recorded in this branch's Task 7 report). That is the vector catching a
+real divergence in the wild, before this commit ever re-pinned it to
+agree.
 
 Each vector's ``metadata`` block IS the ``model_info`` object Ollama's
 /api/show returns, so the code under test is assay's own interpretation
@@ -36,7 +59,7 @@ implementation of the contract, and this suite would then be measuring
 the test rather than assay. No daemon, no GPU, no network: the transport
 is replaced, the interpretation is not.
 
-Reds at authoring time (2026-08-27), both hybrid vectors:
+Reds at v2's authoring time (2026-08-27), both hybrid vectors:
 ``qwen3.6-35b-a3b-reap48-ours-q4km`` (R3: every block charged as an
 attention layer where ``full_attention_interval`` says 1 in 4 is) and
 ``qwen3.6-35b-a3b-reap48-mtp-trap`` (R3 + R6: the MTP layer counted as a
@@ -44,13 +67,16 @@ serving block). Both were divergences in ``geometry.py``, which had no
 hybrid handling at all, and both were closed by a real assay change —
 ``ModelInfo.attention_layer_count`` / ``mtp_layer_count`` /
 ``recurrent_state_bytes`` and the rules behind them — never by a test
-change.
+change. v3 carries both vectors forward unchanged (neither states a
+``value_length`` that differs from its ``head_dim``, so R9 does not
+touch them — see each vector's own ``metadata``).
 
 The three quantities that had no assay surface to assert against when
 this module was written — ``attention_layers`` and
 ``serving_block_count`` (R3/R6) and ``recurrent_state_bytes`` (R4) —
 have one now and are asserted directly below, on the three vectors whose
-evidence states them (two under v1, and ``qwen3.8-27b`` as of v2).
+evidence states them (two under v1, and ``qwen3.8-27b`` as of v2, all
+three carried into v3 unchanged).
 """
 
 import hashlib
@@ -63,10 +89,10 @@ import pytest
 from assay.backends.ollama import OllamaNative
 from assay.geometry import kv_bytes_per_token, plan_window, serving_block_count
 
-DATA = pathlib.Path(__file__).resolve().parent / "data" / "gguf_geometry_v2"
+DATA = pathlib.Path(__file__).resolve().parent / "data" / "gguf_geometry_v3"
 
 VENDORED_MANIFEST_SHA = (
-    "06da801b5dc57fedbfd42555c377c1cd3b6b8fb3c549cd2d367396447fc15116"
+    "c4d5c22d99e658e21d7197fffe915969a9a1d1fe62683a9c3e7d85b884798e4b"
 )
 """sha256 of the vendored MANIFEST.json, pinned at vendoring.
 
@@ -135,7 +161,7 @@ def test_the_vendored_copy_is_the_set_the_manifest_names():
     beside the frozen ones.
     """
     manifest = json.loads((DATA / "MANIFEST.json").read_text())
-    assert manifest["set_version"] == "v2"
+    assert manifest["set_version"] == "v3"
     on_disk = {path.name for path in DATA.glob("*.json")} - {"MANIFEST.json"}
     assert on_disk == set(manifest["files"])
     for name, expected_sha in manifest["files"].items():
@@ -310,7 +336,7 @@ def test_the_mutation_harness_still_aims_at_real_lines():
     spec.loader.exec_module(module)
 
     cases = module.cases(repo)
-    assert len(cases) == 13, "a mutant was added or dropped — say so deliberately"
+    assert len(cases) == 15, "a mutant was added or dropped — say so deliberately"
     for label, path, original, mutant, selection in cases:
         assert path.is_file(), f"{label}: target {path} is gone"
         assert path.read_text().count(original) == 1, (

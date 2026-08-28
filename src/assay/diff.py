@@ -142,6 +142,27 @@ SEMANTIC_BREAKS: dict[str, tuple[int, ...]] = {
     # the verdict derived from it — can differ for an endpoint that did
     # not change at all.
     "verdict.parallel": (0, 11, 0),
+    # R9 (unreleased on this tree, __version__ 0.13.0): a deepseek2-class
+    # MLA file whose stated `attention.value_length` differs from its
+    # `head_dim` stopped computing `kv_bytes_per_token` as 2x head_dim
+    # (R2 arithmetic over stated metadata) and started computing the
+    # explicit K+V sum at each width — the same endpoint, a different
+    # rule (erratum E3, docs/superpowers/evidence/tier-enthusiast/
+    # ERRATA.md: published 324 KiB/token was never an observed
+    # allocation; measured 270 KiB/token, H-b,
+    # docs/superpowers/evidence/mla-kv-2026-08-27/). No release has
+    # shipped this yet — CARRIED-DEBT.md still carries the schema/package
+    # version bump this change owes as open debt — so this row is keyed
+    # at the version literal the tree currently reads rather than a
+    # number that does not exist yet; whichever release ships R9 also
+    # owns moving this key to that release's own version, the same way
+    # it owns the bump. `geometry.*` has no diff-family wiring at all
+    # today (see this table's own comment above: only `_diff_verdicts`
+    # consults this registry, and CARRIED-DEBT.md's v1.10 "Diff" item 1
+    # names the gap), so `_straddles` is this row's only consumer until
+    # that wiring lands — it type-checks and sits ready rather than
+    # silently comparing two documents that measured different things.
+    "geometry.kv_kib_per_token": (0, 13, 0),
 }
 
 

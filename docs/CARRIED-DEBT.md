@@ -42,13 +42,31 @@ by that release, not by more work on the branch.
    moment `PROFILE_VERSION` moves so that whoever bumps it reads this
    item.
 
-2. **`SEMANTIC_BREAKS` row for `geometry.kv_kib_per_token`.** Same
+2. ~~**`SEMANTIC_BREAKS` row for `geometry.kv_kib_per_token`.** Same
    release, same reason. Not written on the branch because the registry
    is keyed by release version and the branch has none, and because its
    only consumer is `_diff_verdicts` (v1.10 Diff item 1 below), so a
    `geometry.*` row would type-check and sit unread — this item
    compounds with that one: writing the row is not enough without the
-   wiring item 1 of the v1.10 section describes.
+   wiring item 1 of the v1.10 section describes.~~
+
+   **CLOSED 2026-08-28**, ahead of the release this item said it was
+   waiting for. The row is written (`src/assay/diff.py`'s
+   `SEMANTIC_BREAKS`, `"geometry.kv_kib_per_token": (0, 13, 0)`) and
+   pinned by `tests/test_diff.py::test_a_geometry_kv_break_straddles_r9`
+   (TDD: red with the row absent, green once it landed). Keyed at the
+   version literal `__version__` currently reads, not at a release
+   number that does not exist — item 1's schema/package bump remains
+   open, and whichever release ships it also owns re-keying this row if
+   that release lands on a different number. **This item's own
+   "compounds with" clause still holds and is not closed by writing the
+   row**: the wiring gap (only `_diff_verdicts` consults the registry;
+   no diff family reads `geometry.*` at all) is v1.10 "Diff" item 1
+   below, unchanged, still open — `geometry.kv_kib_per_token` straddling
+   R9 is provable at the `_straddles` layer today and not yet at the
+   `diff_profiles` layer. What retired is narrower than the item's own
+   title promised: the row exists; the endpoint that would read it does
+   not yet.
 
 3. **A conforming hardware measurement of `qwen3.8:27b`.** The
    erratum's corrected figures (64 KiB/token, 156,893,184 bytes of
@@ -71,6 +89,75 @@ by that release, not by more work on the branch.
    gguf-geometry master `7f858c8` on 2026-08-27, superseding the v1 set
    vendored earlier that day) and asserted in
    `tests/test_geometry_conformance.py`.
+
+## This slice — MLA kv rule + gguf-geometry v3 (recorded 2026-08-28)
+
+Branch `mla-kv-rule` (worktree `assay-mla`), still unreleased, still
+package/schema 0.13.0/v10. This is not this branch's close either — it
+extends the section above with the one gap item 3's neighbour, the
+"Corrected value" row E1 above could not write, closed: the deepseek2
+MLA case R1/R2 stated an input for (`value_length` alongside
+`key_length`) and refused to derive an output from, because SPEC.md had
+no rule for the two widths differing. It now does.
+
+**Settled.** The R2/MLA gap E1 above left open — `value_length !=
+key_length` stated but no rule to spend it — is closed by measurement,
+not by a second guess: `docs/superpowers/evidence/mla-kv-2026-08-27/`
+reads ollama 0.32.13's own KV-buffer allocation for the one real model
+in this repository's evidence with that shape and finds 276,480
+bytes/token, exact and identical at three context points, against a
+pre-registered decision rule with four disjoint candidate bands. SPEC.md
+gained R9 from that measurement, `src/assay/geometry.py` implements it
+(commit `d2c8e13`, this branch), gguf-geometry vendored v3 from its own
+master `84f042b` (public CI green, run 33163833319) re-pinning exactly
+the one vector that measurement touches, and this repository re-vendored
+it byte-exact at `tests/data/gguf_geometry_v3/` (`tests/data/
+gguf_geometry_v2/` deleted the same commit). Erratum E3
+(`docs/superpowers/evidence/tier-enthusiast/ERRATA.md`) files the
+correction beside the two profiles that published the old, R2-arithmetic
+figure; neither is retro-edited. `SEMANTIC_BREAKS` gained the
+`geometry.kv_kib_per_token` row this section's item 2 above deferred,
+closing that item — narrowly, at the `_straddles` layer, not at
+`diff_profiles` (see the strike-through text above for exactly what did
+and did not close).
+
+**Deferred, unchanged by this slice.** Items 3 and 4 above are **not
+ruled by this slice** and stand exactly as filed: item 3 (a conforming
+hardware measurement of `qwen3.8:27b`, still derived rather than
+measured) and item 4 (the gguf-geometry README link, still a forward
+reference to an unpublished repository) are both untouched — no
+controller ruling addressed either, and this slice's scope was the MLA
+gap and the two records item 2 named, not a sweep of the whole section.
+A second subtlety is recorded rather than fixed: `kv_bytes_per_token`'s
+R9 guard reads `info.value_length != info.head_dim`, and Task 7's
+mutation check found that guard's `!=` cannot be distinguished from
+`is not None` by any test in this suite, because `head_dim +
+value_length` degenerates to exactly `2 x head_dim` at the one point the
+guard is meant to exclude (equal widths) — the inequality exists for
+branch-naming and rule-attribution clarity, not because the two guard
+forms compute different numbers anywhere. Not a defect; recorded so a
+future SPEC clarification of R9 (or a second MLA vector whose widths
+relate differently) has this written down rather than rediscovered by
+the same mutation run.
+
+**Lesson.** `docs/superpowers/evidence/tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`
+published `geometry.kv_kib_per_token: 324` with `source: api_show`,
+carrying the same "measured on a live daemon" framing every other figure
+in that directory earns from actually having been read off the runtime.
+It was never that: 324 was R1/R2 arithmetic over a metadata field the
+daemon states, run against a real connection, and the connection's
+reality does not make the arithmetic a measurement. The defect class is
+general, not specific to kv or to this model: **a number that looks
+like a measurement because the pipeline that produced it touched real
+hardware, when no step in that pipeline actually observed the quantity
+being published.** Erratum E1 already lived a version of this (a
+derived `head_dim` presented as if reading the file), and this is the
+same shape one layer deeper — R1 fixed the input read; R2's own
+arithmetic on top of a correctly-read input can still be the thing
+that's wrong. Worth a standing question for the next architecture-shaped
+metadata field this project reads: is there a rule for what to compute
+from it, or only a plausible guess wearing the "hardware-verified" label
+because a daemon happened to be involved somewhere upstream.
 
 # Carried debt — v1.10 (recorded 2026-08-18 at the wave's close)
 

@@ -698,7 +698,10 @@ def test_the_v14_kv_numbers_were_the_derived_head_dim_and_are_now_superseded(
 
     # The v1.4 profile as committed, reproduced from the derived head_dim.
     derived = plan_window(
-        replace(info, head_dim=record["head_dim_if_derived"], loaded=True),
+        # era-faithful: the pre-R9 ModelInfo this replay simulates had no
+        # value_length field at all.
+        replace(info, head_dim=record["head_dim_if_derived"], value_length=None,
+                loaded=True),
         **conditions,
     )
     assert derived.kv_kib_per_token == v14["kv_kib_per_token"] == 216

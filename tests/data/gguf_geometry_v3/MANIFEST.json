@@ -1,8 +1,8 @@
 {
- "set_version": "v2",
+ "set_version": "v3",
  "files": {
   "codegemma-7b-instruct-q8_0.json": "91b661e35acbfdafba07ab17c85fa091356579f90b981ba1e7d477fd848333ca",
-  "deepseek-coder-v2-16b-lite-instruct-q5_K_M.json": "59d077af4378c4524be288c28524dc6d91e0065660278550a125a0e714be213f",
+  "deepseek-coder-v2-16b-lite-instruct-q5_K_M.json": "aa9f997659e6760941c7fdd5f9cad99bb12a425aa99473ae741d3eea6aa7761a",
   "gemma-4-12b-it-qat-q4_0-latest.json": "224a68233cbb6fe026646f88dfce09a846e8df97dee9e3aab5f71cbb2dc3588f",
   "gemma2-9b.json": "e1fdec857fe3366560f4a377c4a8c4dcef12f20298bfe3cda799f6b5fc89b772",
   "mistral-nemo-latest.json": "e17ebf7eda7bd44e9636cf9c258d9ce923a571033a37c1dff37d394cc0ed0244",
