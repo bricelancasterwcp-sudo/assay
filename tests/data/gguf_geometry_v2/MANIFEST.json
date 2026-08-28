@@ -1,15 +1,16 @@
 {
- "set_version": "v1",
+ "set_version": "v2",
  "files": {
   "codegemma-7b-instruct-q8_0.json": "91b661e35acbfdafba07ab17c85fa091356579f90b981ba1e7d477fd848333ca",
-  "deepseek-coder-v2-16b-lite-instruct-q5_K_M.json": "f261e571645a2fa5dd24a31b77b4b014546889965d01d3520d611a7b108319e8",
-  "gemma-4-12b-it-qat-q4_0-latest.json": "31be76363c31d7ad521de5ca62e09b2ae68d1e1deeecab68a5ed22b7f69d2e15",
+  "deepseek-coder-v2-16b-lite-instruct-q5_K_M.json": "59d077af4378c4524be288c28524dc6d91e0065660278550a125a0e714be213f",
+  "gemma-4-12b-it-qat-q4_0-latest.json": "224a68233cbb6fe026646f88dfce09a846e8df97dee9e3aab5f71cbb2dc3588f",
   "gemma2-9b.json": "e1fdec857fe3366560f4a377c4a8c4dcef12f20298bfe3cda799f6b5fc89b772",
   "mistral-nemo-latest.json": "e17ebf7eda7bd44e9636cf9c258d9ce923a571033a37c1dff37d394cc0ed0244",
   "qwen2.5-coder-1.5b-instruct-q8_0.json": "96e06e9609bc25ac5c64b52cb8a3946a387aa73263453a85e97285434a6f7cfe",
   "qwen2.5-coder-14b-instruct-q4_K_M.json": "58ac6abe4bd578e809a2e45bf9f30f399a6091cf7fbe1079234b570529c0f013",
   "qwen2.5-coder-7b-instruct-q8_0.json": "a875438b3d3574aa2aae26daf24dcce80e3eef8e389a61367382dff1d6b9cdda",
   "qwen3.6-35b-a3b-reap48-mtp-trap.json": "4741b1ed78fe2957608b77fd206faeb74b65e49391b50e0405fc680663ae30b0",
-  "qwen3.6-35b-a3b-reap48-ours-q4km.json": "d277dc721b632bc7e3af782dd76fa29e79f8a81bf3ad63dc051f17940ee8da5f"
+  "qwen3.6-35b-a3b-reap48-ours-q4km.json": "d277dc721b632bc7e3af782dd76fa29e79f8a81bf3ad63dc051f17940ee8da5f",
+  "qwen3.8-27b.json": "47cc3c6bbb82ba989b0f162ee1b875cc88c9747560a90c13c7219b83d10dca87"
  }
 }

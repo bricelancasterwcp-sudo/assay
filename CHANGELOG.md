@@ -19,7 +19,12 @@ it.
 
 Three rules now hold, named as the contract names them
 (`gguf-geometry/SPEC.md`, vectors vendored at
-`tests/data/gguf_geometry_v1/`):
+`tests/data/gguf_geometry_v2/` — the v2 set, taken byte-for-byte from
+gguf-geometry master `7f858c8` on 2026-08-27; it carries all ten of v1's
+cases forward — eight byte-identical, two stating metadata keys their v1
+copies had cited but omitted, with no `expected` value moved — and adds
+`qwen3.8-27b`, the hybrid whose over-charge erratum E2 records, so the
+fix below is now checked against the model that prompted it):
 
 - **R6** — `serving_block_count = block_count −
   <arch>.nextn_predict_layers`. An MTP layer is counted into the block

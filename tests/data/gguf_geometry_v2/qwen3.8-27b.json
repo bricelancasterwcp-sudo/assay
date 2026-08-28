@@ -1,0 +1,41 @@
+{
+  "id": "qwen3.8-27b",
+  "source": {
+    "gguf_sha256": "f5f1dd8920d417aac2718b0bda3403da274301efdd6760b4f0f4b864ff2ad57d",
+    "provenance": "assay docs/superpowers/evidence/qwen38-27b-live-2026-08-27/ — NOTE.md, show-qwen3.8-27b.json and geometry-qwen3.8-27b.json, captured 2026-08-27 in one session and committed at assay 8892d0e. The metadata block below is that show capture's own /api/show model_info read verbatim (geometry-relevant keys; tokenizer, rope, feed_forward and quantization keys omitted, as in every other vector of this set). The expected values are the output of assay's fixed instrument — master 24420f2, the R3/R4/R6 hybrid fix shipped — run live against the daemon holding this exact blob (`assay geometry http://127.0.0.1:11434 --model qwen3.8:27b`), verbatim in geometry-qwen3.8-27b.json: kv_kib_per_token 64, which is the 65536 bytes/token stated here in the unit this set uses; attention_layer_count 16; serving_block_count 64; recurrent_state_bytes 156893184; expert_count null and expert_used_count null, because the qwen35 metadata states no expert keys at all — R5's absent-is-null case, not a 0-expert MoE. No value here is computed by this repo; each was read out of that file. gguf_sha256 is the Ollama store manifest's model-layer digest for the same day's re-pull, spot-verified equal to sha256sum of the blob itself (16,810,714,464 bytes) — NOTE.md, Provenance: \"the digest IS the raw GGUF's sha256, so a vector can anchor on it self-containedly\". The banned values are assay's own published figures for this model, not hypotheticals: 266240 bytes = 260 KiB/token is what docs/superpowers/evidence/tier-enthusiast-2026-08/qwen3.8-27b.json carries and what the published matrix still shows, and it is 2*65*4*256*2 — all 65 raw blocks charged as attention layers, a 4.0625x over-charge against R3+R6, with R4's recurrent term absent from every published figure; 65 is that raw block count, which R6 subtracts the nextn layer from. Both are corrected in assay docs/superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md erratum E2 (as-written -> conforming: kv 260 -> 64 KiB/token and recurrent absent -> 156893184 for that profile; 216 -> 64 for the older tier-enthusiast/qwen3-8-27b.json row, on top of E1's 216 -> 260), and filed upstream by this repo as docs/upstream-errata/2026-08-27-assay-qwen3.8-27b-hybrid-overcharge.md. Why this vector is in v2 and not v1: when v1 was sealed the only published numbers for this model were the over-charged ones, and pinning 266240 as expected would have frozen, as the contract, the exact defect the contract exists to catch — so the case was withheld on the record (that erratum; tests/test_v1_vectors.py::test_qwen38_27b_is_deliberately_absent). What the erratum named as closing it, \"a live run that charges R3/R4/R6 correctly on this model\", happened on 2026-08-27, so the vector enters the next set rather than being back-fitted into v1 (SPEC.md versioning: old sets are never edited). verification is hardware-verified in this set's exact sense: the four expected terms were produced by the real instrument reading the real daemon's metadata live for this blob, not replayed from a stored capture. What is NOT hardware-verified is deliberately absent from expected — the erratum's conforming WINDOW figures (3749 -> 12838 for the 2026-08 profile, 4922 -> 14246 for the older one) remain condition-parameterized arithmetic under each profile's own recorded vram_free_mib (1464 and 1552) and residency state, which no later run can re-occupy; this box could not, having 17.7 GB of weights against 15162 MiB free, so the live run's own usable_window came back 0, limited_by vram. Windows are not fields of this vector; R7 is exercised by qwen2.5-coder-7b-instruct-q8_0's stated-term scenarios instead."
+  },
+  "metadata": {
+    "general.architecture": "qwen35",
+    "qwen35.block_count": 65,
+    "qwen35.context_length": 262144,
+    "qwen35.embedding_length": 5120,
+    "qwen35.attention.head_count": 24,
+    "qwen35.attention.head_count_kv": 4,
+    "qwen35.attention.key_length": 256,
+    "qwen35.attention.value_length": 256,
+    "qwen35.full_attention_interval": 4,
+    "qwen35.nextn_predict_layers": 1,
+    "qwen35.ssm.conv_kernel": 4,
+    "qwen35.ssm.state_size": 128,
+    "qwen35.ssm.group_count": 16,
+    "qwen35.ssm.time_step_rank": 48,
+    "qwen35.ssm.inner_size": 6144
+  },
+  "expected": {
+    "kv_bytes_per_token": 65536,
+    "attention_layers": 16,
+    "serving_block_count": 64,
+    "recurrent_state_bytes": 156893184,
+    "experts": null
+  },
+  "must_not_equal": {
+    "kv_bytes_per_token": [
+      266240
+    ],
+    "serving_block_count": [
+      65
+    ],
+    "note": "R3+R6: 266240 = 2*65*4*256*2 charges all 65 raw blocks as attention layers where serving_block_count 65-1=64 and 64/4=16 apply — a 4.0625x over-charge — and 65 is that raw block count. Both are the published figures corrected by assay docs/superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md erratum E2 (260 -> 64 KiB/token) and filed here as docs/upstream-errata/2026-08-27-assay-qwen3.8-27b-hybrid-overcharge.md."
+  },
+  "verification": "hardware-verified"
+}

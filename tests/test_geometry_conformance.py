@@ -1,11 +1,32 @@
-"""gguf-geometry v1 conformance: assay's extraction against the contract.
+"""gguf-geometry v2 conformance: assay's extraction against the contract.
 
-The vectors under ``tests/data/gguf_geometry_v1/`` are a vendored,
-sha-pinned copy of the frozen v1 set from the gguf-geometry repo (rules
-R1-R8 in that repo's SPEC.md). Every ``expected`` value in them was
-measured on real hardware and cited there; nothing in this file computes
-geometry, and nothing here may be edited to make a red go green — a red
-is a divergence between assay and the contract, i.e. a work order.
+The vectors under ``tests/data/gguf_geometry_v2/`` are a vendored,
+sha-pinned copy of the current v2 set, taken byte-for-byte from
+gguf-geometry master ``7f858c8`` on 2026-08-27 (rules R1-R8 in that
+repo's SPEC.md). Every ``expected`` value in them was measured on real
+hardware and cited there; nothing in this file computes geometry, and
+nothing here may be edited to make a red go green — a red is a
+divergence between assay and the contract, i.e. a work order.
+
+One set is vendored, not a pile of them: that repo's consumer model is a
+single current directory, and v2 contains v1's content — eight of v1's
+ten vectors carried forward with identical shas, two (gemma-4,
+deepseek-coder-v2) stating metadata keys their v1 copies cited but
+omitted with no ``expected`` value moved, plus the eleventh,
+``qwen3.8-27b``. So ``tests/data/gguf_geometry_v1/`` was deleted in the
+same commit that added this set; nothing it asserted stopped being
+asserted.
+
+``qwen3.8-27b`` is the case v1 withheld, and it is this repository's own
+defect coming back as a contract: the published 260 KiB/token figure it
+bans (266240 bytes, all 65 raw blocks charged) is what
+``docs/superpowers/evidence/tier-enthusiast-2026-08/`` carried until
+erratum E2, and its ``expected`` values are what assay's fixed extractor
+read live off the daemon holding that blob
+(``docs/superpowers/evidence/qwen38-27b-live-2026-08-27/``). It passed
+on the first run of this suite against the v2 set, with no change to any
+production module — the vector arriving from outside and landing on the
+numbers assay already produces is the point of vendoring it.
 
 Each vector's ``metadata`` block IS the ``model_info`` object Ollama's
 /api/show returns, so the code under test is assay's own interpretation
@@ -28,8 +49,8 @@ change.
 The three quantities that had no assay surface to assert against when
 this module was written — ``attention_layers`` and
 ``serving_block_count`` (R3/R6) and ``recurrent_state_bytes`` (R4) —
-have one now and are asserted directly below, on the two vectors whose
-evidence states them.
+have one now and are asserted directly below, on the three vectors whose
+evidence states them (two under v1, and ``qwen3.8-27b`` as of v2).
 """
 
 import hashlib
@@ -42,10 +63,10 @@ import pytest
 from assay.backends.ollama import OllamaNative
 from assay.geometry import kv_bytes_per_token, plan_window, serving_block_count
 
-DATA = pathlib.Path(__file__).resolve().parent / "data" / "gguf_geometry_v1"
+DATA = pathlib.Path(__file__).resolve().parent / "data" / "gguf_geometry_v2"
 
 VENDORED_MANIFEST_SHA = (
-    "44f8af208d4bd79055cdaa9e0b9c4e9fa81f305d5f81ab6e87457de6c3fa470a"
+    "06da801b5dc57fedbfd42555c377c1cd3b6b8fb3c549cd2d367396447fc15116"
 )
 """sha256 of the vendored MANIFEST.json, pinned at vendoring.
 
@@ -114,7 +135,7 @@ def test_the_vendored_copy_is_the_set_the_manifest_names():
     beside the frozen ones.
     """
     manifest = json.loads((DATA / "MANIFEST.json").read_text())
-    assert manifest["set_version"] == "v1"
+    assert manifest["set_version"] == "v2"
     on_disk = {path.name for path in DATA.glob("*.json")} - {"MANIFEST.json"}
     assert on_disk == set(manifest["files"])
     for name, expected_sha in manifest["files"].items():
@@ -245,24 +266,28 @@ def test_window_law_conforms(vec, scenario):
 def test_the_suite_actually_covers_the_frozen_set():
     """A conformance suite that silently collected nothing would pass.
 
-    Pins the counts the vendored set carries: 10 vectors, one of them the
+    Pins the counts the vendored set carries: 11 vectors, one of them the
     R8 refusal, and the three window scenarios. If a re-vendor changes
-    them, this fails and the numbers are re-read deliberately.
+    them, this fails and the numbers are re-read deliberately. The v1->v2
+    re-vendor is exactly that event: 10 -> 11 vectors and 2 -> 3 stating
+    each hybrid rule, all of it the one new ``qwen3.8-27b``, whose
+    scenarios add no window (v2 states none for it; R7 is still carried
+    by ``qwen2.5-coder-7b-instruct-q8_0`` alone).
 
     The per-rule selections are pinned for the same reason: each of R3,
-    R4 and R6 is stated by exactly the two hybrid vectors, and a
+    R4 and R6 is stated by exactly the three hybrid vectors, and a
     selection that silently emptied would report green having asserted
     nothing about the rule it names.
     """
-    assert len(VECTORS) == 10
+    assert len(VECTORS) == 11
     assert sum(1 for v in VECTORS if v["expected"].get("refuses")) == 1
     assert len(list(window_scenarios())) == 3
-    assert len(stating("attention_layers")) == 2
-    assert len(stating("serving_block_count")) == 2
-    assert len(stating("recurrent_state_bytes")) == 2
+    assert len(stating("attention_layers")) == 3
+    assert len(stating("serving_block_count")) == 3
+    assert len(stating("recurrent_state_bytes")) == 3
     assert sum(
         1 for v in VECTORS if "serving_block_count" in v.get("must_not_equal", {})
-    ) == 1
+    ) == 2
 
 
 def test_the_mutation_harness_still_aims_at_real_lines():

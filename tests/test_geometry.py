@@ -109,8 +109,9 @@ def test_dense_model_geometry_keeps_the_expert_fields_none():
 #
 # The shape below is the REAP-48 Qwen3.6-35B-A3B one, whose values are
 # hardware-verified on two boots in bloomery's turn-5 evidence and frozen
-# as the gguf-geometry v1 vectors `qwen3.6-35b-a3b-reap48-ours-q4km` (the
-# patched artifact) and `-mtp-trap` (as converted). The conformance
+# as the gguf-geometry vectors `qwen3.6-35b-a3b-reap48-ours-q4km` (the
+# patched artifact) and `-mtp-trap` (as converted) — sealed in v1 and
+# carried byte-identical into the vendored v2 set. The conformance
 # module drives those vectors end to end through the extractor; these
 # tests pin the arithmetic each rule does, so a break names the rule
 # instead of only reddening a vector.

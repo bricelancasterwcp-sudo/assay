@@ -8,7 +8,7 @@ outside "free" VRAM; subtracting them again would double-count.
 
 Hybrid architectures (2026-08-27) add three rules to the same
 arithmetic, named here as they are named in the gguf-geometry contract
-(SPEC.md R3/R4/R6, vectors vendored under tests/data/gguf_geometry_v1):
+(SPEC.md R3/R4/R6, vectors vendored under tests/data/gguf_geometry_v2):
 an MTP layer counted into the block count does not serve (R6), a stated
 `full_attention_interval` means only a fraction of the serving layers
 owns a kv cache (R3), and the layers that do not are recurrent and

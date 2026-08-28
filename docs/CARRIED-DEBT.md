@@ -67,7 +67,9 @@ by that release, not by more work on the branch.
    it — and its publish is a separately gated step. Merging this branch
    before that publish ships a link that 404s. The rules the section
    describes do not depend on the link: the vectors are vendored at
-   `tests/data/gguf_geometry_v1/` and asserted in
+   `tests/data/gguf_geometry_v2/` (the v2 set, copied byte-for-byte from
+   gguf-geometry master `7f858c8` on 2026-08-27, superseding the v1 set
+   vendored earlier that day) and asserted in
    `tests/test_geometry_conformance.py`.
 
 # Carried debt — v1.10 (recorded 2026-08-18 at the wave's close)

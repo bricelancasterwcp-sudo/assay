@@ -253,9 +253,10 @@ Charging every block is a straight over-charge, and it is a measured one
 — bloomery published 4.00× on Qwen3.6-35B-A3B before fixing it. Three
 rules apply, from the [gguf-geometry
 contract](https://github.com/bricelancasterwcp-sudo/gguf-geometry)
-(`SPEC.md` R3/R4/R6), whose frozen vectors are vendored under
-`tests/data/gguf_geometry_v1/` and asserted against in
-`tests/test_geometry_conformance.py`:
+(`SPEC.md` R3/R4/R6), whose current vector set is vendored under
+`tests/data/gguf_geometry_v2/` — copied byte-for-byte from that repo's
+master `7f858c8` on 2026-08-27, replacing the v1 set it supersedes — and
+asserted against in `tests/test_geometry_conformance.py`:
 
 - `serving_block_count = block_count − <arch>.nextn_predict_layers` —
   an MTP layer is counted into `block_count` by the converter and does

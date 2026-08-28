@@ -16,7 +16,10 @@ rewritten to suit a later fix. Read this file alongside them.
 `~/workspace/gguf-geometry/docs/upstream-errata/2026-08-27-assay-qwen3.8-27b-hybrid-overcharge.md`,
 filed against assay by the gguf-geometry contract work · **Contract**
 gguf-geometry `SPEC.md` rules R3, R4 and R6, whose vectors are vendored
-at `tests/data/gguf_geometry_v1/`
+at `tests/data/gguf_geometry_v2/` (v2, from that repo's master
+`7f858c8`, vendored 2026-08-27 in place of v1). This model is the v2
+set's `qwen3.8-27b` vector, which bans as `must_not_equal` the exact
+266240 bytes/token this erratum corrects
 
 Through probe 0.9.0, `kv_bytes_per_token` charged
 `block_count` attention layers — every block the file states. That is

@@ -71,7 +71,7 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
     ollama = root / "src/assay/backends/ollama.py"
     geometry = root / "src/assay/geometry.py"
     testfile = root / TESTMOD
-    data = root / "tests/data/gguf_geometry_v1"
+    data = root / "tests/data/gguf_geometry_v2"
 
     return [
         (
@@ -140,8 +140,8 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
         (
             "M8 vendored MANIFEST edited (sha pin)",
             data / "MANIFEST.json",
-            '"set_version": "v1"',
             '"set_version": "v2"',
+            '"set_version": "v1"',
             [f"{TESTMOD}::test_vendored_manifest_is_pinned"],
         ),
         (
@@ -165,8 +165,8 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
             # refused before anything is edited.
             "M10 a harness case's mutant equals its original (no-op-mutant guard)",
             root / "scripts/mutate_geometry_conformance.py",
-            '"set_version": ' + '"v2"',
-            '"set_version": "v1"',
+            '"set_version": ' + '"v1"',
+            '"set_version": "v2"',
             [f"{TESTMOD}::test_the_mutation_harness_still_aims_at_real_lines"],
         ),
         (
