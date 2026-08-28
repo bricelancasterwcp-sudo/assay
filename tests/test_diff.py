@@ -1374,6 +1374,18 @@ def test_a_geometry_kv_break_straddles_r9():
     contract the row is actually responsible for today, not an
     end-to-end `diff_profiles` claim the missing wiring cannot make —
     adding that wiring is a separate, still-open piece of work.
+
+    DISARM, once the release that ships R9 actually ships: this
+    assertion mirrors `SEMANTIC_BREAKS[...]` against the CURRENT
+    `assay.__version__`, which only holds while R9 is unreleased. The
+    release that ships R9 must (1) re-key the row to that release's
+    version and (2) replace this mirror-assertion with a literal pin
+    `== (0, X, 0)` for that release's version. After that release, this
+    docstring's and the assertion's message below must NOT be obeyed
+    again — the NEXT version bump firing this assertion is not a
+    re-key signal, it is a sign the mirror-assertion was never
+    replaced; re-keying the row at that point would corrupt the
+    registry by making the genuinely-straddling pair read comparable.
     """
     import assay
     from assay.diff import SEMANTIC_BREAKS, _parse_version, _straddles
@@ -1390,7 +1402,16 @@ def test_a_geometry_kv_break_straddles_r9():
     # instruction in its own message.
     assert SEMANTIC_BREAKS["geometry.kv_kib_per_token"] == _parse_version(
         assay.__version__
-    ), "R9 is still unreleased: re-key this row to the release that ships it"
+    ), (
+        "R9 is still unreleased: re-key this row to the release that "
+        "ships it. DISARM AFTER THAT RELEASE: the release that ships "
+        "R9 must (1) re-key this row to that release's version and "
+        "(2) replace this mirror-assertion with a literal pin "
+        "`== (0, X, 0)` for that release's version — after that "
+        "release, this message must not be obeyed again, or the next "
+        "version bump will re-key the row past the real break and "
+        "corrupt the registry."
+    )
 
     assert _straddles("geometry.kv_kib_per_token", "0.12.0", "0.13.0")
     # Order does not matter: an upgrade and a downgrade are equally

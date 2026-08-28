@@ -8,7 +8,7 @@ outside "free" VRAM; subtracting them again would double-count.
 
 Hybrid architectures (2026-08-27) add three rules to the same
 arithmetic, named here as they are named in the gguf-geometry contract
-(SPEC.md R3/R4/R6, vectors vendored under tests/data/gguf_geometry_v2):
+(SPEC.md R3/R4/R6, vectors vendored under tests/data/gguf_geometry_v3):
 an MTP layer counted into the block count does not serve (R6), a stated
 `full_attention_interval` means only a fraction of the serving layers
 owns a kv cache (R3), and the layers that do not are recurrent and
@@ -197,7 +197,12 @@ def kv_bytes_per_token(info: ModelInfo, *, kv_bits: int = 16) -> int | None:
     if info.value_length is not None and info.value_length != info.head_dim:
         # R9 (MLA, separate widths): K and V stated at different widths;
         # the 2-for-K-and-V factor is replaced by the explicit sum.
-        return layers * info.kv_head_count * (info.head_dim + info.value_length) * (kv_bits // 8)
+        return (
+            layers
+            * info.kv_head_count
+            * (info.head_dim + info.value_length)
+            * (kv_bits // 8)
+        )
     return 2 * layers * info.kv_head_count * info.head_dim * (kv_bits // 8)
 
 

@@ -122,12 +122,21 @@ closing that item — narrowly, at the `_straddles` layer, not at
 and did not close).
 
 **Deferred, unchanged by this slice.** Items 3 and 4 above are **not
-ruled by this slice** and stand exactly as filed: item 3 (a conforming
-hardware measurement of `qwen3.8:27b`, still derived rather than
-measured) and item 4 (the gguf-geometry README link, still a forward
-reference to an unpublished repository) are both untouched — no
-controller ruling addressed either, and this slice's scope was the MLA
-gap and the two records item 2 named, not a sweep of the whole section.
+ruled by this slice** and stand exactly as filed, item 3 unchanged (a
+conforming hardware measurement of `qwen3.8:27b`, still derived rather
+than measured). Item 4's premise needs correcting, though its verdict
+does not: as filed, item 4 called the gguf-geometry README link "a
+forward reference to an unpublished repository" — that is no longer
+true. `gguf-geometry` has since been published (`origin
+https://github.com/bricelancasterwcp-sudo/gguf-geometry.git`, `master`
+at `84f042b`, the same commit this slice vendored v3 from above, public
+CI green on run `33163833319`). The item stays OPEN — this slice does
+not close it — because a corrected premise is not the same thing as a
+verified link: what remains is confirming the README's URL actually
+resolves against the now-public repository, plus a controller ruling
+to close the item on that basis. No controller ruling addressed either
+item, and this slice's scope was the MLA gap and the two records item 2
+named, not a sweep of the whole section.
 A second subtlety is recorded rather than fixed: `kv_bytes_per_token`'s
 R9 guard reads `info.value_length != info.head_dim`, and Task 7's
 mutation check found that guard's `!=` cannot be distinguished from
@@ -138,7 +147,15 @@ branch-naming and rule-attribution clarity, not because the two guard
 forms compute different numbers anywhere. Not a defect; recorded so a
 future SPEC clarification of R9 (or a second MLA vector whose widths
 relate differently) has this written down rather than rediscovered by
-the same mutation run.
+the same mutation run. A second, adjacent subtlety: assay's R9 guard
+compares `info.value_length` to `ModelInfo.head_dim` (the stated
+`key_length`, or the R1 fallback derivation when `key_length` is
+absent), while SPEC R9's own text names `attention.key_length`
+directly — the two readings diverge only for a file that states
+`value_length` without stating `key_length` (none exists in any
+vendored vector set today, so the divergence is unreachable in
+practice); a future SPEC editorial pass should bless assay's
+`head_dim`-based reading or correct it to read `key_length` directly.
 
 **Lesson.** `docs/superpowers/evidence/tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`
 published `geometry.kv_kib_per_token: 324` with `source: api_show`,

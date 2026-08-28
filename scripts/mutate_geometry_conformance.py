@@ -226,10 +226,8 @@ def cases(root: pathlib.Path) -> list[tuple[str, pathlib.Path, str, str, list[st
         (
             "M15 R9 sum: drop the + info.value_length term (MLA)",
             geometry,
-            "        return layers * info.kv_head_count * "
-            "(info.head_dim + info.value_length) * (kv_bits // 8)\n",
-            "        return layers * info.kv_head_count * "
-            "(info.head_dim) * (kv_bits // 8)\n",
+            "            * (info.head_dim + info.value_length)\n",
+            "            * (info.head_dim)\n",
             [
                 f"{TESTMOD}::test_kv_interpretation_conforms"
                 "[deepseek-coder-v2-16b-lite-instruct-q5_K_M]"

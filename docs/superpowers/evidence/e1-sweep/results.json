@@ -699,7 +699,7 @@
     "limited_by": "vram",
     "window_shortfall_pct_of_committed_promise": 20.0
    },
-   "r9_repin_2026_08_28": "kv/window re-pinned per R9 (MLA, separate K/V widths) and erratum E3 (docs/superpowers/evidence/tier-enthusiast/ERRATA.md): 324 KiB/token was R2 arithmetic over stated key_length, never an observed allocation. Measured 270 KiB/token, docs/superpowers/evidence/mla-kv-2026-08-27/ (verdict H-b)."
+   "r9_repin_2026_08_28": "kv/window re-pinned per R9 (MLA, separate K/V widths) and erratum E3 (docs/superpowers/evidence/tier-enthusiast/ERRATA.md): 324 KiB/token was R2 arithmetic over stated key_length, never an observed allocation. Measured 270 KiB/token, docs/superpowers/evidence/mla-kv-2026-08-27/ (verdict H-b). The pre-R9 (R2-arithmetic) derivation this replaces, preserved rather than left to vanish: corrected.usable_window was 5394 (now 6473) and corrected.window_shortfall_pct_of_committed_promise was 33.3 (now 20.0), both at vram_free_mib 2219 unchanged."
   },
   {
    "file": "tier-enthusiast/deepseek-r1-14b.json",

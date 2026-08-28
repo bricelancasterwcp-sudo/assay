@@ -408,8 +408,8 @@ def test_an_interval_that_cannot_be_applied_withholds_the_layer_count():
 DEEPSEEK2_MODEL = "deepseek-coder-v2:16b-lite-instruct-q5_K_M"
 #: deepseek2 (MLA): value_length 128 != key_length 192 — the value head
 #: width is a SEPARATE stated key from the key width R1/R2 already read.
-#: Verbatim from gguf-geometry v2 vector
-#: deepseek-coder-v2-16b-lite-instruct-q5_K_M (tests/data/gguf_geometry_v2).
+#: Verbatim from gguf-geometry v3 vector
+#: deepseek-coder-v2-16b-lite-instruct-q5_K_M (tests/data/gguf_geometry_v3).
 DEEPSEEK2_SHOW_BODY = {
     "details": {"quantization_level": "Q5_K_M"},
     "model_info": {

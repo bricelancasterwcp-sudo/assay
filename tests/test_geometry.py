@@ -543,6 +543,16 @@ def as_pre_hybrid_fix(info: ModelInfo) -> ModelInfo:
     defect is filed as an erratum beside the profiles
     (`tier-enthusiast-2026-08/ERRATA.md`, 2026-08-27) and pinned as
     arithmetic in `test_the_anchors_hybrid_row_carries_the_overcharge`.
+
+    On the deepseek2 row (`deepseek-coder-v2:16b-lite-instruct-q5_K_M`)
+    there is a third, narrower exception, dated 2026-08-28: its
+    committed `geometry.kv_kib_per_token` figure is itself an R9
+    re-pin (the measured 270 KiB/token, `docs/superpowers/evidence/
+    mla-kv-2026-08-27/`), not the era probe's R2-arithmetic figure
+    (324 KiB/token, erratum E3) — so for that row this helper replays
+    today's MLA width rule rather than reproducing the figure the era
+    probe actually wrote.
+
     The committed evidence stands as written; what this names is the
     derivation that reproduces it.
     """
