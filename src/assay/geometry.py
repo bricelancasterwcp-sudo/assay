@@ -170,6 +170,21 @@ def kv_bytes_per_token(info: ModelInfo, *, kv_bits: int = 16) -> int | None:
     token, and the formula takes no expert term. The MoE metadata rides
     in ``Geometry`` because it explains the WEIGHTS footprint, not the
     cache one.
+
+    R9 (MLA, separate widths): measured directly (assay
+    docs/superpowers/evidence/mla-kv-2026-08-27/, ollama 0.32.13, llama
+    runner) at 276,480 B/token, exact at three ctx points, for a
+    deepseek2 artifact whose ``attention.value_length`` differs from its
+    ``attention.key_length`` (``head_dim``). The runtime caches K at
+    ``head_dim`` width and V at the stated ``value_length`` width, so
+    the flat 2x-for-K-and-V factor above is wrong whenever the two
+    widths differ; this branch replaces it with the explicit sum. A
+    stated ``value_length`` equal to ``head_dim`` is NOT MLA and stays
+    on the dense path above, by identity — the widths genuinely match,
+    so the 2x factor is already the correct sum. An UNSTATED
+    ``value_length`` is not a claim of equal widths either: it is the
+    pre-R9 reading, which the dense formula already covers and which
+    this branch must never touch.
     """
     layers = (
         info.block_count
@@ -179,6 +194,10 @@ def kv_bytes_per_token(info: ModelInfo, *, kv_bits: int = 16) -> int | None:
     parts = (layers, info.kv_head_count, info.head_dim)
     if any(part is None for part in parts):
         return None
+    if info.value_length is not None and info.value_length != info.head_dim:
+        # R9 (MLA, separate widths): K and V stated at different widths;
+        # the 2-for-K-and-V factor is replaced by the explicit sum.
+        return layers * info.kv_head_count * (info.head_dim + info.value_length) * (kv_bits // 8)
     return 2 * layers * info.kv_head_count * info.head_dim * (kv_bits // 8)
 
 

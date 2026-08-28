@@ -80,6 +80,39 @@ def test_kv_arithmetic_is_expert_invariant():
     assert kv_bytes_per_token(make_moe_info(expert_used_count=1)) == 57_344
 
 
+# --- R9: MLA, separate widths (H-b) -----------------------------------------
+#
+# Phase 1 measured H-b directly: 276,480 B/token at all three ctx points for
+# the deepseek2 artifact under ollama 0.32.13 (llama runner) — the runtime
+# caches K at key_length (head_dim) width and V at value_length width, so
+# the K+V-doubling factor in R2/R3 is wrong whenever the two widths differ.
+
+
+def test_kv_mla_separate_widths():
+    # R9: 27 attention layers * 16 kv-heads * (192 key + 128 value) * 2
+    # bytes = 276480 — the measured figure, not the dense 2x(192) guess.
+    info = make_info(block_count=27, kv_head_count=16, head_dim=192, value_length=128)
+
+    assert kv_bytes_per_token(info) == 276_480
+
+
+def test_kv_equal_widths_unchanged():
+    # v == k is NOT MLA: a stated value_length equal to head_dim must stay
+    # on the dense R2/R3 path by identity, not fall into the R9 branch.
+    info = make_info(block_count=28, kv_head_count=8, head_dim=128, value_length=128)
+
+    assert kv_bytes_per_token(info) == 2 * 28 * 8 * 128 * 2
+
+
+def test_kv_dense_path_unchanged():
+    # Regression: an unstated value_length is not a claim of equal
+    # widths — it is the pre-R9 reading, which the dense formula already
+    # covers untouched.
+    info = make_info(block_count=28, kv_head_count=8, head_dim=128)
+
+    assert kv_bytes_per_token(info) == 2 * 28 * 8 * 128 * 2
+
+
 # --- MoE metadata rides along with the geometry ----------------------------
 
 
