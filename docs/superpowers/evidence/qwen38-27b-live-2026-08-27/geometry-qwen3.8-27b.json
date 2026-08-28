@@ -1,0 +1,14 @@
+{
+  "geometry": {
+    "kv_kib_per_token": 64,
+    "vram_free_mib": 15162,
+    "usable_window": 0,
+    "limited_by": "vram",
+    "source": "api_show",
+    "expert_count": null,
+    "expert_used_count": null,
+    "attention_layer_count": 16,
+    "serving_block_count": 64,
+    "recurrent_state_bytes": 156893184
+  }
+}

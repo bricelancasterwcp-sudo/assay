@@ -162,3 +162,23 @@ correct a profile, and this one was byte-identical to its predecessor
 outside the flags it added), and the two superseded figures now carry
 one. The Pages publish — pushing master — is not part of that change and
 remains Brice's.
+
+**Update, 2026-08-27, live run under the corrected code.** The owed
+re-measurement happened: `qwen3.8:27b` was re-pulled (blob sha256
+`f5f1dd89…ad57d`, spot-verified equal to the manifest's model-layer
+digest) and the corrected instrument, at master `24420f2`, read its
+metadata live — `kv_kib_per_token` **64**, `attention_layer_count`
+**16**, `serving_block_count` **64**, `recurrent_state_bytes`
+**156,893,184**, exactly the conforming terms tabled above. Verbatim
+captures and the run's own record:
+[`../qwen38-27b-live-2026-08-27/`](../qwen38-27b-live-2026-08-27/NOTE.md).
+The window figures stay what they always were — arithmetic under each
+profile's recorded conditions, which no later run can re-occupy (the
+live box's own window was vram-limited to 0 by 17.7 GB of weights
+against 15.1 GiB free). With the terms live-confirmed, the "withheld
+from the gguf-geometry v1 vector set" state above ends at v1: the
+upstream repo's v2 set is where the vector lands, per its own record.
+One stale phrase above is superseded rather than rewritten: "Fixed on
+branch `geometry-conformance`, unreleased (MERGE HOLD)" — the fix has
+been on master since the 2026-08-27 merge this file's previous update
+describes.
