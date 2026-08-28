@@ -1,0 +1,6 @@
+739 MiB, 15101 MiB
+12857 MiB, 2983 MiB
+pid, process_name, used_gpu_memory [MiB]
+905038, /usr/bin/ptyxis, 29 MiB
+906744, /usr/bin/lact, 52 MiB
+3643459, /usr/local/lib/ollama/llama-server, 12110 MiB

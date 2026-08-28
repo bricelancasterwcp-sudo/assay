@@ -1,0 +1,7 @@
+manifest: /mnt/extra/ollama-models/manifests/registry.ollama.ai/library/deepseek-coder-v2/16b-lite-instruct-q5_K_M
+model layer digest: sha256:bc286970a24072cf23a4c905f28adb9f6a28c71743b07790185275a86dc72406
+digest OK
+ollama version is 0.32.13
+NAME    ID    SIZE    PROCESSOR    CONTEXT    UNTIL 
+memory.used [MiB], memory.free [MiB]
+739 MiB, 15101 MiB

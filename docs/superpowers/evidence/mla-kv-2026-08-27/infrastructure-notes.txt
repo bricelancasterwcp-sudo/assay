@@ -1,0 +1,42 @@
+# Infrastructure notes — mla-kv-2026-08-27 capture (Task 2)
+
+## Event 1: journalctl --since timezone mismatch (all 3 ctx points, first attempt)
+
+Symptom: raw-log-ctx2048.txt, raw-log-ctx4096.txt, raw-log-ctx8192.txt each
+contained only:
+  -- No entries --
+
+Root cause: the brief's Step 3 loop computes
+  T0=$(date -u '+%Y-%m-%d %H:%M:%S')
+This emits a UTC wall-clock string with no timezone marker. journalctl
+--since interprets a bare "YYYY-MM-DD HH:MM:SS" string as LOCAL time, not
+UTC. This host's local timezone is America/Chicago (CDT, UTC-5). So a T0
+of e.g. "2026-08-28 04:54:xx" (actual UTC time) was interpreted by
+journalctl as 2026-08-28 04:54:xx CDT == 2026-08-28 09:54:xx UTC — a
+window shifted ~5 hours into the future relative to the actual load
+events (confirmed circa 2026-08-27 23:54 CDT / 2026-08-28 04:54 UTC via
+`journalctl -u ollama --no-pager | tail`, which showed the real
+POST /api/generate log lines for all three loads sitting just before the
+(wrongly-future) --since boundary).
+
+Evidence this was a query-side defect, not a load failure:
+- All three curl calls to /api/generate returned exit 0.
+- ps-ctx2048.txt / ps-ctx4096.txt / ps-ctx8192.txt each show the model
+  loaded with PROCESSOR "100% GPU" and the correct CONTEXT value.
+- vram-ctxN.txt before/after readings were captured normally.
+- `journalctl -u ollama --no-pager | tail -5` (run with no --since filter)
+  showed the real GIN log lines for the generate calls, proving the
+  events were logged to the journal but simply outside the mis-timed
+  --since window.
+
+Disposition: treated as an infrastructure/tooling defect under the
+capture-once discipline. The empty raw-log-ctx*.txt files from this
+attempt were not committed. A clean re-run of the full Step 3 loop (all
+three ctx points: vram, ps, and raw-log together) was performed from
+zero, with T0 computed in local time (matching journalctl's default
+--since interpretation) instead of UTC, i.e.:
+  T0=$(date '+%Y-%m-%d %H:%M:%S')
+No model-load data, VRAM readings, or log content from the first attempt
+were spliced into the final committed files — the second attempt's
+vram-ctxN.txt / ps-ctxN.txt / raw-log-ctxN.txt are each a fresh, complete
+set from a single execution per ctx point.

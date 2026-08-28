@@ -1,0 +1,258 @@
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:51.185-05:00 level=INFO source=server.go:109 msg="using llama-server for model" model=/mnt/extra/ollama-models/blobs/sha256-bc286970a24072cf23a4c905f28adb9f6a28c71743b07790185275a86dc72406
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:51.185-05:00 level=INFO source=llama_server.go:431 msg="starting llama-server" cmd="/usr/local/lib/ollama/llama-server --model /mnt/extra/ollama-models/blobs/sha256-bc286970a24072cf23a4c905f28adb9f6a28c71743b07790185275a86dc72406 --port 35821 --host 127.0.0.1 --no-webui --offline -c 8192 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --flash-attn auto -b 512 -ub 512"
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:51.185-05:00 level=INFO source=sched.go:613 msg="system memory" total="29.9 GiB" free="16.2 GiB" free_swap="14.2 GiB"
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:51.185-05:00 level=INFO source=sched.go:620 msg="gpu memory" id=0 library=CUDA available="14.0 GiB" free="14.5 GiB" minimum="457.0 MiB" overhead="0 B"
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:51.185-05:00 level=INFO source=llama_server.go:1046 msg="loading model via llama-server" model=/mnt/extra/ollama-models/blobs/sha256-bc286970a24072cf23a4c905f28adb9f6a28c71743b07790185275a86dc72406
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:51.185-05:00 level=INFO source=llama_server.go:1293 msg="waiting for llama-server to start responding"
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:51.185-05:00 level=INFO source=llama_server.go:1348 msg="waiting for llama-server to become available" status="llm server not responding"
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: cmn  common_param: common_params_print_info: build 1 (0b1bad14f) with GNU 13.3.1 for Linux x86_64
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: cmn  common_param: common_params_print_info: verbosity = 4 (adjust with the `-lv N` CLI arg)
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: cmn  common_param: device_info:
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: cmn  common_param:   - CPU     : AMD Ryzen 7 9800X3D 8-Core Processor (30649 MiB, 30649 MiB free)
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: cmn  common_param:   - CUDA0   : NVIDIA GeForce RTX 5080 (15839 MiB, 14832 MiB free)
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: cmn  common_param: system_info: n_threads = 8 (n_threads_batch = 8) / 16 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | AVX512 = 1 | AVX512_VBMI = 1 | AVX512_VNNI = 1 | AVX512_BF16 = 1 | LLAMAFILE = 1 | REPACK = 1 | CUDA : ARCHS = 750,800,860,870,890,900,1000,1030,1100,1200,1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 |
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv          init: using 15 threads for HTTP server
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv          init: The UI is disabled
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv          init: Use --ui/--no-ui (or deprecated --webui/--no-webui) to enable/disable
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv  llama_server: -----------------
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv  llama_server: this can be a security risk (cross-origin attacks)
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv  llama_server: -----------------
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv         start: binding port with default address family
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv    load_model: loading model '/mnt/extra/ollama-models/blobs/sha256-bc286970a24072cf23a4c905f28adb9f6a28c71743b07790185275a86dc72406'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: srv    load_model: local path '/mnt/extra/ollama-models/blobs/sha256-bc286970a24072cf23a4c905f28adb9f6a28c71743b07790185275a86dc72406'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: cmn  common_init_: fitting params to device memory ...
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: cmn  common_init_: (for bugs during this step try to reproduce them with -fit off, or provide --verbose logs if the bug only occurs with -fit on)
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: common_params_fit_impl: getting device memory data for initial parameters:
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:51.436-05:00 level=INFO source=llama_server.go:1348 msg="waiting for llama-server to become available" status="llm server loading model"
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: common_memory_breakdown_print: | memory breakdown [MiB] | total    free     self   model   context   compute    unaccounted |
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: common_memory_breakdown_print: |   - CUDA0 (RTX 5080)   | 15839 = 14832 + (13661 = 11160 +    2160 +     340) +      -12654 |
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: common_memory_breakdown_print: |   - Host               |                    161 =   137 +       0 +      24                |
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: common_params_fit_impl: projected to use 13661 MiB of device memory vs. 14832 MiB of free device memory
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: common_params_fit_impl: will leave 1171 >= 1024 MiB of free device memory, no changes needed
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: common_fit_params: successfully fit params to free device memory
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: common_fit_params: fitting params to free memory took 0.09 seconds
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: loaded meta data with 38 key-value pairs and 377 tensors from /mnt/extra/ollama-models/blobs/sha256-bc286970a24072cf23a4c905f28adb9f6a28c71743b07790185275a86dc72406 (version GGUF V3 (latest))
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   0:                       general.architecture str              = deepseek2
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   1:                               general.name str              = DeepSeek-Coder-V2-Lite-Instruct
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   2:                      deepseek2.block_count u32              = 27
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   3:                   deepseek2.context_length u32              = 163840
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   4:                 deepseek2.embedding_length u32              = 2048
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   5:              deepseek2.feed_forward_length u32              = 10944
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   6:             deepseek2.attention.head_count u32              = 16
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   7:          deepseek2.attention.head_count_kv u32              = 16
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   8:                   deepseek2.rope.freq_base f32              = 10000.000000
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv   9: deepseek2.attention.layer_norm_rms_epsilon f32              = 0.000001
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  10:                deepseek2.expert_used_count u32              = 6
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  11:                          general.file_type u32              = 17
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  12:        deepseek2.leading_dense_block_count u32              = 1
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  13:                       deepseek2.vocab_size u32              = 102400
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  14:           deepseek2.attention.kv_lora_rank u32              = 512
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  15:             deepseek2.attention.key_length u32              = 192
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  16:           deepseek2.attention.value_length u32              = 128
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  17:       deepseek2.expert_feed_forward_length u32              = 1408
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  18:                     deepseek2.expert_count u32              = 64
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  19:              deepseek2.expert_shared_count u32              = 2
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  20:             deepseek2.expert_weights_scale f32              = 1.000000
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  21:             deepseek2.rope.dimension_count u32              = 64
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  22:                deepseek2.rope.scaling.type str              = yarn
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  23:              deepseek2.rope.scaling.factor f32              = 40.000000
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  24: deepseek2.rope.scaling.original_context_length u32              = 4096
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  25: deepseek2.rope.scaling.yarn_log_multiplier f32              = 0.070700
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  26:                       tokenizer.ggml.model str              = gpt2
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  27:                         tokenizer.ggml.pre str              = deepseek-llm
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  28:                      tokenizer.ggml.tokens arr[str,102400]  = ["!", "\"", "#", "$", "%", "&", "'", ...
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  29:                  tokenizer.ggml.token_type arr[i32,102400]  = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ...
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  30:                      tokenizer.ggml.merges arr[str,99757]   = ["Ġ Ġ", "Ġ t", "Ġ a", "i n", "h e...
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  31:                tokenizer.ggml.bos_token_id u32              = 100000
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  32:                tokenizer.ggml.eos_token_id u32              = 100001
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  33:            tokenizer.ggml.padding_token_id u32              = 100001
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  34:               tokenizer.ggml.add_bos_token bool             = true
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  35:               tokenizer.ggml.add_eos_token bool             = false
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  36:                    tokenizer.chat_template str              = {% if not add_generation_prompt is de...
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - kv  37:               general.quantization_version u32              = 2
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - type  f32:  108 tensors
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - type q5_1:   14 tensors
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - type q8_0:   13 tensors
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - type q5_K:  229 tensors
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_model_loader: - type q6_K:   13 tensors
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: file format = GGUF V3 (latest)
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: file type   = Q5_K - Medium
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: file size   = 11.03 GiB (6.03 BPW)
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: llama_prepare_model_devices: using device CUDA0 (NVIDIA GeForce RTX 5080) (0000:01:00.0) - 14832 MiB free
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load: control-looking token: 100004 '<｜fim▁end｜>' was not control-type; this is probably a bug in the model. its type will be overridden
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load: control-looking token: 100003 '<｜fim▁begin｜>' was not control-type; this is probably a bug in the model. its type will be overridden
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load: control-looking token: 100002 '<｜fim▁hole｜>' was not control-type; this is probably a bug in the model. its type will be overridden
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load: 0 unused tokens
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load: printing all EOG tokens:
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load:   - 100001 ('<｜end▁of▁sentence｜>')
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load: special tokens cache size = 2400
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load: token to piece cache size = 0.6661 MB
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: arch                  = deepseek2
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: vocab_only            = 0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: no_alloc              = 0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_ctx_train           = 163840
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_embd_inp            = 2048
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_embd                = 2048
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_embd_out            = 2048
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_layer               = 27
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_layer_all           = 27
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_head                = 16
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_head_kv             = 16
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_rot                 = 64
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_swa                 = 0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: is_swa_any            = 0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_embd_head_k         = 192
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_embd_head_v         = 128
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_gqa                 = 1
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_embd_k_gqa          = 3072
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_embd_v_gqa          = 2048
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: f_norm_eps            = 0.0e+00
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: f_norm_rms_eps        = 1.0e-06
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: f_clamp_kqv           = 0.0e+00
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: f_max_alibi_bias      = 0.0e+00
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: f_logit_scale         = 0.0e+00
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: f_attn_scale          = 0.0e+00
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: f_attn_value_scale    = 0.0000
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_ff                  = 10944
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_expert              = 64
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_expert_used         = 6
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_expert_groups       = 0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_group_used          = 0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: causal attn           = 1
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: pooling type          = -1
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: rope type             = 0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: rope scaling          = yarn
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: freq_base_train       = 10000.0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: freq_scale_train      = 0.025
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_ctx_orig_yarn       = 4096
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: rope_yarn_log_mul     = 0.7070
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: rope_finetuned        = unknown
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: model type            = 16B
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: model params          = 15.71 B
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: general.name          = DeepSeek-Coder-V2-Lite-Instruct
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_layer_dense_lead    = 1
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_lora_q              = 0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_lora_kv             = 512
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_embd_head_k_mla     = 192
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_embd_head_v_mla     = 128
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_ff_exp              = 1408
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_expert_shared       = 2
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: expert_weights_scale  = 1.0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: expert_weights_norm   = 0
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: expert_gating_func    = softmax
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: vocab type            = BPE
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_vocab               = 102400
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: n_merges              = 99757
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: BOS token             = 100000 '<｜begin▁of▁sentence｜>'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: EOS token             = 100001 '<｜end▁of▁sentence｜>'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: EOT token             = 100001 '<｜end▁of▁sentence｜>'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: PAD token             = 100001 '<｜end▁of▁sentence｜>'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: LF token              = 185 'Ċ'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: FIM PRE token         = 100003 '<｜fim▁begin｜>'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: FIM SUF token         = 100002 '<｜fim▁hole｜>'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: FIM MID token         = 100004 '<｜fim▁end｜>'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: EOG token             = 100001 '<｜end▁of▁sentence｜>'
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: print_info: max token length      = 256
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load_tensors: loading model tensors, this can take a while... (load_mode = mmap)
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load_tensors: offloading output layer to GPU
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load_tensors: offloading 26 repeating layers to GPU
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load_tensors: offloaded 28/28 layers to GPU
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load_tensors:   CPU_Mapped model buffer size =   137.50 MiB
+Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: load_tensors:        CUDA0 model buffer size = 11160.99 MiB
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: cmn  common_init_: added <｜end▁of▁sentence｜> logit bias = -inf
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: constructing llama_context
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: setting new yarn_attn_factor = 1.0000 (mscale == 0.7, mscale_all_dim = 0.7)
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_seq_max             = 1
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_ctx                 = 8192
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_ctx_seq             = 8192
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_batch               = 512
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_ubatch              = 512
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: causal_attn           = 1
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: flash_attn            = auto
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: kv_unified            = false
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: freq_base             = 10000.0
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: freq_scale            = 0.025
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_rs_seq              = 0
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_outputs_max         = 1
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_outputs_max_per_seq = 1
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_ctx_seq (8192) < n_ctx_train (163840) -- the full capacity of the model will not be utilized
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context:  CUDA_Host  output buffer size =     0.39 MiB
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_kv_cache:      CUDA0 KV buffer size =  2160.00 MiB
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_kv_cache: size = 2160.00 MiB (  8192 cells,  27 layers,  1/1 seqs), K (f16): 1296.00 MiB, V (f16):  864.00 MiB
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_kv_cache: attn_rot_k = 0, n_embd_head_k_all = 192
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_kv_cache: attn_rot_v = 0, n_embd_head_k_all = 128
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: sched_reserve: reserving ...
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: layer 0 is assigned to device CUDA0 but Flash Attention is assigned to device CPU (usually due to missing support)
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: Flash Attention not supported, set to disabled
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: resolving fused Gated Delta Net support:
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: fused Gated Delta Net (autoregressive) enabled
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: fused Gated Delta Net (chunked) enabled
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: resolving fused Lightning Indexer support:
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: Lightning Indexer enabled
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: resolving fused DeepSeek V4 HC support:
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: fused DeepSeek V4 HC pre enabled
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: fused DeepSeek V4 HC comb enabled
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: resolve_fused_ops: fused DeepSeek V4 HC post enabled
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: sched_reserve:      CUDA0 compute buffer size =   340.27 MiB
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: sched_reserve:  CUDA_Host compute buffer size =    24.01 MiB
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: sched_reserve: graph nodes  = 1845
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: sched_reserve: graph splits = 2
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: sched_reserve: reserve took 7.53 ms, sched copies = 1
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: cmn  common_init_: warming up the model with an empty run - please wait ... (--no-warmup to disable)
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv    load_model: initializing, n_slots = 1, n_ctx_slot = 8192, kv_unified = 'false'
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: spec common_specu: no implementations specified for speculative decoding
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot   load_model: id  0 | task -1 | new slot, n_ctx = 8192
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv    load_model: prompt cache is enabled, size limit: 8192 MiB
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv    load_model: use `--cache-ram 0` to disable the prompt cache
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv    load_model: for more info see https://github.com/ggml-org/llama.cpp/pull/16391
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv    load_model: context checkpoints enabled, max = 32, min spacing = 8192
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv          init: idle slots will be saved to prompt cache upon starting a new task
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv          init: init: chat template, example_format: '<|im_start|>system
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: You are a helpful assistant<|im_end|>
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: <|im_start|>user
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: Hello<|im_end|>
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: <|im_start|>assistant
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: Hi there<|im_end|>
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: <|im_start|>user
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: How are you?<|im_end|>
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: <|im_start|>assistant
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: '
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv          init: init: chat template, thinking = 0
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv  llama_server: model loaded
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv  llama_server: listening on http://127.0.0.1:35821
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv  update_slots: all slots are idle
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:52.439-05:00 level=INFO source=llama_server.go:1360 msg="llama-server started in 1.25 seconds"
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:52.450-05:00 level=INFO source=images.go:374 msg="template selection" model=registry.ollama.ai/library/deepseek-coder-v2:16b-lite-instruct-q5_K_M selected=go_template renderer="" parser="" go_template="[completion insert]" chat_template=[completion] harmony=null renderer_parser=null
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:52.450-05:00 level=INFO source=sched.go:728 msg="loaded runners" count=1
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:52.450-05:00 level=INFO source=llama_server.go:1293 msg="waiting for llama-server to start responding"
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:52.450-05:00 level=INFO source=llama_server.go:1360 msg="llama-server started in 1.27 seconds"
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv  server_strea: conv_id= (empty=1)
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: check_double_bos_eos: Added a BOS token to the prompt as specified by the model but the prompt also starts with a BOS token. So now the final prompt starts with 2 BOS tokens. Are you sure this is what you want?
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot get_availabl: id  0 | task -1 |  - skipping, slot is empty
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot get_availabl: id  0 | task -1 | selected slot by LRU, t_last = -1
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv  get_availabl: updating prompt cache
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv          load:  - looking for better prompt, base f_keep = -1.000, f_sim = 0.000
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv        update:  - cache state: 0 prompts, 0.000 MiB (limits: 8192.000 MiB, 8192 tokens, 8589934592 est)
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv  get_availabl: prompt cache update took 0.01 ms
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> ?min-p -> ?xtc -> temp-ext -> dist
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot launch_slot_: id  0 | task -1 | sampler params:
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]:         repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]:         dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]:         top_k = 40, top_p = 0.900, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.800
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]:         mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot launch_slot_: id  0 | task 0 | processing task, is_child = 0
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot   operator(): id  0 | task 0 | new prompt, n_ctx_slot = 8192, n_keep = 4, task.n_tokens = 9
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot   operator(): id  0 | task 0 | cached n_tokens = 0, memory_seq_rm [0, end)
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot init_sampler: id  0 | task 0 | init sampler, took 0.01 ms, tokens: text = 9, total = 9
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot print_timing: id  0 | task 0 | prompt eval time =      52.85 ms /     9 tokens (    5.87 ms per token,   170.31 tokens per second)
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot print_timing: id  0 | task 0 |        eval time =     128.97 ms /    26 tokens (    4.96 ms per token,   201.61 tokens per second)
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot print_timing: id  0 | task 0 |       total time =     181.81 ms /    35 tokens
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot print_timing: id  0 | task 0 |    graphs reused =         25
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: slot      release: id  0 | task 0 | stop processing: n_tokens = 34, truncated = 0
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: srv  update_slots: all slots are idle
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: [GIN] 2026/08/27 - 23:56:52 | 200 |  2.320869978s |       127.0.0.1 | POST     "/api/generate"
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: [GIN] 2026/08/27 - 23:56:52 | 200 |       16.63µs |       127.0.0.1 | HEAD     "/"
+Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: [GIN] 2026/08/27 - 23:56:52 | 200 |       24.23µs |       127.0.0.1 | GET      "/api/ps"

@@ -1,0 +1,2 @@
+NAME                                          ID              SIZE     PROCESSOR    CONTEXT    UNTIL              
+deepseek-coder-v2:16b-lite-instruct-q5_K_M    6065d4880bf9    14 GB    100% GPU     8192       2 minutes from now    
