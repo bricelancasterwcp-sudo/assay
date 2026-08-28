@@ -274,3 +274,15 @@ rewritten to suit a later fix, per this file's own header. This erratum,
 correction; `tests/test_geometry_conformance.py`'s vendored v3 vector and
 `tests/test_e1_sweep.py` / `tests/test_geometry.py`'s replay tests pin
 the corrected figures as checked arithmetic rather than prose.
+
+That "not rewritten" rule governs the two committed *profiles* named
+above and no more: the *analysis* records that replay them —
+`docs/superpowers/evidence/tools-anchor/results.json`'s
+`v16_recomputed_under_v14_conditions` / `measured_geometry` blocks and
+`docs/superpowers/evidence/e1-sweep/results.json`'s `corrected` block
+for this model — were re-derived under R9 through today's extractor,
+each carrying its own `r9_repin_2026_08_28` provenance field naming the
+old, pre-R9 figures it replaces; those blocks were always "what today's
+rule computes from the committed capture," never a measurement in their
+own right, which is the same distinction this erratum's headline draws
+for the 324 figure itself.

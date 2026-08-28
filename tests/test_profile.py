@@ -1070,9 +1070,15 @@ def test_the_unstamped_geometry_keys_owe_a_schema_bump():
 
     The `PROFILE_VERSION == 10` line is the tripwire, not decoration: the
     release that bumps the schema fails HERE, reads the recorded
-    obligation, stamps the README row, writes the `SEMANTIC_BREAKS` row
-    the same release owes, and strikes the debt item. Its sibling above
-    pins the other four literals that must move with it.
+    obligation, and stamps the README row. It does NOT write a fresh
+    `SEMANTIC_BREAKS` row: `geometry.kv_kib_per_token` already has one
+    (added 2026-08-28 for R9, keyed at the pre-release `__version__`
+    literal — see `tests/test_diff.py`'s own tripwire,
+    `test_a_geometry_kv_break_straddles_r9`) — what that release owes is
+    RE-KEYING the existing row to its own version, not authoring a new
+    one, and it still strikes CARRIED-DEBT.md's item 1 (the schema/
+    package bump) on the way. Its sibling above pins the other four
+    literals that must move with it.
     """
     geometry_fields = {f.name for f in dataclasses.fields(Geometry)}
     assert {"attention_layer_count", "serving_block_count",

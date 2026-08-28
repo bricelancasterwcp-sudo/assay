@@ -1375,7 +1375,22 @@ def test_a_geometry_kv_break_straddles_r9():
     end-to-end `diff_profiles` claim the missing wiring cannot make —
     adding that wiring is a separate, still-open piece of work.
     """
-    from assay.diff import _straddles
+    import assay
+    from assay.diff import SEMANTIC_BREAKS, _parse_version, _straddles
+
+    # The row's own tripwire: it is keyed at __version__'s CURRENT value
+    # (R9 is unreleased — CARRIED-DEBT.md item 1's schema/package bump is
+    # still open) rather than at a release number that does not exist
+    # yet. Nothing else in the suite fails on a bare __version__ bump —
+    # PROFILE_VERSION doesn't move for R9, so the schema tripwire in
+    # tests/test_profile.py never fires, and _straddles below hardcodes
+    # its own literals rather than reading assay.__version__ — so this
+    # assertion IS the re-key reminder: the moment __version__ moves
+    # without this row moving with it, this fails here, loudly, with the
+    # instruction in its own message.
+    assert SEMANTIC_BREAKS["geometry.kv_kib_per_token"] == _parse_version(
+        assay.__version__
+    ), "R9 is still unreleased: re-key this row to the release that ships it"
 
     assert _straddles("geometry.kv_kib_per_token", "0.12.0", "0.13.0")
     # Order does not matter: an upgrade and a downgrade are equally

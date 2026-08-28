@@ -5,6 +5,80 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
+## Unreleased: MLA kv, separate K/V widths (R9)
+
+`kv_bytes_per_token` computed every architecture's cache as `2 x
+attention_layers x kv_head_count x head_dim x bytes/element` — K and V
+symmetric at one stated width. That is correct wherever the runtime
+actually caches K and V at the same width, and wrong for an **MLA**
+(multi-head latent attention) architecture that states them separately:
+deepseek2's metadata carries `attention.key_length` (192) beside
+`attention.value_length` (128), two different numbers, and the flat 2x
+factor charges V at K's wider width for no reason the metadata gives.
+
+**R9** now holds: whenever `value_length` is stated and differs from
+`head_dim`, `kv_bytes_per_token` replaces the 2x factor with the
+explicit sum, `attention_layers x kv_head_count x (head_dim +
+value_length) x bytes/element`. A stated `value_length` equal to
+`head_dim` stays on the dense path by identity — the widths genuinely
+match, so 2x already IS the sum — and an unstated `value_length` is the
+pre-R9 reading the dense formula already covers, not a claim of equal
+widths. `ModelInfo` gains `value_length`, read verbatim from
+`attention.value_length` alongside the existing `head_dim` read of
+`attention.key_length`; every architecture that never states it is
+arithmetically unchanged by this branch's existence.
+
+The rule is grounded in a real allocation, not a second guess:
+`docs/superpowers/evidence/mla-kv-2026-08-27/` (protocol `c379c9f`,
+captures `cf6222e`, verdict `d25af18`) reads ollama 0.32.13's own
+KV-buffer log lines for `deepseek-coder-v2:16b-lite-instruct-q5_K_M`
+under the llama runner at three context points and finds **276,480
+bytes/token (270 KiB/token)**, exact and identical at all three, against
+a pre-registered ±5% band test over four disjoint candidates — verdict
+**H-b**, separate K and V widths, deviation from the measured figure
+0.000%. The K/V split in the same log lines independently reproduces
+both stated widths digit for digit (`27 x 16 x 192 x 2 = 165,888` K,
+`27 x 16 x 128 x 2 = 110,592` V, summing to the measured total).
+
+**Erratum, filed 2026-08-28** (E3,
+`docs/superpowers/evidence/tier-enthusiast/ERRATA.md`): this repository
+had already published 324 KiB/token for this exact model, carrying the
+same "measured on a live daemon" framing every other figure in
+`tier-enthusiast-2026-08/` earns from having actually been read off the
+runtime. It was never that: 324 is R2's arithmetic (2x `head_dim`) over
+a stated metadata field, not an observed allocation. The direction is
+the opposite of E1's dominant one — 324 was an OVER-charge, so every
+`usable_window` computed from it was UNDER-promised, on both affected
+profiles
+(`docs/superpowers/evidence/tier-enthusiast/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`
+and
+`docs/superpowers/evidence/tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`).
+Both stand exactly as published; the erratum is the correction, per this
+project's standing rule against retro-editing evidence.
+
+gguf-geometry's contract vectors move to **v3**
+(`tests/data/gguf_geometry_v3/`, from that repo's master `84f042b`): the
+ten non-deepseek vectors carry forward byte-identical from v2, and the
+deepseek vector is re-pinned from 331776 to 276480, `must_not_equal`
+banning the old figure and the two disproved MLA-latent candidates
+(31104/62208) alongside it. `tests/data/gguf_geometry_v2/` is deleted in
+the same commit.
+
+`SEMANTIC_BREAKS` (`src/assay/diff.py`) gains a row for
+`geometry.kv_kib_per_token`: the same endpoint changes what it means for
+any deepseek2-class file whose `value_length` differs from its
+`head_dim`, and a pair straddling the break is not comparable
+arithmetic. No release has shipped R9 yet, so the row is keyed at the
+pre-release `__version__` literal this tree currently reads rather than
+a release number that does not exist — the schema/package version bump
+this change owes is recorded as still-open in `docs/CARRIED-DEBT.md`,
+and whichever release ships it also re-keys this row to its own version
+number. No diff family reads `geometry.*` cells yet (the same gap
+`docs/CARRIED-DEBT.md`'s v1.10 "Diff" item 1 already names for
+`verdict.*`), so this registers the break ahead of the wiring that would
+consult it — the same order the geometry row's own schema-stamp
+obligation was recorded ahead of its bump.
+
 ## Unreleased: hybrid layer geometry (R3/R4/R6)
 
 `kv_bytes_per_token` charged `block_count` attention layers — every

@@ -196,7 +196,7 @@
         "head_dim_if_derived": 128,
         "kv_bytes_per_token": 276480,
         "kv_kib_per_token": 270,
-        "r9_repin_2026_08_28": "kv/window re-pinned per R9 (MLA, separate K/V widths) and erratum E3 (docs/superpowers/evidence/tier-enthusiast/ERRATA.md): 331776 B (324 KiB) was R2 arithmetic (2x head_dim) over stated key_length, never an observed allocation. Measured 276480 B (270 KiB), exact and identical at 3 ctx points, docs/superpowers/evidence/mla-kv-2026-08-27/ (verdict H-b).",
+        "r9_repin_2026_08_28": "kv/window re-pinned per R9 (MLA, separate K/V widths) and erratum E3 (docs/superpowers/evidence/tier-enthusiast/ERRATA.md): 331776 B (324 KiB) was R2 arithmetic (2x head_dim) over stated key_length, never an observed allocation. Measured 276480 B (270 KiB), exact and identical at 3 ctx points, docs/superpowers/evidence/mla-kv-2026-08-27/ (verdict H-b). The pre-R9 (R2-arithmetic) derivation this replaces, preserved rather than left to vanish: measured_geometry.usable_window was 2237 (now 2685, vram_free_mib 1220 unchanged); v16_recomputed_under_v14_conditions.window_shortfall_pct_of_v14_promise was 33.3 (now 20.0) and .kv_excess_pct_over_v14 was 50.0 (now 25.0), both at vram_free_mib 2219 unchanged.",
         "quant": "Q5_K_M",
         "training_ctx": 163840,
         "tags_entry": {
