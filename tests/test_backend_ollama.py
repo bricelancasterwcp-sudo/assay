@@ -403,6 +403,64 @@ def test_an_interval_that_cannot_be_applied_withholds_the_layer_count():
     assert info.mtp_layer_count == 0
 
 
+# --- MLA value width: deepseek2 (Phase 1 H-b) -------------------------------
+
+DEEPSEEK2_MODEL = "deepseek-coder-v2:16b-lite-instruct-q5_K_M"
+#: deepseek2 (MLA): value_length 128 != key_length 192 — the value head
+#: width is a SEPARATE stated key from the key width R1/R2 already read.
+#: Verbatim from gguf-geometry v2 vector
+#: deepseek-coder-v2-16b-lite-instruct-q5_K_M (tests/data/gguf_geometry_v2).
+DEEPSEEK2_SHOW_BODY = {
+    "details": {"quantization_level": "Q5_K_M"},
+    "model_info": {
+        "general.architecture": "deepseek2",
+        "deepseek2.block_count": 27,
+        "deepseek2.context_length": 163840,
+        "deepseek2.embedding_length": 2048,
+        "deepseek2.attention.head_count": 16,
+        "deepseek2.attention.head_count_kv": 16,
+        "deepseek2.attention.key_length": 192,
+        "deepseek2.attention.value_length": 128,
+        "deepseek2.expert_count": 64,
+        "deepseek2.expert_used_count": 6,
+    },
+}
+
+
+def test_model_info_reads_the_mla_value_width():
+    transport = FakeTransport(
+        post_routes={"/api/show": (200, DEEPSEEK2_SHOW_BODY)},
+        get_routes={
+            "/api/tags": (200, {"models": []}),
+            "/api/ps": (200, {"models": []}),
+        },
+    )
+    backend = OllamaNative(
+        BASE_URL, DEEPSEEK2_MODEL, http_post=transport.post, http_get=transport.get
+    )
+
+    info = backend.model_info()
+
+    assert info.value_length == 128
+
+
+def test_model_info_value_length_is_none_when_unstated():
+    # qwen2 states no attention.value_length: this field must not read as
+    # a measured zero-width value cache when the metadata says nothing.
+    transport = FakeTransport(
+        post_routes={"/api/show": (200, QWEN_SHOW_BODY)},
+        get_routes={
+            "/api/tags": (200, QWEN_TAGS_BODY),
+            "/api/ps": (200, {"models": []}),
+        },
+    )
+    backend = make_backend(transport)
+
+    info = backend.model_info()
+
+    assert info.value_length is None
+
+
 # --- chat_tools (v1.6) -----------------------------------------------------
 
 MESSAGES = [{"role": "user", "content": "read tiny.py, then tell me the bug"}]

@@ -241,6 +241,11 @@ class ModelInfo:
     #: R6: `<arch>.nextn_predict_layers` as stated. MTP layers are
     #: counted into `block_count` by the converter and do not serve.
     mtp_layer_count: int | None = None
+    #: `attention.value_length` as STATED, verbatim — an MLA file (e.g.
+    #: deepseek2) states a value head width separate from the key width
+    #: `head_dim` already reads. None = unstated, never 0. Rule logic
+    #: (R9) lives in geometry.py, not here.
+    value_length: int | None = None
 
 
 class Backend(Protocol):

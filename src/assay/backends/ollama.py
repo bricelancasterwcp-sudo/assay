@@ -329,6 +329,9 @@ class OllamaNative:
             attention_layer_count=attention_layers,
             recurrent_state_bytes=recurrent_bytes,
             mtp_layer_count=mtp_layers,
+            # MLA value width (R9). Verbatim reading, no derivation: an
+            # MLA file states this separately from key_length.
+            value_length=_arch_value(arch_info, "attention.value_length"),
         )
 
     def _is_this_model(self, entry) -> bool:
