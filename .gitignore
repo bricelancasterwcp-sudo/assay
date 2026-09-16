@@ -9,3 +9,7 @@ uv.lock
 # is already in campaign-run.log, which IS committed.
 docs/superpowers/evidence/*/.DONE
 docs/superpowers/evidence/*/campaign.pid
+
+# SDD workspace (intentionally untracked), matching gguf-geometry's ruling
+# that SDD workspaces stay local in public repos.
+.superpowers/

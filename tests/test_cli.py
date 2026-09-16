@@ -58,7 +58,7 @@ def test_exit_0_with_profile_json_written(tmp_path, monkeypatch, capsys):
 
     assert code == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
-    assert payload["assay_profile_version"] == 10
+    assert payload["assay_profile_version"] == 11
     assert payload["ceiling"]["failure_mode"] == "none_up_to_cap"
     assert payload["verdicts"]["long_context"]["verdict"] == "ready"
     # The documented quick default budget was applied...
@@ -788,6 +788,9 @@ def test_cli_cover_exit_table(tmp_path, capsys):
         return str(path)
 
     base = {
+        # Frozen v1.11-era pair (schema 10, probe 0.13.0): a document the
+        # CLI READS, not a current-version pin — that pin is
+        # test_exit_0_with_profile_json_written's.
         "assay_profile_version": 10, "probe_version": "0.13.0",
         "model": {"name": "a", "quant": "Q4", "weights_bytes": 1},
         "provenance": {"tier": "enthusiast-16gb", "emulated": False},
@@ -821,6 +824,9 @@ def test_cli_cover_json_writes_the_whole_result(tmp_path):
     from assay.cli import main
 
     base = {
+        # Frozen v1.11-era pair (schema 10, probe 0.13.0): a document the
+        # CLI READS, not a current-version pin — that pin is
+        # test_exit_0_with_profile_json_written's.
         "assay_profile_version": 10, "probe_version": "0.13.0",
         "model": {"name": "a", "quant": "Q4", "weights_bytes": 1},
         "provenance": {"tier": "enthusiast-16gb", "emulated": False},
@@ -849,6 +855,9 @@ def test_cli_cover_unreadable_file_is_infrastructure_not_a_verdict(
     1/2/3 — so a file that failed to parse must land outside the
     taxonomy entirely rather than inside it as either answer."""
     payload = {
+        # Frozen v1.11-era pair (schema 10, probe 0.13.0): a document the
+        # CLI READS, not a current-version pin — that pin is
+        # test_exit_0_with_profile_json_written's.
         "assay_profile_version": 10, "probe_version": "0.13.0",
         "model": {"name": "a", "quant": "Q4", "weights_bytes": 1},
         "provenance": {"tier": "enthusiast-16gb", "emulated": False},

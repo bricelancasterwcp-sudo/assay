@@ -1,4 +1,115 @@
+# Carried debt — v1.12 (recorded 2026-09-16 at the release)
+
+Package 0.14.0, profile schema **v11**. This release adds no
+measurement: it ships the three entries that sat on master as
+"Unreleased" since 2026-08-27/28 — hybrid layer geometry (R3/R4/R6),
+the MLA kv rule (R9), the errata-flagging matrix — and discharges what
+they recorded against "the release that ships this". None of what
+follows blocks it.
+
+## What this release settled
+
+- **The schema/package bump** (item 1 of the 2026-08-27 section below,
+  struck there): `PROFILE_VERSION` 10 → 11, `__version__` and
+  `pyproject.toml` 0.13.0 → 0.14.0, the README's
+  `assay_profile_version: 11` line, and the README profile table's
+  `geometry` row, which now stamps `attention_layer_count`,
+  `serving_block_count` and `recurrent_state_bytes` as `new in v1.12,
+  schema v11` instead of "unreleased". The tripwire
+  `test_the_unstamped_geometry_keys_owe_a_schema_bump` did its job —
+  failed on the bump, pointed at the ledger — and is replaced by its
+  post-release form, `test_the_hybrid_geometry_keys_carry_their_schema_stamp`,
+  which pins the stamp as a literal: a stamp is a date and must not
+  move with later bumps.
+- **`SEMANTIC_BREAKS["geometry.kv_kib_per_token"]`** re-keyed from the
+  pre-release literal (0, 13, 0) to (0, 14, 0), and
+  `test_a_geometry_kv_break_straddles_r9`'s mirror-assertion against
+  `assay.__version__` replaced by the literal pin its own DISARM clause
+  called for. One row covers R3/R4/R6 and R9 because they ship
+  together. The key is history now, not a tripwire: a bare version
+  bump can no longer fire that test; only an edit to the row can, and
+  such a failure is a defect in the edit.
+- **Items 3 and 4 of the 2026-08-27 section** closed by Brice's ruling
+  of 2026-09-16 (adopting the recommendation to close both on the
+  evidence written beside each strike-through below): the live
+  measurement of `qwen3.8:27b` had already been run at `8892d0e`, and
+  the gguf-geometry link resolves against a public repository.
+- **The README's hybrid section** named the deleted
+  `tests/data/gguf_geometry_v2/` and `7f858c8`; it now names v3 and
+  `84f042b`. `.superpowers/` is ignored, matching gguf-geometry's
+  ruling that SDD workspaces stay local in public repos. A test
+  workflow (`.github/workflows/ci.yml`) is added — this repository had
+  only the Pages deploy, so every "suite green" claim before this
+  release was a local one.
+- **Dropped, not deferred**: the queued assay×oxide arc
+  (`oxide-fixtures-v1` + a rustc-oracle landing lens, queued
+  2026-08-28) is tossed by Brice's ruling of 2026-09-16. It was never
+  an item in this file; recorded here so it is not re-proposed as one.
+
+## Deferred, by area
+
+### Diff
+
+1. **The registry's second row names a family no diff reads.**
+   Unchanged from v1.10 "Diff" items 1 and 2, which compound, and now
+   concrete rather than prospective: `geometry.kv_kib_per_token` is
+   registered at 0.14.0, `_straddles` proves the straddle, and
+   `diff_profiles` would still score a v10-vs-v11 hybrid or MLA pair's
+   kv figure as if both sides answered the same question, because no
+   `_diff_geometry` exists to consult the registry. Closing it is a
+   straddle check at a geometry comparison site that does not exist
+   yet — a design piece (which geometry cells diff, at what tolerance),
+   not a one-line wire. Not release-blocking: the only committed hybrid
+   profiles are v4 and v8, and no v11 profile exists yet to pair with
+   either.
+
+### Geometry
+
+2. **R9's guard reads `head_dim`; SPEC's text reads `key_length`.** The
+   editorial sentence the 2026-08-28 section records as owed to
+   gguf-geometry's SPEC — bless assay's `head_dim`-based reading or
+   correct it to read `key_length` directly. Unreachable in practice
+   today (no vendored vector states `value_length` without
+   `key_length`). Lives in the gguf-geometry repository, not here.
+
+### Consumers
+
+3. **bloomery reads this tree in place.** bloomery pins assay via
+   `PYTHONPATH` to `~/workspace/assay/src`, so its drift watch now runs
+   a schema-v11 probe against whatever reference it holds. That is the
+   intended honesty — the same note stood for the hybrid branch — and
+   is recorded so the first v10-vs-v11 flag is read as an instrument
+   boundary, not as model drift. Re-bless per bloomery's procedure.
+
+### Pre-release documents
+
+4. **`probe_version: 0.13.0` is ambiguous for geometry.** Between
+   `d81cf8b` (2026-08-27) and this release, master computed geometry
+   under R3/R4/R6 — and, from `d2c8e13`, R9 — while still reporting
+   `0.13.0`. A profile written from that tree reads as pre-break to
+   `_straddles` and is not. **No committed document is one.** The only
+   capture from that window,
+   `docs/superpowers/evidence/qwen38-27b-live-2026-08-27/geometry-qwen3.8-27b.json`,
+   is a `geometry` subcommand output with no `probe_version` key at
+   all, which `_straddles` refuses to compare (an unparseable version
+   straddles every registered break) rather than misreads. The real
+   exposure is a consumer reading this tree in place — bloomery,
+   Consumers item 3 — whose drift-watch runs between those dates would
+   have written exactly such profiles: none is committed in bloomery's
+   tree as of 2026-09-16 (`grep -rl '"probe_version": "0.13.0"'` finds
+   nothing), so the population is whatever its uncommitted run storage
+   holds from that window. Recorded so nobody backfills a second break
+   at 0.13.0 to "fix" it: the fix would misread every genuine 0.13.0
+   profile as post-break.
+
 # Carried debt — unreleased: hybrid layer geometry (recorded 2026-08-27)
+
+**Shipped.** The hold below was lifted when the branch merged to master
+at `d81cf8b` (2026-08-27), and the release this section waited for is
+v1.12 (0.14.0 / schema v11, 2026-09-16) — the section above. Items 1,
+3 and 4 are struck below with the text that closed them; item 2's
+residual (the diff wiring) is carried in the v1.12 section. Everything
+else in this section is the branch-time record, left as written.
 
 Branch `geometry-conformance`, **MERGE HOLD**, package and schema
 untouched (0.13.0 / v10). This section is not a wave's close: it is the
@@ -11,7 +122,7 @@ by that release, not by more work on the branch.
 
 ### Geometry (release obligations)
 
-1. **The three new `geometry` keys are unstamped: the shipping release
+1. ~~**The three new `geometry` keys are unstamped: the shipping release
    owes a schema bump.** `attention_layer_count`, `serving_block_count`
    and `recurrent_state_bytes` are `None`-defaulted, so every committed
    profile parses unchanged and the branch needed no bump to be green.
@@ -40,7 +151,19 @@ by that release, not by more work on the branch.
    the fifth is pinned by
    `test_the_unstamped_geometry_keys_owe_a_schema_bump`, which fails the
    moment `PROFILE_VERSION` moves so that whoever bumps it reads this
-   item.
+   item.~~
+
+   **CLOSED 2026-09-16 by v1.12 (0.14.0 / schema v11).** All five moved
+   in one commit — `PROFILE_VERSION` 10 → 11, `assay.__version__` and
+   `pyproject.toml` 0.13.0 → 0.14.0, the README's
+   `assay_profile_version: 11` line, and the geometry row's stamp (`new
+   in v1.12, schema v11`). The tripwire fired as designed and is
+   replaced by `test_the_hybrid_geometry_keys_carry_their_schema_stamp`,
+   which pins the stamp as a literal. The `SEMANTIC_BREAKS` row item 2
+   wrote at the pre-release literal is re-keyed to (0, 14, 0) in the
+   same commit, and its mirror-assertion disarmed into a literal pin
+   per its own clause. What did NOT close with it: the wiring gap item
+   2's "compounds with" clause names — carried as v1.12 "Diff" item 1.
 
 2. ~~**`SEMANTIC_BREAKS` row for `geometry.kv_kib_per_token`.** Same
    release, same reason. Not written on the branch because the registry
@@ -68,7 +191,7 @@ by that release, not by more work on the branch.
    title promised: the row exists; the endpoint that would read it does
    not yet.
 
-3. **A conforming hardware measurement of `qwen3.8:27b`.** The
+3. ~~**A conforming hardware measurement of `qwen3.8:27b`.** The
    erratum's corrected figures (64 KiB/token, 156,893,184 bytes of
    recurrent state, the two windows) are **derived from the committed
    `/api/show` capture through the corrected extractor, not measured**
@@ -76,9 +199,26 @@ by that release, not by more work on the branch.
    daemon, because no GPU or model load was available to the work that
    filed them. A live run under the corrected code would supersede
    them, would let the withheld `qwen3.8-27b` gguf-geometry vector enter
-   a set, and is the input the matrix-rebuild decision wants.
+   a set, and is the input the matrix-rebuild decision wants.~~
 
-4. **The README's gguf-geometry link is a forward reference.** The
+   **CLOSED 2026-09-16 (Brice's ruling, at the v1.12 release).** The
+   run this item asked for had already happened, on master, the same
+   day the item was filed: commit `8892d0e` ran assay at `24420f2`
+   (`assay geometry … --model qwen3.8:27b`) against a live ollama
+   daemon on the re-pulled blob (sha256 `f5f1dd89…`, spot-verified
+   against the manifest digest) and committed the capture at
+   `docs/superpowers/evidence/qwen38-27b-live-2026-08-27/` — kv 64
+   KiB/token, 16 attention layers, 64 serving blocks, 156,893,184 bytes
+   of recurrent state: the erratum's derived figures reproduced by
+   measurement, and E2 updated to say so. The vector entered
+   gguf-geometry's v2 set that evening and carried into v3. The item
+   was never struck because the 2026-08-28 slice scoped itself to the
+   MLA gap and said so; the ledger was stale, not the work. The
+   matrix-rebuild decision this item said it fed was made the same
+   week and the other way: the page was rebuilt with E2 FLAGGED (the
+   errata sidecar), not with the corrected number — the profile stands.
+
+4. ~~**The README's gguf-geometry link is a forward reference.** The
    "Hybrid geometry" section links the contract at
    `https://github.com/bricelancasterwcp-sudo/gguf-geometry`. That
    repository is local and unpublished — no git remote is configured on
@@ -88,7 +228,15 @@ by that release, not by more work on the branch.
    `tests/data/gguf_geometry_v2/` (the v2 set, copied byte-for-byte from
    gguf-geometry master `7f858c8` on 2026-08-27, superseding the v1 set
    vendored earlier that day) and asserted in
-   `tests/test_geometry_conformance.py`.
+   `tests/test_geometry_conformance.py`.~~
+
+   **CLOSED 2026-09-16 (Brice's ruling, at the v1.12 release).** The
+   premise was corrected on 2026-08-28 (below) and the verdict is now
+   verified: `gh repo view bricelancasterwcp-sudo/gguf-geometry` reports
+   visibility PUBLIC, last push 2026-08-28, so the README's link
+   resolves. The README sentence beside that link still named the
+   deleted v2 directory and `7f858c8`; v1.12 corrects it to
+   `tests/data/gguf_geometry_v3/` and `84f042b`.
 
 ## This slice — MLA kv rule + gguf-geometry v3 (recorded 2026-08-28)
 
