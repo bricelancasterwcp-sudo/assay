@@ -26,8 +26,9 @@ follows blocks it.
   `test_a_geometry_kv_break_straddles_r9`'s mirror-assertion against
   `assay.__version__` replaced by the literal pin its own DISARM clause
   called for. One row covers R3/R4/R6 and R9 because they ship
-  together. The key is history now, not a tripwire: a later bump that
-  fires that test is a defect in the bump.
+  together. The key is history now, not a tripwire: a bare version
+  bump can no longer fire that test; only an edit to the row can, and
+  such a failure is a defect in the edit.
 - **Items 3 and 4 of the 2026-08-27 section** closed by Brice's ruling
   of 2026-09-16 (adopting the recommendation to close both on the
   evidence written beside each strike-through below): the live
@@ -85,12 +86,21 @@ follows blocks it.
 4. **`probe_version: 0.13.0` is ambiguous for geometry.** Between
    `d81cf8b` (2026-08-27) and this release, master computed geometry
    under R3/R4/R6 — and, from `d2c8e13`, R9 — while still reporting
-   `0.13.0`. Any document written from that tree reads as pre-break to
-   `_straddles` and is not. The only committed one is
+   `0.13.0`. A profile written from that tree reads as pre-break to
+   `_straddles` and is not. **No committed document is one.** The only
+   capture from that window,
    `docs/superpowers/evidence/qwen38-27b-live-2026-08-27/geometry-qwen3.8-27b.json`,
-   a `geometry` subcommand output rather than a profile, never diffed.
-   Recorded so nobody backfills a second break at 0.13.0 to "fix" it:
-   the fix would misread every genuine 0.13.0 profile as post-break.
+   is a `geometry` subcommand output with no `probe_version` key at
+   all, which `_straddles` refuses to compare (an unparseable version
+   straddles every registered break) rather than misreads. The real
+   exposure is a consumer reading this tree in place — bloomery,
+   Consumers item 3 — whose drift-watch runs between those dates would
+   have written exactly such profiles: none is committed in bloomery's
+   tree as of 2026-09-16 (`grep -rl '"probe_version": "0.13.0"'` finds
+   nothing), so the population is whatever its uncommitted run storage
+   holds from that window. Recorded so nobody backfills a second break
+   at 0.13.0 to "fix" it: the fix would misread every genuine 0.13.0
+   profile as post-break.
 
 # Carried debt — unreleased: hybrid layer geometry (recorded 2026-08-27)
 

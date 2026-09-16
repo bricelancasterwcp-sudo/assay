@@ -17,8 +17,9 @@ found. Where one says an obligation is still open, a row is keyed at a
 pre-release literal, or the vendored vector set is v2, this preamble
 supersedes it.
 
-**What the bump moves**, in one commit, pinned together by
-`test_schema_version_and_package_version_move_together`:
+**What the bump moves**, in one commit — the first four pinned
+together by `test_schema_version_and_package_version_move_together`,
+the stamp by `test_the_hybrid_geometry_keys_carry_their_schema_stamp`:
 `PROFILE_VERSION` 10 → 11; `assay.__version__` and `pyproject.toml`
 0.13.0 → 0.14.0; the README's `assay_profile_version: 11` line; and the
 README profile table's `geometry` row, which now stamps
@@ -35,16 +36,19 @@ figures computed under different rules.
 `geometry.kv_kib_per_token` entry moves from the pre-release literal
 `(0, 13, 0)` to `(0, 14, 0)`, and its test's mirror-assertion against
 `assay.__version__` is replaced by a literal pin, exactly as that test's
-DISARM clause instructed; from here on a version bump that fires that
-test is a defect in the bump, not a re-key signal. One row covers
-R3/R4/R6 and R9 because they ship together. Documents written from the
-unreleased tree between `d81cf8b` and this release carry
-`probe_version: 0.13.0` under the new rules; the only committed one is
-the `qwen3.8:27b` live geometry capture
-(`docs/superpowers/evidence/qwen38-27b-live-2026-08-27/`), a `geometry`
-subcommand output rather than a profile, never diffed. Recorded in
-`docs/CARRIED-DEBT.md`'s v1.12 section so nobody backfills a second
-break at 0.13.0.
+DISARM clause instructed; from here on a bare version bump cannot fire
+that test, only an edit to the row can, and such a failure is a defect
+in the edit, not a re-key signal. One row covers
+R3/R4/R6 and R9 because they ship together. A profile written from the
+unreleased tree between `d81cf8b` and this release would carry
+`probe_version: 0.13.0` under the new rules and read as pre-break. No
+committed document is one: the `qwen3.8:27b` live geometry capture
+(`docs/superpowers/evidence/qwen38-27b-live-2026-08-27/`) is a
+`geometry` subcommand output with no `probe_version` key, which
+`_straddles` refuses rather than misreads. The exposure is a consumer
+reading this tree in place (bloomery) — recorded in
+`docs/CARRIED-DEBT.md`'s v1.12 section, "Pre-release documents", so
+nobody backfills a second break at 0.13.0.
 
 **The wiring gap is not closed.** No diff family reads `geometry.*`
 cells, so a pair straddling this break is provable at `_straddles` and
@@ -62,8 +66,9 @@ deploy, so "suite green" had only ever been a local claim — and
 `.superpowers/` ignored, matching gguf-geometry's ruling that SDD
 workspaces stay local in public repos.
 
-The matrix page is not rebuilt: it quotes no package version, and no
-published figure changes.
+The matrix page is not rebuilt: the builder stamps no version of its
+own — the `0.9.0` the page quotes is the profiles' `probe_version` — and
+no published figure changes.
 
 ### MLA kv, separate K/V widths (R9)
 

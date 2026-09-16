@@ -1095,6 +1095,10 @@ def test_the_hybrid_geometry_keys_carry_their_schema_stamp():
     assert "attention_layer_count" in v112
     assert ("1. ~~**The three new `geometry` keys are unstamped: the "
             "shipping release") in debt
+    # ...and the strike CLOSES where the item ends, with the closing
+    # text right after it — a dropped closing `~~` would otherwise run
+    # the strike into the next item unnoticed.
+    assert "   item.~~\n\n   **CLOSED 2026-09-16 by v1.12" in debt
 
 
 # --- schema v10: the overlap fraction replaces the seconds tolerance --------

@@ -10,8 +10,12 @@ def _profile(*, name="qwen-a", quant="Q4_K_M", weights=1000,
              tier="enthusiast-16gb", emulated=False,
              probe_version="0.13.0", schema=10, **families):
     """Minimal profile payload. Family payloads (verdicts=, speed=,
-    ceiling=...) merge in as top-level keys, matching what
-    `assay probe --json` writes and what the diff walkers read."""
+    ceiling=...) merge in as top-level keys, matching the SHAPE
+    `assay probe --json` writes and what the diff walkers read. The
+    version defaults are a frozen v1.11-era pair (schema 10, probe
+    0.13.0), not a current-version pin: `cover_identity_gate` compares
+    floor to candidate, never to the running instrument, so the pair
+    only has to be self-consistent."""
     doc = {
         "assay_profile_version": schema,
         "probe_version": probe_version,

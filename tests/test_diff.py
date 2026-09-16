@@ -1381,10 +1381,10 @@ def test_a_geometry_kv_break_straddles_r9():
     `assay.__version__` as a re-key tripwire, with a DISARM clause
     instructing the shipping release to (1) re-key the row to its own
     version and (2) replace the mirror with a literal pin. Both are
-    done below. The literal is now history: a later bump that fires the
-    assertion is a defect in the bump, and re-keying the row would make
-    a genuinely-straddling pair read comparable and corrupt the
-    registry.
+    done below. The literal is now history: a bare version bump can no
+    longer fire this assertion; an edit to the row that does is a defect
+    in that edit, and re-keying the row would make a genuinely-
+    straddling pair read comparable and corrupt the registry.
     """
     from assay.diff import SEMANTIC_BREAKS, _straddles
 
