@@ -1028,12 +1028,15 @@ def test_schema_version_and_package_version_move_together():
     # again for the same reason: `cover` reads profiles, it does not add
     # to them (spec §0). So this commit updates the package-version
     # literals below without touching PROFILE_VERSION or the README's
-    # `assay_profile_version` line.
+    # `assay_profile_version` line. v1.12 (package 0.14.0) moves BOTH:
+    # three geometry keys arrived and `geometry.kv_kib_per_token` changed
+    # meaning on hybrid and MLA models (CHANGELOG v0.14), so the schema
+    # goes v10 -> v11 and all five literals move in one commit.
     import assay
 
-    assert PROFILE_VERSION == 10
-    assert assay.__version__ == "0.13.0"
-    assert 'version = "0.13.0"' in (
+    assert PROFILE_VERSION == 11
+    assert assay.__version__ == "0.14.0"
+    assert 'version = "0.14.0"' in (
         _REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # The README states the schema version to a reader who will never
     # open profile.py. It sat two versions stale through a green suite
@@ -1050,61 +1053,48 @@ def test_schema_version_and_package_version_move_together():
     # place to update per release instead of two.
 
 
-def test_the_unstamped_geometry_keys_owe_a_schema_bump():
-    """The hybrid geometry keys carry no schema stamp, and the obligation
-    to give them one is recorded rather than assumed.
+def test_the_hybrid_geometry_keys_carry_their_schema_stamp():
+    """The hybrid geometry keys carry the schema stamp every other dated
+    field in the README's profile table carries, and the ledger records
+    the bump that gave it to them.
 
-    `attention_layer_count`, `serving_block_count` and
-    `recurrent_state_bytes` are `None`-defaulted, so no committed profile
-    needed a bump to keep parsing — which is exactly why the branch that
-    added them could go green without one, and exactly why nothing else
-    would notice. Where the README's profile table records a field as
-    arriving later it names the schema version (`new in v5`, `v6`, `v7`,
-    `v8`, `v10`); the one previous time geometry keys landed without a
-    stamp the CHANGELOG filed it as a schema irregularity rather than a
-    convention (v1.6's two expert keys, for a window where
-    `assay_profile_version: 5` covered two geometry shapes).
-    The README once sat two versions stale through a green suite because
-    nothing pinned it; this is the same pin, one row further down the
-    same table.
+    Until v1.12 this test was `test_the_unstamped_geometry_keys_owe_a_
+    schema_bump`, a tripwire: `attention_layer_count`,
+    `serving_block_count` and `recurrent_state_bytes` landed on a held
+    branch with no release to bump at, and a `PROFILE_VERSION == 10`
+    assertion made the release that moved the schema fail here, read
+    CARRIED-DEBT.md's recorded obligation, and stamp the README row.
+    v1.12 (0.14.0, schema v11) did exactly that on 2026-09-16, and this is
+    the test's post-release form.
 
-    The `PROFILE_VERSION == 10` line is the tripwire, not decoration: the
-    release that bumps the schema fails HERE, reads the recorded
-    obligation, and stamps the README row. It does NOT write a fresh
-    `SEMANTIC_BREAKS` row: `geometry.kv_kib_per_token` already has one
-    (added 2026-08-28 for R9, keyed at the pre-release `__version__`
-    literal — see `tests/test_diff.py`'s own tripwire,
-    `test_a_geometry_kv_break_straddles_r9`) — what that release owes is
-    RE-KEYING the existing row to its own version, not authoring a new
-    one, and it still strikes CARRIED-DEBT.md's item 1 (the schema/
-    package bump) on the way. Its sibling above pins the other four
-    literals that must move with it.
+    The stamp is pinned as a LITERAL, not against `PROFILE_VERSION`: a
+    stamp is a date — the schema a field arrived in — and it must not
+    move when a later release bumps the schema again. The sibling test
+    above owns the live pin of the five version literals.
     """
     geometry_fields = {f.name for f in dataclasses.fields(Geometry)}
     assert {"attention_layer_count", "serving_block_count",
             "recurrent_state_bytes"} <= geometry_fields
-    assert PROFILE_VERSION == 10
 
-    # The README row says the three are unstamped, rather than implying a
-    # stamp by silence beside eleven rows that carry one.
     readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
     geometry_row = next(line for line in readme.splitlines()
                         if line.startswith("| `geometry` |"))
     assert "attention_layer_count" in geometry_row
-    assert "**unreleased**" in geometry_row
+    assert "new in v1.12, schema v11" in geometry_row
+    assert "unreleased" not in geometry_row
 
-    # ...and the obligation is written where a release reads it: the
-    # file runs newest-first, so the unreleased section is the FIRST one.
-    # Asserting the heading and not merely "text above v1.10's heading"
-    # was the fix for a surviving mutant — renaming the section left the
-    # items where they were and a prefix check could not see it.
+    # ...and the ledger records the bump where the next release reads
+    # it: the file runs newest-first, the v1.12 section is the FIRST
+    # one, and the 2026-08-27 section's item 1 is struck through with
+    # the text that closed it — not deleted, per that file's own rule.
     debt = (_REPO_ROOT / "docs" / "CARRIED-DEBT.md").read_text(
         encoding="utf-8")
-    assert debt.startswith("# Carried debt — unreleased")
-    unreleased = debt.split("# Carried debt — v1.10")[0]
-    assert "attention_layer_count" in unreleased
-    assert "PROFILE_VERSION" in unreleased
-    assert "SEMANTIC_BREAKS" in unreleased
+    assert debt.startswith("# Carried debt — v1.12")
+    v112 = debt.split("# Carried debt — unreleased")[0]
+    assert "schema **v11**" in v112
+    assert "attention_layer_count" in v112
+    assert ("1. ~~**The three new `geometry` keys are unstamped: the "
+            "shipping release") in debt
 
 
 # --- schema v10: the overlap fraction replaces the seconds tolerance --------

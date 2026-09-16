@@ -1368,59 +1368,41 @@ def test_a_geometry_kv_break_straddles_r9():
     No diff family reads `geometry.*` cells today — `_diff_ceiling`,
     `_diff_shapes`, `_diff_verdicts`, `_diff_codecs` and `_diff_speed`
     are the only five, and none of them touches the `geometry` family at
-    all (CARRIED-DEBT.md's top "unreleased" section, item 2, and v1.10
-    "Diff" item 1: only `_diff_verdicts` ever consults
+    all (CARRIED-DEBT.md's hybrid-geometry section, recorded 2026-08-27,
+    item 2, and v1.10 "Diff" item 1: only `_diff_verdicts` ever consults
     `SEMANTIC_BREAKS`). So this test pins the registry + `_straddles`
     contract the row is actually responsible for today, not an
     end-to-end `diff_profiles` claim the missing wiring cannot make —
     adding that wiring is a separate, still-open piece of work.
 
-    DISARM, once the release that ships R9 actually ships: this
-    assertion mirrors `SEMANTIC_BREAKS[...]` against the CURRENT
-    `assay.__version__`, which only holds while R9 is unreleased. The
-    release that ships R9 must (1) re-key the row to that release's
-    version and (2) replace this mirror-assertion with a literal pin
-    `== (0, X, 0)` for that release's version. After that release, this
-    docstring's and the assertion's message below must NOT be obeyed
-    again — the NEXT version bump firing this assertion is not a
-    re-key signal, it is a sign the mirror-assertion was never
-    replaced; re-keying the row at that point would corrupt the
-    registry by making the genuinely-straddling pair read comparable.
+    DISARMED 2026-09-16 by v1.12 (0.14.0, schema v11), the release that
+    shipped R9 together with the hybrid rules R3/R4/R6. From 2026-08-28
+    until that release this test mirrored the row against the CURRENT
+    `assay.__version__` as a re-key tripwire, with a DISARM clause
+    instructing the shipping release to (1) re-key the row to its own
+    version and (2) replace the mirror with a literal pin. Both are
+    done below. The literal is now history: a later bump that fires the
+    assertion is a defect in the bump, and re-keying the row would make
+    a genuinely-straddling pair read comparable and corrupt the
+    registry.
     """
-    import assay
-    from assay.diff import SEMANTIC_BREAKS, _parse_version, _straddles
+    from assay.diff import SEMANTIC_BREAKS, _straddles
 
-    # The row's own tripwire: it is keyed at __version__'s CURRENT value
-    # (R9 is unreleased — CARRIED-DEBT.md item 1's schema/package bump is
-    # still open) rather than at a release number that does not exist
-    # yet. Nothing else in the suite fails on a bare __version__ bump —
-    # PROFILE_VERSION doesn't move for R9, so the schema tripwire in
-    # tests/test_profile.py never fires, and _straddles below hardcodes
-    # its own literals rather than reading assay.__version__ — so this
-    # assertion IS the re-key reminder: the moment __version__ moves
-    # without this row moving with it, this fails here, loudly, with the
-    # instruction in its own message.
-    assert SEMANTIC_BREAKS["geometry.kv_kib_per_token"] == _parse_version(
-        assay.__version__
-    ), (
-        "R9 is still unreleased: re-key this row to the release that "
-        "ships it. DISARM AFTER THAT RELEASE: the release that ships "
-        "R9 must (1) re-key this row to that release's version and "
-        "(2) replace this mirror-assertion with a literal pin "
-        "`== (0, X, 0)` for that release's version — after that "
-        "release, this message must not be obeyed again, or the next "
-        "version bump will re-key the row past the real break and "
-        "corrupt the registry."
-    )
+    # One row at one version covers R3/R4/R6 and R9, because they
+    # shipped in the same release. Pinned as a literal, deliberately not
+    # against assay.__version__.
+    assert SEMANTIC_BREAKS["geometry.kv_kib_per_token"] == (0, 14, 0)
 
-    assert _straddles("geometry.kv_kib_per_token", "0.12.0", "0.13.0")
+    assert _straddles("geometry.kv_kib_per_token", "0.13.0", "0.14.0")
     # Order does not matter: an upgrade and a downgrade are equally
     # incomparable, because the two documents still answer different
     # questions.
-    assert _straddles("geometry.kv_kib_per_token", "0.13.0", "0.12.0")
+    assert _straddles("geometry.kv_kib_per_token", "0.14.0", "0.13.0")
     # Both sides under the same rule, either side of the break: no
-    # straddle.
-    assert not _straddles("geometry.kv_kib_per_token", "0.13.0", "0.13.0")
+    # straddle. 0.12.0 -> 0.13.0 is the pair that straddled the
+    # pre-release key; it does not straddle the real one.
+    assert not _straddles("geometry.kv_kib_per_token", "0.14.0", "0.14.0")
+    assert not _straddles("geometry.kv_kib_per_token", "0.12.0", "0.13.0")
     assert not _straddles("geometry.kv_kib_per_token", "0.10.0", "0.11.0")
 
 

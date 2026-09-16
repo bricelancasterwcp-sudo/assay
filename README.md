@@ -151,14 +151,14 @@ probe, taking its ceilings from the `Budget` itself (`max_calls`, and
 
 ## The profile
 
-One versioned JSON document (`assay_profile_version: 10`). Every field is
+One versioned JSON document (`assay_profile_version: 11`). Every field is
 a measurement, a `None` with a named reason, or provenance.
 
 | Field | What it says |
 |---|---|
 | `endpoint` | `kind` (`ollama`/`openai`), `base_url`, whether the kind was autodetected |
 | `model` | `name`, `quant`, `weights_bytes`, `training_ctx` — as reported, never guessed |
-| `geometry` | `kv_kib_per_token`, `vram_free_mib`, `usable_window`, and `limited_by` — **which** term (`training_ctx` / `vram` / `user_cap`) actually bound the window; plus `expert_count` / `expert_used_count` where the metadata reports MoE routing (`None` on a dense model — see [MoE geometry](#moe-geometry)); plus `attention_layer_count`, `serving_block_count` and `recurrent_state_bytes`, the layer terms the kv figure was computed from (see [Hybrid geometry](#hybrid-geometry)) — **unreleased**, and carrying no schema stamp for that reason: they arrived on a held branch with no release to bump at, and the release that ships them owes the bump and the stamp every other dated field in this table carries (`docs/CARRIED-DEBT.md`, unreleased section) |
+| `geometry` | `kv_kib_per_token`, `vram_free_mib`, `usable_window`, and `limited_by` — **which** term (`training_ctx` / `vram` / `user_cap`) actually bound the window; plus `expert_count` / `expert_used_count` where the metadata reports MoE routing (`None` on a dense model — see [MoE geometry](#moe-geometry)); plus `attention_layer_count`, `serving_block_count` and `recurrent_state_bytes`, the layer terms the kv figure was computed from (see [Hybrid geometry](#hybrid-geometry)) — new in v1.12, schema v11 |
 | `ceiling` | `max_verified`, `first_failure`, `failure_mode` (`hard_error` / `missing_stats` / `silent_truncation` / `canary_loss` / `none_up_to_cap` / `budget`), plus per-call evidence |
 | `ceiling_shapes` | the same question asked at each **pinned** `num_ctx` an application might set (2k/4k/8k), because a daemon can serve 16k right-sized and error above ~1.8k at a fixed 8k |
 | `envelope` | exact-format fidelity over N one-line probes, with failures classified (`prose` / `shape` / `refusal`) |
@@ -253,10 +253,11 @@ Charging every block is a straight over-charge, and it is a measured one
 — bloomery published 4.00× on Qwen3.6-35B-A3B before fixing it. Three
 rules apply, from the [gguf-geometry
 contract](https://github.com/bricelancasterwcp-sudo/gguf-geometry)
-(`SPEC.md` R3/R4/R6), whose current vector set is vendored under
-`tests/data/gguf_geometry_v2/` — copied byte-for-byte from that repo's
-master `7f858c8` on 2026-08-27, replacing the v1 set it supersedes — and
-asserted against in `tests/test_geometry_conformance.py`:
+(`SPEC.md` R3/R4/R6; its R9, the MLA kv rule, ships beside them — see
+the CHANGELOG's v0.14 entry), whose current vector set is vendored under
+`tests/data/gguf_geometry_v3/` — copied byte-for-byte from that repo's
+master `84f042b` on 2026-08-28, replacing the v2 set that had replaced
+v1 — and asserted against in `tests/test_geometry_conformance.py`:
 
 - `serving_block_count = block_count − <arch>.nextn_predict_layers` —
   an MTP layer is counted into `block_count` by the converter and does

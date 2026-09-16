@@ -5,7 +5,67 @@ package version, and states what changed in what the numbers MEAN,
 not just what code moved — a version bump here is a claim about the
 instrument.
 
-## Unreleased: MLA kv, separate K/V widths (R9)
+## v0.14 (v1.12): the geometry release
+
+Package 0.13.0 → 0.14.0, profile schema **v10 → v11**. Nothing in this
+release is new measurement: it ships the three entries below, which had
+been sitting on master as "Unreleased" since 2026-08-27/28 — merged,
+tested, unversioned — and discharges the obligations each recorded
+against "the release that ships this". The entries are kept as written,
+under their own headings, because each is the record of what its branch
+found. Where one says an obligation is still open, a row is keyed at a
+pre-release literal, or the vendored vector set is v2, this preamble
+supersedes it.
+
+**What the bump moves**, in one commit, pinned together by
+`test_schema_version_and_package_version_move_together`:
+`PROFILE_VERSION` 10 → 11; `assay.__version__` and `pyproject.toml`
+0.13.0 → 0.14.0; the README's `assay_profile_version: 11` line; and the
+README profile table's `geometry` row, which now stamps
+`attention_layer_count`, `serving_block_count` and
+`recurrent_state_bytes` as `new in v1.12, schema v11` instead of
+"unreleased". The schema moves for both reasons the hybrid entry gave:
+a profile's SHAPE moved (three geometry keys), and
+`geometry.kv_kib_per_token` changed MEANING — on a hybrid model under
+R3/R4/R6, on an MLA model under R9 — so two documents naming the same
+model on the same daemon can no longer both read v10 while reporting
+figures computed under different rules.
+
+**The semantic-break row is re-keyed.** `SEMANTIC_BREAKS`'s
+`geometry.kv_kib_per_token` entry moves from the pre-release literal
+`(0, 13, 0)` to `(0, 14, 0)`, and its test's mirror-assertion against
+`assay.__version__` is replaced by a literal pin, exactly as that test's
+DISARM clause instructed; from here on a version bump that fires that
+test is a defect in the bump, not a re-key signal. One row covers
+R3/R4/R6 and R9 because they ship together. Documents written from the
+unreleased tree between `d81cf8b` and this release carry
+`probe_version: 0.13.0` under the new rules; the only committed one is
+the `qwen3.8:27b` live geometry capture
+(`docs/superpowers/evidence/qwen38-27b-live-2026-08-27/`), a `geometry`
+subcommand output rather than a profile, never diffed. Recorded in
+`docs/CARRIED-DEBT.md`'s v1.12 section so nobody backfills a second
+break at 0.13.0.
+
+**The wiring gap is not closed.** No diff family reads `geometry.*`
+cells, so a pair straddling this break is provable at `_straddles` and
+not at `diff_profiles` — CARRIED-DEBT v1.10 "Diff" items 1 and 2,
+unchanged, carried again under v1.12.
+
+**The ledger closes three of the hybrid section's four items**: 1 (this
+bump), 3 (the live measurement of `qwen3.8:27b` — already run at
+`8892d0e`, never struck) and 4 (the gguf-geometry link — the repository
+is public and resolves). The README's hybrid section, which still named
+the deleted `tests/data/gguf_geometry_v2/` and `7f858c8`, now names v3
+and `84f042b`. Housekeeping shipped alongside: a test workflow
+(`.github/workflows/ci.yml`) — this repository had only the Pages
+deploy, so "suite green" had only ever been a local claim — and
+`.superpowers/` ignored, matching gguf-geometry's ruling that SDD
+workspaces stay local in public repos.
+
+The matrix page is not rebuilt: it quotes no package version, and no
+published figure changes.
+
+### MLA kv, separate K/V widths (R9)
 
 `kv_bytes_per_token` computed every architecture's cache as `2 x
 attention_layers x kv_head_count x head_dim x bytes/element` — K and V
@@ -79,7 +139,7 @@ number. No diff family reads `geometry.*` cells yet (the same gap
 consult it — the same order the geometry row's own schema-stamp
 obligation was recorded ahead of its bump.
 
-## Unreleased: hybrid layer geometry (R3/R4/R6)
+### Hybrid layer geometry (R3/R4/R6)
 
 `kv_bytes_per_token` charged `block_count` attention layers — every
 block the model file states. That is the dense answer, and it is the
@@ -178,7 +238,7 @@ unread. The release that ships this must write one, and must bump the
 schema (above); the two obligations are one release's work and are
 listed together in `docs/CARRIED-DEBT.md`.
 
-## Unreleased: the matrix can say a number is superseded
+### The matrix can say a number is superseded
 
 House discipline says a profile is never rewritten after the fact. The
 cost of that discipline was borne entirely by the reader: the published
