@@ -20,3 +20,8 @@ dev = ["pytest"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.urls]
+Homepage = "https://github.com/bricelancasterwcp-sudo/assay"
+Documentation = "https://github.com/bricelancasterwcp-sudo/assay/blob/master/docs/gtm/QUICKSTART.md"
+Changelog = "https://github.com/bricelancasterwcp-sudo/assay/blob/master/CHANGELOG.md"
