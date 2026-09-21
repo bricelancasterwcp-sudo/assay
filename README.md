@@ -1,5 +1,8 @@
 # assay
 
+> **Start here:** [docs/gtm/QUICKSTART.md](docs/gtm/QUICKSTART.md) · [docs/gtm/ONEPAGER.md](docs/gtm/ONEPAGER.md) (admission control positioning) · CI gate: `.github/workflows/assay-cover.yml`
+
+
 A stdlib-only Python library and CLI that measures what a locally-served
 LLM endpoint can *actually* do — context geometry, the daemon's real
 prompt ceiling, format discipline, and edit-codec landing — and emits a

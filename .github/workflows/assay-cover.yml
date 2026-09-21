@@ -1,0 +1,72 @@
+name: assay-cover
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'floors/**'
+      - 'examples/cover-ci/**'
+      - '.github/workflows/assay-cover.yml'
+      - 'src/assay/cover.py'
+      - 'src/assay/cli.py'
+      - 'pyproject.toml'
+
+jobs:
+  cover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install assay (editable)
+        run: pip install -e .
+
+      - name: Cover floor with example candidate
+        id: cover
+        run: |
+          set +e
+          assay cover floors/agent-edit.json examples/cover-ci/candidate.json --json cover-result.json
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Upload cover JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cover-result
+          path: cover-result.json
+          if-no-files-found: ignore
+
+      - name: Job summary
+        if: always()
+        run: |
+          code="${{ steps.cover.outputs.exit_code }}"
+          {
+            echo "## assay cover"
+            echo ""
+            echo "Floor: \`floors/agent-edit.json\`"
+            echo "Candidate: \`examples/cover-ci/candidate.json\`"
+            echo "Exit code: \`$code\`"
+            echo ""
+            echo "| Code | Typical meaning |"
+            echo "|------|-----------------|"
+            echo "| 0 | covered |"
+            echo "| 1 | not covered |"
+            echo "| 2 | refused (identity / instrument mismatch) |"
+            echo "| 3 | incomplete |"
+            echo "| 4 | infrastructure / unreadable profile |"
+            if [ -f cover-result.json ]; then
+              echo ""
+              echo "<details><summary>cover-result.json (truncated)</summary>"
+              echo ""
+              echo '```json'
+              head -c 4000 cover-result.json
+              echo
+              echo '```'
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
