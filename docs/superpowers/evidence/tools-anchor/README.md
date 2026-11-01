@@ -5,12 +5,12 @@ MoE geometry metadata. Three results in three lines:
 
 1. **The unsupported path is real.** `gemma2:9b` refused the `tools`
    parameter with `HTTP 400 {"error": "registry.ollama.ai/library/gemma2:9b
-   does not support tools"}`, and the classifier's behavior-class bet — 4xx
-   whose error text mentions "tool" — read it correctly on the first live
+   does not support tools"}`, and the classifier's behavior-class bet (4xx
+   whose error text mentions "tool") read it correctly on the first live
    encounter. `supported=False`, every rate `None`, one call spent.
 2. **The instrument's whole thesis showed up in the data.**
-   `qwen2.5-coder:7b-instruct-q8_0` wrote a perfectly correct call —
-   `{"name": "read_file", "arguments": {"path": "config.yaml"}}` — as
+   `qwen2.5-coder:7b-instruct-q8_0` wrote a perfectly correct call
+   (`{"name": "read_file", "arguments": {"path": "config.yaml"}}`) as
    **plain text**, five times out of five, and emitted **zero** native tool
    calls. `supported=True`, `call_rate=0.0`. A harness gets nothing from
    that model. A probe that measured what models WRITE would have scored it
@@ -21,7 +21,7 @@ MoE geometry metadata. Three results in three lines:
 
 A fourth result, unplanned: the v1.6 `head_dim` fix (prefer the stated
 `attention.key_length` over `embedding_length // head_count`) **changes the
-committed v1.4 kv numbers** for both models checked — see
+committed v1.4 kv numbers** for both models checked. See
 [The MoE check](#the-moe-check-and-what-it-turned-up).
 
 ## Provenance
@@ -31,13 +31,13 @@ committed v1.4 kv numbers** for both models checked — see
 | Captured | 2026-08-16 |
 | Daemon | ollama **0.32.13** at `http://127.0.0.1:11434` |
 | Hardware | NVIDIA RTX 5080, 16303 MiB |
-| Probes | `assay.tools.probe_tools`, `assay.loop.probe_loop`, `assay.geometry.plan_window` — unmodified |
+| Probes | `assay.tools.probe_tools`, `assay.loop.probe_loop`, `assay.geometry.plan_window`, unmodified |
 | Probe version | assay 0.7.0 |
 | Instruments | `scripted-tools-v1` / `toolset-v1`; `scripted-loop-v2` |
 | Tools seeds | T1 1400-1404, T2 1500-1504 (`_SEED_BASE`, `_SEED_BASE + 100 + i`) |
 | Loop seeds | golden 800/801/802, error 850/851/852 (`_SEED_BASE`, `+ _ERROR_SEED_OFFSET`) |
 | Temperature | 0.2 (`PROBE_TEMPERATURE`) |
-| `num_ctx` | unset — daemon default, exactly as `run.py` calls the probes |
+| `num_ctx` | unset (daemon default, exactly as `run.py` calls the probes) |
 | Models | 4 tools + 1 loop, one resident at a time, `ollama stop` between |
 | Calls | 46 live: 31 tools (1 for gemma2, which stopped at the refusal, + 10 each for the other three) and 15 loop |
 
@@ -51,30 +51,30 @@ daemon and does speak the parameter) is reported exactly as it measured.
 
 Machine-readable values: `results.json`. Transcripts: `tools-*.jsonl`,
 `loop-*.jsonl`, one JSONL row per call in `CallRecorder` format, replayable
-through `CallReplayer`. `/api/show` bodies: `show-*.json` — everything assay
+through `CallReplayer`. `/api/show` bodies: `show-*.json`, everything assay
 reads (`model_info`, `details`, `capabilities`) exactly as the daemon sent
 it, with the `license` text and the `tensors` inventory dropped and declared
 under `_elided`; the untrimmed bodies are in git at commit `910607d`.
 
 ## Tools capture
 
-`probe_tools` — 5 tasks x 2 turns = 10 calls at full health.
+`probe_tools`: 5 tasks x 2 turns = 10 calls at full health.
 
 | model | supported | call | right tool | args valid | result use | composite | n tasks / turns |
 |---|---|---|---|---|---|---|---|
-| gemma2:9b | **false** | — | — | — | — | — | 0 / 0 |
+| gemma2:9b | **false** | None | None | None | None | None | 0 / 0 |
 | llama3.1:8b | true | 1.00 | 1.00 | 1.00 | **0.40** | 1.00 | 5 / 10 |
 | mistral-nemo:latest | true | 1.00 | 1.00 | 1.00 | **0.00** | 1.00 | 5 / 10 |
-| qwen2.5-coder:7b-instruct-q8_0 | true | **0.00** | — | — | 0.80 | **0.00** | 5 / 10 |
+| qwen2.5-coder:7b-instruct-q8_0 | true | **0.00** | None | None | 0.80 | **0.00** | 5 / 10 |
 
-Read the dashes as `None`, which is what the probe returns and what the
+Read those cells as `None`, which is what the probe returns and what the
 transcripts replay to: gemma2 never got to a scored turn, and
 qwen2.5-coder never emitted a call for a tool name or an argument to be
 judged against. `right_tool_rate` and `args_valid_rate` are over the T1s
-that called ANYTHING — scoring them `0.0` would double-count the miss
+that called ANYTHING. Scoring them `0.0` would double-count the miss
 `call_rate` already carries.
 
-### gemma2:9b — the unsupported capture
+### gemma2:9b: the unsupported capture
 
 The refusal, verbatim from `tools-gemma2-9b.jsonl`:
 
@@ -85,14 +85,14 @@ The refusal, verbatim from `tools-gemma2-9b.jsonl`:
 ```
 
 The daemon agrees with the file: `/api/show` reports `capabilities:
-["completion"]` for gemma2:9b — no `tools` — because gemma2's chat template
+["completion"]` for gemma2:9b (no `tools`) because gemma2's chat template
 has no tool section. This is a REAL capability fact off a real endpoint, not
 a fake HTTP 400, and it validates two design bets at once: the
 behavior-class classifier (4xx + "tool" in the error body, rather than
 matching Ollama's exact wording) and the "refusal on the FIRST call ends the
 probe" rule, which spent 1 call instead of 10 to learn one thing.
 
-### qwen2.5-coder:7b — supported, and it never calls
+### qwen2.5-coder:7b: supported, and it never calls
 
 All five T1 replies, in full (`tools-qwen2.5-coder-7b-instruct-q8_0.jsonl`,
 `tool_calls: []` on every one):
@@ -106,21 +106,21 @@ All five T1 replies, in full (`tools-qwen2.5-coder-7b-instruct-q8_0.jsonl`,
 ```
 
 Five for five: right tool, right arguments, **in the content channel**. The
-endpoint accepted `tools` (so `supported=True` — the capability is real);
+endpoint accepted `tools` (so `supported=True`, the capability is real);
 the model simply does not use the protocol it was offered. On T2, where the
 answer is handed to it in a `role: "tool"` message, it quotes the canary
-4/5 — it can READ a tool result fine. It only cannot EMIT a call.
+4/5. It can READ a tool result fine. It only cannot EMIT a call.
 
 This is the separation the family exists for, stated in `tools.py`'s opening
 paragraph and now measured: a model that writes a beautiful call is still
 useless to a harness that reads `message.tool_calls`.
 
-### llama3.1:8b and mistral-nemo — the other half of the instrument
+### llama3.1:8b and mistral-nemo: the other half of the instrument
 
 Both score a perfect T1 (`composite=1.00`) and then diverge on the half that
 asks whether the model can USE a tool result. mistral-nemo scores **0.00**:
 handed `Tool read_file completed. Result token: CANARY-1500`, it answers
-with an entirely invented file —
+with an entirely invented file:
 
 ```yaml
 server:
@@ -132,7 +132,7 @@ database:
   password: secret
 ```
 
-— and never mentions the canary on any of the five. Four of its five misses
+and never mentions the canary on any of the five. Four of its five misses
 are fabrications like this one; the fifth ("The test suite has passed") is
 the `run_tests` task, where there is nothing to invent. llama3.1 quotes the
 canary on 2 of 5 (once while inventing a claim around it: "It is set to
@@ -147,7 +147,7 @@ number ranks these three, which is why the family reports five.
 
 ## Loop error-script capture
 
-`probe_loop(runs=3)` against `qwen2.5-coder:7b-instruct-q8_0` — 15 calls
+`probe_loop(runs=3)` against `qwen2.5-coder:7b-instruct-q8_0`: 15 calls
 (3 golden runs x 3 turns + 3 error runs x 2 turns).
 
 | metric | value | n |
@@ -156,7 +156,7 @@ number ranks these three, which is why the family reports five.
 | patch_rate | **0.00** | 3 golden runs |
 | finish_rate | 1.00 | 3 golden runs |
 | repeat_rate | 0.00 | 15 turns |
-| anchor_violations | 0 | — |
+| anchor_violations | 0 | None |
 | **recovery_rate** | **0.00** | 3 error runs |
 | **doom_loop_rate** | **1.00** | 3 error runs |
 
@@ -175,14 +175,14 @@ return subtotal * 1.08
 >>>>>>> REPLACE
 ```
 
-That is the canned broken patch verbatim — the real target line with its
+That is the canned broken patch verbatim: the real target line with its
 indentation stripped, the measured qwen signature the script was built
 from. The model re-emits it after being told in plain words that this exact
 SEARCH text was not found. `doom_loop_rate=1.0` is the failure that ended
 robigo runs, reproduced in three calls.
 
 Two honest caveats on this run: `repeat_rate` is 0.00 because repeats are
-counted WITHIN a run and each error run is two different turns — the three
+counted WITHIN a run and each error run is two different turns. The three
 identical replies live in three different runs, so the doom lens is what
 catches them, not the repeat lens. And `finish_rate=1.00` beside
 `patch_rate=0.00` says the model says "done" when the environment tells it
@@ -192,7 +192,7 @@ the tests pass, whether or not its own patch was ever well-formed.
 
 The task expected `qwen3.8:27b` to be the box's resident MoE. **It is not**,
 per its own metadata: `/api/show` for `qwen3.8:27b` (architecture `qwen35`)
-reports **no `expert_*` keys at all** — the extraction correctly returns
+reports **no `expert_*` keys at all**. The extraction correctly returns
 `None` for both fields, which is the dense/unreported reading, never `0`.
 The genuine MoE on this box is `deepseek-coder-v2:16b-lite-instruct-q5_K_M`
 (architecture `deepseek2`), which reports five expert keys. Both were
@@ -203,7 +203,7 @@ measured; both `/api/show` bodies are committed as `show-*.json`.
 | architecture | `deepseek2` | `qwen35` |
 | `expert_count` | **64** | `None` (not reported) |
 | `expert_used_count` | **6** | `None` (not reported) |
-| other expert keys | `expert_shared_count=2`, `expert_feed_forward_length=1408`, `expert_weights_scale=1` | — |
+| other expert keys | `expert_shared_count=2`, `expert_feed_forward_length=1408`, `expert_weights_scale=1` | None |
 | `block_count` | 27 | 65 |
 | `attention.head_count_kv` | 16 | 4 |
 | `head_dim` (from `attention.key_length`) | **192** | **256** |
@@ -220,7 +220,7 @@ cache never holds).
 ### The v1.4 comparison does NOT match, and the fix is why
 
 Both committed v1.4 profiles report `kv_kib_per_token: 216`. That is not a
-coincidence of the models — it is the signature of the DERIVATION v1.4 used,
+coincidence of the models. It is the signature of the DERIVATION v1.4 used,
 and the two derivations land within 336 bytes of each other by accident
 (27x16x128 = 55 296 vs 65x4x213 = 55 380 K-elements per token). Feeding the
 derived `head_dim` back through today's `plan_window` reproduces each v1.4
@@ -229,33 +229,33 @@ only thing that changed:
 
 | model | head_dim | KiB/token | usable_window under that profile's own VRAM reading |
 |---|---|---|---|
-| deepseek-coder-v2 | 128 (v1.4 derived) | 216 | **8092** — matches the committed v1.4 profile |
+| deepseek-coder-v2 | 128 (v1.4 derived) | 216 | **8092** (matches the committed v1.4 profile) |
 | deepseek-coder-v2 | 192 (v1.6, stated) | 324 | **5394** |
-| qwen3.8:27b | 213 (v1.4 derived) | 216 | **4922** — matches the committed v1.4 profile |
+| qwen3.8:27b | 213 (v1.4 derived) | 216 | **4922** (matches the committed v1.4 profile) |
 | qwen3.8:27b | 256 (v1.6, stated) | 260 | **4096** |
 
 Two ratios come out of that table, on **two different bases**, and mixing
 them is easy enough that both are named here and recorded in
 `results.json` under `moe.conventions`:
 
-- **kv excess over v1.4** = (v1.6 − v1.4) ÷ v1.4 bytes per token — how much
+- **kv excess over v1.4** = (v1.6 − v1.4) ÷ v1.4 bytes per token: how much
   more cache the corrected `head_dim` costs. **+50.0%** on
   deepseek-coder-v2, **+20.2%** on qwen3.8:27b.
 - **window shortfall of the v1.4 promise** = (v1.4 − v1.6) ÷ v1.4
-  `usable_window`, under that profile's own VRAM reading — how much of the
+  `usable_window`, under that profile's own VRAM reading: how much of the
   window v1.4 promised is not there. **−33.3%** on deepseek-coder-v2,
   **−16.8%** on qwen3.8:27b.
 
 The two are not independent, which is exactly why they are easy to mix up:
 where the VRAM term binds, `usable_window` is inversely proportional to kv
-bytes per token, so the shortfall stated the OTHER way round — as excess
-over the true window — is **identically** the kv excess, 50.0% and 20.2%.
+bytes per token, so the shortfall stated the OTHER way round (as excess
+over the true window) is **identically** the kv excess, 50.0% and 20.2%.
 "33.3% of the promised window is missing" and "the true cost is 50.0%
 higher" are the same fact on two bases; quoting one number from each pair
 is the error to avoid.
 
-The v1.4 numbers are left as committed — evidence is not rewritten to suit
-a later fix — and this table is the erratum. Anyone reading a v1.4
+The v1.4 numbers are left as committed (evidence is not rewritten to suit
+a later fix), and this table is the erratum. Anyone reading a v1.4
 profile's `geometry` block for one of these architectures should treat its
 `kv_kib_per_token` and `usable_window` as optimistic; the same erratum is
 filed beside the profiles themselves at
@@ -275,14 +275,14 @@ cache fits, so nothing does.
 
 ## What the suite pins
 
-Offline acceptance tests read these committed files — no daemon, no GPU, no
+Offline acceptance tests read these committed files: no daemon, no GPU, no
 network:
 
-- `tests/test_tools.py` — every `tools-*.jsonl` replays through strict
+- `tests/test_tools.py`: every `tools-*.jsonl` replays through strict
   `CallReplayer` to the `results.json` values, including `supported=False`
   with the refusal body restored on `ToolsUnsupported.raw`.
-- `tests/test_loop.py` — `loop-*.jsonl` replays to the recorded
+- `tests/test_loop.py`: `loop-*.jsonl` replays to the recorded
   `recovery_rate` / `doom_loop_rate` / `n_error_runs`.
-- `tests/test_geometry.py` — the committed `/api/show` bodies drive
+- `tests/test_geometry.py`: the committed `/api/show` bodies drive
   `OllamaNative.model_info()` and `plan_window`, pinning the expert fields,
   the `key_length` head_dim and the v1.4 erratum arithmetic above.

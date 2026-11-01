@@ -1,4 +1,4 @@
-# Errata — tier-enthusiast profiles
+# Errata: tier-enthusiast profiles
 
 Corrections that apply to profiles committed in this directory. The
 profiles themselves are **left exactly as measured**: evidence is not
@@ -6,7 +6,7 @@ rewritten to suit a later fix. Read this file alongside them.
 
 ---
 
-## E1 — `head_dim` derived instead of read: kv and window overstated
+## E1: `head_dim` derived instead of read: kv and window overstated
 
 **Filed** 2026-08-16 · **Affects** `assay_profile_version` 4 profiles
 written by probe 0.5.0 · **Fixed in** probe 0.7.0 (v1.6) ·
@@ -42,7 +42,7 @@ only variable changed is `head_dim`.
 ### The size of it, on two bases
 
 These are the same fact stated two ways, and mixing the two is the easy
-mistake — where the VRAM term binds, `usable_window` is inversely
+mistake. Where the VRAM term binds, `usable_window` is inversely
 proportional to kv bytes per token, so the second column below is
 identically the third.
 
@@ -51,7 +51,7 @@ identically the third.
 | deepseek-coder-v2:16b-lite-q5_K_M | **33.3%** | 50.0% | **50.0%** |
 | qwen3.8:27b | **16.8%** | 20.2% | **20.2%** |
 
-### Not checked ~~(superseded — see the sweep below)~~
+### Not checked ~~(superseded; see the sweep below)~~
 
 Every other profile in this directory was written by the same 0.5.0 code
 path and may carry the same overstatement. **Only the two above were
@@ -64,9 +64,9 @@ text left as filed.*
 
 ### The sweep (2026-08-17)
 
-~~Every committed profile in the repository~~ *(scope bounded 2026-08-17 —
-see below)* — this directory plus `live/`
-and `live-run2/` — was classified under a pre-registered protocol
+~~Every committed profile in the repository~~ *(scope bounded 2026-08-17;
+see below)* (this directory plus `live/`
+and `live-run2/`) was classified under a pre-registered protocol
 ([`../e1-sweep/PROTOCOL.md`](../e1-sweep/PROTOCOL.md)): metadata
 captured verbatim from the daemon (ollama 0.32.13), extraction and
 window law run through probe 0.7.0 itself, and every verdict earned
@@ -79,7 +79,7 @@ Two more profiles in this directory are AFFECTED:
 
 | profile | `head_dim` derived / stated | `kv_kib_per_token` as written → correct | `usable_window` as written → correct |
 |---|---|---|---|
-| [`gemma2-9b.json`](gemma2-9b.json) | 224 / **256** (`gemma2.attention.key_length`) | 294 → **336** | 8192 → **8192** (unchanged — `training_ctx` binds under both readings; the kv figure was wrong, the promise held) |
+| [`gemma2-9b.json`](gemma2-9b.json) | 224 / **256** (`gemma2.attention.key_length`) | 294 → **336** | 8192 → **8192** (unchanged: `training_ctx` binds under both readings; the kv figure was wrong, the promise held) |
 | [`mistral-nemo-latest.json`](mistral-nemo-latest.json) | 160 / **128** (`llama.attention.key_length`) | 200 → **160** | 32711 → **40889** (the profile **under**-promised by 20.0% of the true window) |
 
 mistral-nemo is the sign E1's headline hides: the stated `key_length`
@@ -91,10 +91,10 @@ The remaining fifteen profiles in this directory settle clean:
 `qwen3-14b`, `qwen3-8b`, and the Hermes-4-14B profile are UNAFFECTED
 (stated `key_length` equals the derivation); the rest are
 UNAFFECTED-BY-CONSTRUCTION (their metadata states no `key_length`, so
-0.7.0's fallback reproduces the committed numbers — unchanged under
+0.7.0's fallback reproduces the committed numbers, unchanged under
 0.7.0, which is not the same claim as hardware-verified).
 [`gemma-4-12b-it-qat-q4_0-latest.json`](gemma-4-12b-it-qat-q4_0-latest.json)
-committed `geometry: null`, so it has no kv number to correct — worth
+committed `geometry: null`, so it has no kv number to correct, worth
 recording anyway: its metadata states `key_length` 512 against a
 derivation of 240, the largest gap the sweep found (2.1×).
 
@@ -107,7 +107,7 @@ The `live/` and `live-run2/` codegemma profiles are also AFFECTED
 
 The sweep sentence above read *"every committed profile in the
 repository"*. That was true the day it was filed and stopped being true
-the moment a new profile landed — so the claim is bounded here rather
+the moment a new profile landed, so the claim is bounded here rather
 than left to rot. The sweep's 23 rows are every committed profile **in
 E1's blast radius**.
 
@@ -122,8 +122,8 @@ The bound is **enforced, not asserted**: `tests/test_e1_sweep.py`
 recomputes the swept set from the tree by `probe_version` and fails if a
 profile written *before* 0.7.0 is ever added without re-running the
 sweep. A companion test requires every unswept profile to justify itself
-with `probe_version >= 0.7.0`, so a profile with an older version — or
-none at all — breaks one test or the other rather than slipping between
+with `probe_version >= 0.7.0`, so a profile with an older version (or
+none at all) breaks one test or the other rather than slipping between
 them. Original sweep text left as filed;
 [`../e1-sweep/PROTOCOL.md`](../e1-sweep/PROTOCOL.md) is pre-registered
 and stands untouched.
@@ -133,12 +133,12 @@ and stands untouched.
 Nothing outside `geometry`. The codec, envelope, ceiling, loop, speed and
 long-output measurements in these profiles were not computed from
 `head_dim` and stand as written. `expert_count` / `expert_used_count` are
-absent from these profiles because schema v4 had no such fields — that is
+absent from these profiles because schema v4 had no such fields. That is
 a missing column, not a wrong value.
 
 ---
 
-## E2 — hybrid layer geometry: `qwen3-8-27b.json` is wrong a second time
+## E2: hybrid layer geometry: `qwen3-8-27b.json` is wrong a second time
 
 **Filed** 2026-08-27 · **Affects** [`qwen3-8-27b.json`](qwen3-8-27b.json)
 in this directory · **Filed in full** beside the newer profile of the
@@ -150,7 +150,7 @@ and its window from 4922 to **4096**, and that correction is right about
 `head_dim` and still wrong about the layer count. `qwen3.8:27b` is a
 **hybrid**: its metadata states `qwen35.full_attention_interval: 4` and
 `qwen35.nextn_predict_layers: 1`, so 16 of its 65 blocks own a kv cache,
-not 65 — a further **4.0625×** over-charge — and its 48 recurrent layers
+not 65 (a further **4.0625×** over-charge), and its 48 recurrent layers
 hold 156,893,184 bytes of per-context state that no figure here charges
 at all.
 
@@ -167,7 +167,7 @@ defect, which is the thing they were computed to measure.
 
 ---
 
-## E3 — deepseek2 MLA: kv was R2 arithmetic, not an observed allocation
+## E3: deepseek2 MLA: kv was R2 arithmetic, not an observed allocation
 
 **Filed** 2026-08-28 · **Affects**
 [`deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`](deepseek-coder-v2-16b-lite-instruct-q5_K_M.json)
@@ -175,7 +175,7 @@ in this directory and, in the neighbouring directory,
 [`../tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json`](../tier-enthusiast-2026-08/deepseek-coder-v2-16b-lite-instruct-q5_K_M.json)
 · **Fixed in** branch `mla-kv-rule`, unreleased (SPEC.md rule R9,
 `src/assay/geometry.py`'s R9 branch) · **Evidence**
-[`../mla-kv-2026-08-27/`](../mla-kv-2026-08-27/) — protocol `c379c9f`
+[`../mla-kv-2026-08-27/`](../mla-kv-2026-08-27/), protocol `c379c9f`
 (pre-registered before any capture), captures `cf6222e`, verdict
 `d25af18` · **Contract** gguf-geometry `SPEC.md` rule R9, whose vectors
 are vendored at `../../../../tests/data/gguf_geometry_v3/` (v3, from
@@ -184,9 +184,9 @@ carried forward byte-identical from v2).
 
 ### What was published
 
-`324 KiB/token`, `source: api_show`. This is E1's own correction above —
+`324 KiB/token`, `source: api_show`. This is E1's own correction above:
 the row that changed this model's `head_dim` from a derived 128 to the
-stated `deepseek2.attention.key_length` 192 — carried forward
+stated `deepseek2.attention.key_length` 192, carried forward
 unquestioned into the tools-anchor replay
 (`../tools-anchor/results.json`) and into a fresh hardware run at probe
 0.9.0
@@ -195,8 +195,8 @@ unquestioned into the tools-anchor replay
 324` carrying the same **hardware-verified** framing every other figure
 in that directory earns from having been measured on a live daemon. That
 framing was wrong about what kind of number 324 was: it is `2 x
-attention_layers x kv_head_count x head_dim x bytes/element` — R2's
-arithmetic, run against a metadata field the daemon states — and
+attention_layers x kv_head_count x head_dim x bytes/element`, R2's
+arithmetic, run against a metadata field the daemon states, and
 deepseek2 is an MLA architecture whose K and V caches are stated at
 **different** widths (`deepseek2.attention.key_length` 192 alongside
 `deepseek2.attention.value_length` 128, both present in the same show
@@ -212,7 +212,7 @@ different kind of claim.
 `docs/superpowers/evidence/mla-kv-2026-08-27/` reads ollama 0.32.13's
 own KV-buffer log lines under the llama runner (non-FA lens; this box)
 at three context points and finds **276,480 bytes/token (270
-KiB/token)**, exact and identical at 2048, 4096 and 8192 — the log's own
+KiB/token)**, exact and identical at 2048, 4096 and 8192. The log's own
 K/V split (165,888 + 110,592 B/token) independently reproduces both
 stated widths digit for digit
 (`27 x 16 x 192 x 2 = 165,888`, `27 x 16 x 128 x 2 = 110,592`). Four
@@ -221,18 +221,18 @@ candidates were pre-registered before any capture
 (the dense 2x-head_dim guess this repository's v1/v2 vector pinned),
 `H-b` 276,480 (separate K/V widths), `H-c` 31,104 and `H-c'` 62,208 (two
 MLA-latent readings). Exactly one candidate landed in the pre-registered
-±5% band — **H-b** — deviation from the measured figure **0.000%**. Full
+±5% band (**H-b**): deviation from the measured figure **0.000%**. Full
 arithmetic and verbatim log lines:
 [`../mla-kv-2026-08-27/VERDICT.md`](../mla-kv-2026-08-27/VERDICT.md),
 [`READING.md`](../mla-kv-2026-08-27/READING.md).
 
-### Direction — the opposite sign from E1
+### Direction: the opposite sign from E1
 
 E1's dominant direction was window-over-promise: a `head_dim` read too
 small made every kv number too small and every window computed from it
 too large. E3 runs the other way. 324 KiB/token was an **over-charge**
 against the true 270, so every `usable_window` computed from it was
-**under-promised** — the daemon can serve more context than the
+**under-promised**: the daemon can serve more context than the
 published figure said, on both affected profiles:
 
 | profile | `kv_kib_per_token` published | `usable_window` published (own conditions) | conforming `kv_kib_per_token` | conforming `usable_window` (same conditions) |
@@ -242,13 +242,13 @@ published figure said, on both affected profiles:
 
 Both conforming columns are derived under each profile's own recorded
 `vram_free_mib` and residency, through today's extractor
-(`OllamaNative.model_info()` -> `geometry.py`'s R9 branch) — not
+(`OllamaNative.model_info()` -> `geometry.py`'s R9 branch), not
 re-measured a second time on hardware; the 276,480 B/token figure itself
 is the one hardware measurement this erratum rests on, and every window
 above is arithmetic over it. `docs/superpowers/evidence/e1-sweep/results.json`'s
 deepseek row carries the same re-pin (`corrected.kv_kib_per_token: 270`,
 `corrected.usable_window: 6473`, `window_shortfall_pct_of_committed_promise:
-20.0`, down from 33.3 — the shortfall itself shrank, because less of
+20.0`, down from 33.3. The shortfall itself shrank, because less of
 E1's original head_dim promise turns out to have been wrong).
 
 ### What is NOT wrong
@@ -258,7 +258,7 @@ directories, is unaffected: its architecture states no
 `attention.value_length` distinct from its `key_length`, so R9 never
 fires for it and its kv figure (192 KiB/token) is unchanged. Nothing
 outside `geometry.kv_kib_per_token` and the `usable_window` it feeds
-moves for either affected profile — `expert_count`/`expert_used_count`
+moves for either affected profile: `expert_count`/`expert_used_count`
 (64/6) are unaffected, kv is expert-invariant by R2, unchanged by R9.
 
 ### Corrected value
@@ -268,7 +268,7 @@ moves for either affected profile — `expert_count`/`expert_used_count`
 | `kv_bytes_per_token` | 331,776 | **276,480** |
 | `kv_kib_per_token` | 324 | **270** |
 
-Both affected profiles stand exactly as committed — evidence is not
+Both affected profiles stand exactly as committed. Evidence is not
 rewritten to suit a later fix, per this file's own header. This erratum,
 `docs/superpowers/evidence/mla-kv-2026-08-27/`, and SPEC.md's R9 are the
 correction; `tests/test_geometry_conformance.py`'s vendored v3 vector and
@@ -276,11 +276,11 @@ correction; `tests/test_geometry_conformance.py`'s vendored v3 vector and
 the corrected figures as checked arithmetic rather than prose.
 
 That "not rewritten" rule governs the two committed *profiles* named
-above and no more: the *analysis* records that replay them —
+above and no more: the *analysis* records that replay them (
 `docs/superpowers/evidence/tools-anchor/results.json`'s
 `v16_recomputed_under_v14_conditions` / `measured_geometry` blocks and
 `docs/superpowers/evidence/e1-sweep/results.json`'s `corrected` block
-for this model — were re-derived under R9 through today's extractor,
+for this model) were re-derived under R9 through today's extractor,
 each carrying its own `r9_repin_2026_08_28` provenance field naming the
 old, pre-R9 figures it replaces; those blocks were always "what today's
 rule computes from the committed capture," never a measurement in their

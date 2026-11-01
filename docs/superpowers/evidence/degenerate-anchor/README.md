@@ -13,16 +13,16 @@ the degenerate and healthy clusters OVERLAP on that metric.**
 | Daemon | ollama **0.32.13** at `http://127.0.0.1:11434` |
 | Hardware | NVIDIA RTX 5080, 16 GiB |
 | Probe | `assay.long_output.probe_long_output`, unmodified |
-| Task | `enumeration-v1` (`LONG_OUTPUT_TASK`) — the probe's own prompt, verbatim |
+| Task | `enumeration-v1` (`LONG_OUTPUT_TASK`): the probe's own prompt, verbatim |
 | Rungs | 512 / 1024 / 2048 / 4096 (`RUNGS`), one call each |
 | Seeds | 1100, 1101, 1102, 1103 (`_LONG_SEED` + rung index) |
 | Temperature | 0.2 (`PROBE_TEMPERATURE`) |
-| `num_ctx` | unset — daemon default, exactly as `run.py` calls the probe |
+| `num_ctx` | unset (daemon default, exactly as `run.py` calls the probe) |
 | Models | 7, one at a time, unloaded between runs |
 | Calls | 28 (7 models x 4 rungs) |
 
 The probe was driven directly rather than through `assay probe`, wrapped in
-`CallRecorder` — 4 calls per model instead of ~93 — because the anchor needs
+`CallRecorder` (4 calls per model instead of ~93) because the anchor needs
 the long-output family and nothing else. Prompt, seeds, rungs, temperature and
 `num_ctx` are all the probe's own; nothing was tuned to provoke degeneracy, and
 no prompt other than `_PROMPT` was sent.
@@ -66,7 +66,7 @@ once at a size.
 ### Labelling
 
 Samples were sorted into clusters by **reading them**, recorded in
-`labels.json` alongside `duplicate_item_fraction` — the share of numbered
+`labels.json` alongside `duplicate_item_fraction`, the share of numbered
 list items that restate an earlier item word for word. That fraction is a
 labelling aid for audit only; it is not computed anywhere in `src/` and is
 not a third metric. The clusters do not touch on it: **every healthy sample
@@ -74,7 +74,7 @@ duplicates 0% of its items, every degenerate sample duplicates >= 50%**, so
 no sample sat near the labelling boundary.
 
 Labelling by `distinct_n_ratio`/`zlib_ratio` and then deriving those floors
-from the labels would have been circular — the floors would have reproduced
+from the labels would have been circular: the floors would have reproduced
 whatever they were already set to.
 
 ## Derivation
@@ -90,7 +90,7 @@ spec §3 amendment guard already holds the floors to, and a floor that flags
 them is a floor that false-positives on real data. Both genres are therefore
 in the denominator.
 
-### zlib_ratio — DERIVED
+### zlib_ratio: DERIVED
 
 ```
 degenerate best        0.236194   qwen2.5-coder:0.5b-instruct-q8_0 seed 1103 (4096)
@@ -103,7 +103,7 @@ midpoint               (0.236194 + 0.275208) / 2 = 0.255701
 ZLIB_FLOOR             0.2557        (4 dp, strictly inside the band)
 ```
 
-### distinct_n_ratio — NOT DERIVED, STAYS ASSUMED
+### distinct_n_ratio: NOT DERIVED, STAYS ASSUMED
 
 ```
 degenerate best        0.612745   qwen2.5-coder:1.5b seed 1101 (1024)
@@ -124,7 +124,7 @@ is exactly the collapse `zlib_ratio` exists to catch instead (long_output's
 module docstring says so, and here is the measurement).
 
 Had the enumeration genre been taken alone, the distinct midpoint would have
-been (0.6127 + 0.9358) / 2 = **0.7743** — and that floor would have flagged
+been (0.6127 + 0.9358) / 2 = **0.7743**, and that floor would have flagged
 real healthy code replies. Deriving on one genre and shipping the number as a
 genre-agnostic threshold is the mistake this section refuses to make.
 
@@ -138,9 +138,9 @@ replies:
 | assumed (0.30 / 0.20) | **8 / 10** | 0 / 266 |
 | derived (0.30 / 0.2557) | **10 / 10** | 0 / 266 |
 
-The assumed `ZLIB_FLOOR` of 0.20 **missed two genuinely degenerate replies** —
+The assumed `ZLIB_FLOOR` of 0.20 **missed two genuinely degenerate replies**:
 0.5b seed 1103 (zlib 0.2362) and q4 1.5b seed 1101 (zlib 0.2260, the one with
-14 identical lines out of 20) — and caught two more only barely, at 0.19756
+14 identical lines out of 20). It caught two more only barely, at 0.19756
 and 0.19972. Its sensitivity was closer to luck than to calibration. The
 derived floor catches all ten.
 
@@ -153,12 +153,12 @@ The cost is false-positive headroom, and it is the honest bad news here:
 | DISTINCT_FLOOR 0.30 (assumed) | 0.595238 | 1.984x |
 
 The derived floor sits 7.1% below the worst healthy reply ever recorded here
-and 8.3% above the best degenerate one — each percentage taken over the value
+and 8.3% above the best degenerate one, each percentage taken over the value
 it is being compared against, `(0.275208 - 0.2557) / 0.275208` and
 `(0.2557 - 0.236194) / 0.236194`. That band is narrow because the two
 genres nearly touch: repetitive-but-healthy code compresses almost as well as
 looping prose. A future code reply slightly more repetitive than any of the
-248 would false-positive, and if one appears the floor must yield to it — it
+248 would false-positive, and if one appears the floor must yield to it. It
 is a derived number, but derived from 276 samples, not from a population.
 Both edges are pinned in `tests/test_long_output.py` so the margin cannot be
 eaten silently.
@@ -177,9 +177,9 @@ The string no longer starts with `assumed`, so Task 9's forced-provisional cap
 on long_output verdicts releases and those verdicts now follow the normal
 rules. That is deliberate, and it rests on this: **every one of the ten
 degenerate samples is flagged by the derived zlib floor alone.** The still-
-assumed distinct floor is strictly redundant on this data — the only sample
+assumed distinct floor is strictly redundant on this data: the only sample
 below it (0.5b seed 1101, distinct 0.2969) is flagged by zlib at 0.0781 as
-well — so the verdict's sensitivity rests on the derived number, while the
+well, so the verdict's sensitivity rests on the derived number, while the
 assumed one is a conservative backstop with 1.98x headroom that has never
 fired on healthy output.
 

@@ -1,4 +1,4 @@
-# Reading — deepseek2 KV bytes/token, mla-kv-2026-08-27
+# Reading: deepseek2 KV bytes/token, mla-kv-2026-08-27
 
 Applies the decision rule pre-registered in `PROTOCOL.md` (committed
 c379c9f, BEFORE the captures in cf6222e) to the raw files captured in
@@ -15,7 +15,7 @@ The protocol's Instrument 1 reads "server-log KV buffer lines" under
 ollama 0.32.13. Which engine actually served the load matters, because
 the protocol's contingency (§Contingency) treats a standalone
 llama-server as a DIFFERENT NAMED LENS. Here the runner is llama-server
-**invoked by ollama as its own subprocess** — that is ollama 0.32.13's
+**invoked by ollama as its own subprocess**. That is ollama 0.32.13's
 normal llama engine path, not the fallback lens. Quoted per point:
 
 `raw-log-ctx2048.txt:2`
@@ -34,10 +34,10 @@ Aug 27 23:56:51 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:51.185
 ```
 
 All three lines come from `source=server.go:109` inside the
-`ollama[1502099]` systemd unit — ollama chose and spawned the runner. The
+`ollama[1502099]` systemd unit: ollama chose and spawned the runner. The
 spawn line names the binary and the flags ollama picked
 (`raw-log-ctx2048.txt:3`, abbreviated only where marked `…`; the `-c`
-value is the requested num_ctx, which is *not* the denominator — see §2):
+value is the requested num_ctx, which is *not* the denominator; see §2):
 
 ```
 Aug 27 23:56:36 brice-X870E-Taichi ollama[1502099]: time=2026-08-27T23:56:36.676-05:00 level=INFO source=llama_server.go:431 msg="starting llama-server" cmd="/usr/local/lib/ollama/llama-server --model /mnt/extra/…/sha256-bc286970… --port 45739 --host 127.0.0.1 --no-webui --offline -c 2048 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --load-mode none --flash-attn auto -b 512 -ub 512"
@@ -50,14 +50,14 @@ pre-registered primary lens, read as pre-registered.
 
 ---
 
-## 1. Instrument 1 (primary) — KV buffer lines, verbatim
+## 1. Instrument 1 (primary): KV buffer lines, verbatim
 
 ### Buffer-line inventory (is the cache split across backends?)
 
 The protocol requires the SUM of KV buffer lines if the cache splits
 across backends. It does not split. Every `buffer size` line in each
 log, with the systemd prefix stripped for readability (grep
-`"buffer size"`, complete — nothing omitted):
+`"buffer size"`, complete, nothing omitted):
 
 `raw-log-ctx2048.txt`
 ```
@@ -93,12 +93,12 @@ sched_reserve:  CUDA_Host compute buffer size =    24.01 MiB
 Exactly one KV buffer line per load, all on CUDA0. The sum over KV
 buffer lines is therefore that single line's value at each point. The
 other buffers (`model`, `output`, `compute`) are not KV cache and are
-excluded — the protocol scopes Instrument 1 to KV-cache buffer/size
+excluded. The protocol scopes Instrument 1 to KV-cache buffer/size
 lines.
 
 ### Per-point verbatim KV block + denominator
 
-**ctx 2048** — `raw-log-ctx2048.txt:170, 184–187, 208`
+**ctx 2048**: `raw-log-ctx2048.txt:170, 184–187, 208`
 ```
 Aug 27 23:56:37 brice-X870E-Taichi ollama[1502099]: llama_context: n_ctx                 = 2048
 Aug 27 23:56:37 brice-X870E-Taichi ollama[1502099]: llama_kv_cache:      CUDA0 KV buffer size =   540.00 MiB
@@ -108,7 +108,7 @@ Aug 27 23:56:37 brice-X870E-Taichi ollama[1502099]: llama_kv_cache: attn_rot_v =
 Aug 27 23:56:37 brice-X870E-Taichi ollama[1502099]: slot   load_model: id  0 | task -1 | new slot, n_ctx = 2048
 ```
 
-**ctx 4096** — `raw-log-ctx4096.txt:169, 183–186, 207`
+**ctx 4096**: `raw-log-ctx4096.txt:169, 183–186, 207`
 ```
 Aug 27 23:56:44 brice-X870E-Taichi ollama[1502099]: llama_context: n_ctx                 = 4096
 Aug 27 23:56:44 brice-X870E-Taichi ollama[1502099]: llama_kv_cache:      CUDA0 KV buffer size =  1080.00 MiB
@@ -118,7 +118,7 @@ Aug 27 23:56:44 brice-X870E-Taichi ollama[1502099]: llama_kv_cache: attn_rot_v =
 Aug 27 23:56:45 brice-X870E-Taichi ollama[1502099]: slot   load_model: id  0 | task -1 | new slot, n_ctx = 4096
 ```
 
-**ctx 8192** — `raw-log-ctx8192.txt:169, 183–186, 207`
+**ctx 8192**: `raw-log-ctx8192.txt:169, 183–186, 207`
 ```
 Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_context: n_ctx                 = 8192
 Aug 27 23:56:52 brice-X870E-Taichi ollama[1502099]: llama_kv_cache:      CUDA0 KV buffer size =  2160.00 MiB
@@ -183,7 +183,7 @@ check: 276,480 × 8192 = 2,264,924,160 ✓
 **Instrument 1 result: 276,480 bytes/token at all three points, exactly
 and identically.** The three points agree, as the decision rule requires.
 
-### K/V split — an independent structural check
+### K/V split: an independent structural check
 
 The kv_cache size lines also break the total into K and V. This is not
 required by the decision rule, but it constrains *which* model of the
@@ -219,7 +219,7 @@ Equivalently via the log's own aggregate widths:
 `(n_embd_k_gqa 3072 + n_embd_v_gqa 2048) × 2 bytes × 27 layers`
 `= 5120 × 2 = 10,240 ; 10,240 × 27 = 276,480` ✓
 
-So the measured total is not merely numerically near a candidate — the
+So the measured total is not merely numerically near a candidate. The
 K and V halves independently reproduce the separate-width model, digit
 for digit. Note also `kv_lora_rank = 512` / `print_info: n_lora_kv = 512`:
 the blob *is* an MLA architecture, and this runtime is nevertheless
@@ -228,14 +228,14 @@ latent. That observation is recorded, not used to adjust the rule.
 
 ---
 
-## 2. Instrument 2 (corroboration only) — VRAM slope
+## 2. Instrument 2 (corroboration only): VRAM slope
 
 Per protocol: Instrument 2 **cannot decide**. Its only job is to be
-consistent with Instrument 1 — same order of magnitude, and slope ≥
+consistent with Instrument 1: same order of magnitude, and slope ≥
 Instrument 1's figure (the stated confound is that compute buffers also
 grow with ctx, so the slope over-reads KV).
 
-### Validity condition — checked from the ps files myself
+### Validity condition: checked from the ps files myself
 
 The protocol's validity condition is "ollama ps reports 100% GPU, else
 the point is named in dropped." Read directly from the ps files:
@@ -257,7 +257,7 @@ deepseek-coder-v2:16b-lite-instruct-q5_K_M    6065d4880bf9    14 GB    100% GPU 
 All three report `PROCESSOR = 100% GPU`, and each reports the CONTEXT
 matching its point (2048 / 4096 / 8192).
 
-**`dropped: []`** — empty. No point fails the residency condition, so no
+**`dropped: []`**: empty. No point fails the residency condition, so no
 point is dropped.
 
 ### Deltas
@@ -299,7 +299,7 @@ ctx 2048: 12,857 − 739 = 12,118 MiB   (llama-server process alone: 12,110 MiB)
 ctx 4096: 13,481 − 739 = 12,742 MiB   (llama-server process alone: 12,734 MiB)
 ctx 8192: 14,713 − 739 = 13,974 MiB   (llama-server process alone: 13,966 MiB)
 ```
-The before reading is identical (739 MiB) at all three points — each
+The before reading is identical (739 MiB) at all three points. Each
 point started from an unloaded GPU, so the deltas are comparable. The
 global delta and the per-process figure differ by a constant 8 MiB at
 every point, so the slope is identical either way; global deltas are
@@ -324,7 +324,7 @@ used below.
 ### Consistency with Instrument 1
 
 - **Same order of magnitude?** Yes. 315,392 / 316,757 / 319,488 vs
-  Instrument 1's 276,480 — all 10^5, all within a factor 1.16.
+  Instrument 1's 276,480: all 10^5, all within a factor 1.16.
 - **Slope ≥ Instrument 1's figure?** Yes, on every segment:
   319,488 ≥ 276,480 (ratio 1.156); 315,392 ≥ 276,480 (ratio 1.141);
   316,757 ≥ 276,480 (ratio 1.146).
@@ -345,7 +345,7 @@ ctx 8192: CUDA0 340.27 + CUDA_Host 24.01 = 364.28 MiB
   compute delta = 364.28 − 116.28 =   248.00 MiB
   predicted total                 = 1,868.00 MiB
   measured global delta           = 1,856 MiB
-  residual = 1,868 − 1,856 = 12 MiB  (0.6% of 1,856 — allocator granularity
+  residual = 1,868 − 1,856 = 12 MiB  (0.6% of 1,856, allocator granularity
                                       and nvidia-smi's MiB rounding)
 ```
 That decomposition is corroboration, not a second reading: Instrument 2
@@ -353,7 +353,7 @@ still cannot decide, and does not need to. Instrument 1 decides alone.
 
 ---
 
-## 3. Recorded anomaly — `load_mode = none` at ctx2048 only
+## 3. Recorded anomaly: `load_mode = none` at ctx2048 only
 
 Carried from Task 2's review, and stated explicitly rather than passed
 over in silence.
@@ -373,13 +373,13 @@ raw-log-ctx8192.txt:159  load_tensors: loading model tensors, this can take a wh
 ```
 It also shows in the *model* buffer lines: ctx2048 reports
 `CUDA_Host model buffer size = 137.50 MiB` where the other two report
-`CPU_Mapped model buffer size = 137.50 MiB` — same 137.50 MiB, different
+`CPU_Mapped model buffer size = 137.50 MiB`: same 137.50 MiB, different
 host-allocation path.
 
 **Assessment: this concerns the weights path, not KV cache sizing.**
 Saying so is not hand-waving it away; the evidence for the claim is that
 every KV-relevant quantity is bit-identical across the mmap boundary:
-- `CUDA0 model buffer size = 11160.99 MiB` — identical at all three
+- `CUDA0 model buffer size = 11160.99 MiB`, identical at all three
   points, mmap or not.
 - the KV bytes/token derived at ctx2048 (load_mode=none) is **276,480**,
   the identical figure derived at ctx4096 and ctx8192 (load_mode=mmap).
@@ -387,14 +387,14 @@ every KV-relevant quantity is bit-identical across the mmap boundary:
   boundary too.
 
 If the mmap difference perturbed KV allocation at all, ctx2048 would be
-the outlier. It is not — it lands on the same figure to the byte. Note
+the outlier. It is not. It lands on the same figure to the byte. Note
 also the honest limit of that argument: it shows the anomaly did not
 *affect this measurement*, not that mmap can never matter. Nothing is
 dropped or adjusted on account of it; all three points stand as data.
 
 Also recorded, uniform across all three points and therefore part of the
 lens rather than a per-point anomaly: `llama_context: flash_attn = auto`
-resolved to Flash Attention **not** running on the CUDA device —
+resolved to Flash Attention **not** running on the CUDA device:
 ```
 resolve_fused_ops: layer 0 is assigned to device CUDA0 but Flash Attention is assigned to device CPU (usually due to missing support)
 ```
@@ -426,7 +426,7 @@ pair 20% apart). No match → no rule is written."
 
 Instrument 1 = **276,480 bytes/token**, identical at 2048, 4096 and 8192,
 so the "all three points must agree on the candidate" condition holds
-trivially — it is one number, not three near numbers.
+trivially. It is one number, not three near numbers.
 
 | Id | Candidate B/token | −5% bound | +5% bound | 276,480 in band? |
 |----|-------------------|-----------|-----------|------------------|
@@ -435,8 +435,8 @@ trivially — it is one number, not three near numbers.
 | H-c | 31,104 | 31,104 × 0.95 = 29,548.8 | 31,104 × 1.05 = 32,659.2 | **OUT** (276,480 > 32,659.2) |
 | H-c' | 62,208 | 62,208 × 0.95 = 59,097.6 | 62,208 × 1.05 = 65,318.4 | **OUT** (276,480 > 65,318.4) |
 
-Exactly one candidate matches: **H-b**. Deviation from H-b is 0.000% —
-the measurement is not merely inside the band, it is the candidate value
+Exactly one candidate matches: **H-b**. Deviation from H-b is 0.000%.
+The measurement is not merely inside the band, it is the candidate value
 to the byte.
 
 → Verdict **H-b**. Written up in `VERDICT.md`.

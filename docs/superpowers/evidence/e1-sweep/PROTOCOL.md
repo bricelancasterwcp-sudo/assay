@@ -1,4 +1,4 @@
-# E1 sweep — protocol (pre-registered)
+# E1 sweep: protocol (pre-registered)
 
 **Filed** 2026-08-17, **before** the classifier ran. The sweep settles
 the `ERRATA.md` "Not checked" paragraph: every committed profile gets
@@ -8,8 +8,8 @@ instead of read; see `../tier-enthusiast/ERRATA.md`).
 ## Scope
 
 All committed capability profiles in `docs/superpowers/evidence/`
-(any JSON with `assay_profile_version`): 23 files — `live/` (3, v1),
-`live-run2/` (3, v1), `tier-enthusiast/` (17: 2×v2, 2×v3, 13×v4) —
+(any JSON with `assay_profile_version`): 23 files, `live/` (3, v1),
+`live-run2/` (3, v1), `tier-enthusiast/` (17: 2×v2, 2×v3, 13×v4),
 over 17 distinct model tags. One v4 profile
 (`gemma-4-12b-it-qat-q4_0-latest.json`) committed `geometry: null`;
 its row records that no kv number exists to correct, and its model is
@@ -19,22 +19,22 @@ still classified for the record.
 
 Per profile, from its model's metadata:
 
-- **AFFECTED** — the architecture states an `attention.key_length` and
+- **AFFECTED**: the architecture states an `attention.key_length` and
   it differs from `embedding_length // attention.head_count`.
-- **UNAFFECTED** — the stated `attention.key_length` equals the
+- **UNAFFECTED**: the stated `attention.key_length` equals the
   derivation.
-- **UNAFFECTED-BY-CONSTRUCTION** — the metadata omits
+- **UNAFFECTED-BY-CONSTRUCTION**: the metadata omits
   `attention.key_length`; probe 0.7.0's fallback IS the derivation, so
   it reproduces the committed number. (This says the profile does not
-  change under 0.7.0 — not that the number is verified against the
+  change under 0.7.0, not that the number is verified against the
   hardware.)
-- **UNDETERMINED** — no metadata source reaches the profiled blob
+- **UNDETERMINED**: no metadata source reaches the profiled blob
   (model absent, /api/show fails, or the identity gate below fails).
   Recorded as unmeasured, never assumed clean.
 
 Direction is recorded per AFFECTED row: stated > derived means kv was
 understated and the window over-promised (the E1 failure mode); stated
-< derived means the committed window was conservative — still wrong,
+< derived means the committed window was conservative: still wrong,
 opposite sign.
 
 ## Metadata source and identity gate
@@ -43,7 +43,7 @@ Source: live `/api/show` from the box's ollama daemon (the same daemon
 family that wrote the profiles), captured verbatim into this
 directory, plus the `/api/tags` entry read in the same breath.
 Extraction runs through `assay`'s own `OllamaNative.model_info()` and
-`plan_window` — the current instrument, not a re-implementation.
+`plan_window`, the current instrument, not a re-implementation.
 
 Tags may have been re-pulled since a profile was written, so a
 metadata match to the *profiled* blob must be earned, not assumed.
@@ -71,8 +71,8 @@ profiles are **not edited**.
 stands above, struck by this footnote for probe 0.1.0 rows only):
 `loaded=True` is the condition for probe **0.3.0+** profiles. The six
 probe 0.1.0 (schema v1) rows were written by code that read geometry
-**pre-load** — the README's own v0.2 note records "geometry reads the
-post-load serving state" as a v1.1 *fix* — so their replay condition
+**pre-load**. The README's own v0.2 note records "geometry reads the
+post-load serving state" as a v1.1 *fix*, so their replay condition
 is `loaded=False` with the weights subtraction. The rule is keyed on
 `probe_version`, deterministic per row, never fitted per profile. This
 was caught from the committed record (README v0.2 section), not from
@@ -91,5 +91,5 @@ any sweep number.
 - No committed profile JSON is modified. No model is loaded onto the
   GPU (`/api/show` and `/api/tags` are metadata-only).
 - Kill criterion: if the daemon is unreachable the sweep does not
-  guess from memory or model cards — unreached rows ship as
+  guess from memory or model cards. Unreached rows ship as
   UNDETERMINED.

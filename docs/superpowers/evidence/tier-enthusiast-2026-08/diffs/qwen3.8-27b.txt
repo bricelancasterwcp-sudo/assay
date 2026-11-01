@@ -1,11 +1,11 @@
-# assay diff — qwen3.8-27b
+# assay diff: qwen3.8-27b
 # old: docs/superpowers/evidence/tier-enthusiast/qwen3-8-27b.json
 #      (provenance.started 2026-08-15T03:11:14Z, quick mode, schema v4, probe 0.5.0, fixtures codec-fixtures-v2, seeds (0,))
 # new: docs/superpowers/evidence/tier-enthusiast-2026-08/qwen3.8-27b.json
 #      (provenance.started 2026-08-17T15:50:37Z, full mode, schema v8, probe 0.9.0, fixtures codec-fixtures-v3, seeds (0, 1))
 # cmd: assay diff <old> <new>
 # exit: 1   (diff taxonomy: 0 clean, 1 drift, 2 not comparable, 4 unreadable)
-# read this beside README.md in this directory — the confounds are named there,
+# read this beside README.md in this directory: the confounds are named there,
 # and geometry is NOT a family this command compares.
 #
 ceiling.max_verified: 16384 -> 32768 (improvement, rung-change)

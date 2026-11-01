@@ -8,7 +8,7 @@
         "geometry.kv_kib_per_token",
         "geometry.usable_window"
       ],
-      "note": "hybrid over-charge: 65 blocks charged, 16 attention layers conform — see ERRATA.md E2",
+      "note": "hybrid over-charge: 65 blocks charged, 16 attention layers conform. See ERRATA.md E2",
       "href": "../superpowers/evidence/tier-enthusiast-2026-08/ERRATA.md"
     }
   ]

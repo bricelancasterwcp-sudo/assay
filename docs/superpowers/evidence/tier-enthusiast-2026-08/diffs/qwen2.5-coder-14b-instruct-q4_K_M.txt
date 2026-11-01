@@ -1,12 +1,12 @@
-# assay diff — qwen2.5-coder-14b-instruct-q4_K_M
+# assay diff: qwen2.5-coder-14b-instruct-q4_K_M
 # old: docs/superpowers/evidence/tier-enthusiast/coder-14b-fixtures-v2-quick.json
 #      (provenance.started 2026-08-14T06:31:58Z, quick mode, schema v3, probe 0.4.1, fixtures codec-fixtures-v2, seeds (0,))
 # new: docs/superpowers/evidence/tier-enthusiast-2026-08/qwen2.5-coder-14b-instruct-q4_K_M.json
 #      (provenance.started 2026-08-17T14:53:49Z, full mode, schema v8, probe 0.9.0, fixtures codec-fixtures-v3, seeds (0, 1))
 # cmd: assay diff <old> <new>
 # exit: 1   (diff taxonomy: 0 clean, 1 drift, 2 not comparable, 4 unreadable)
-# note: two old rows name this model; NEWEST by provenance.started chosen — coder-14b-fixtures-v2-quick.json (2026-08-14T06:31:58Z, schema v3) over qwen2.5-coder-14b-q4-quick.json (2026-08-13T22:35:37Z, schema v2)
-# read this beside README.md in this directory — the confounds are named there,
+# note: two old rows name this model; NEWEST by provenance.started chosen: coder-14b-fixtures-v2-quick.json (2026-08-14T06:31:58Z, schema v3) over qwen2.5-coder-14b-q4-quick.json (2026-08-13T22:35:37Z, schema v2)
+# read this beside README.md in this directory: the confounds are named there,
 # and geometry is NOT a family this command compares.
 #
 ceiling.max_verified: 16384 -> 32768 (improvement, rung-change)
