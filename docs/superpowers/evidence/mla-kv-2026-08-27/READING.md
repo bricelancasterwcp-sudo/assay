@@ -345,7 +345,7 @@ ctx 8192: CUDA0 340.27 + CUDA_Host 24.01 = 364.28 MiB
   compute delta = 364.28 − 116.28 =   248.00 MiB
   predicted total                 = 1,868.00 MiB
   measured global delta           = 1,856 MiB
-  residual = 1,868 − 1,856 = 12 MiB  (0.6% of 1,856, allocator granularity
+  residual = 1,868 − 1,856 = 12 MiB  (0.6% of 1,856 — allocator granularity
                                       and nvidia-smi's MiB rounding)
 ```
 That decomposition is corroboration, not a second reading: Instrument 2

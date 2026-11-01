@@ -646,8 +646,8 @@ question the other modes cannot.
   pre-registered priority (`run.PRIORITY`, pinned as data), and each is
   preflighted against its own **declared** worst case before it starts.
   A family that does not fit is dropped **by name**. The reason names the
-  family, then `budget`, then `would exceed remaining`.
-  When the clock is what ran out, that reason ends in `seconds` instead.
+  family, then `"<family>:
+  budget — would exceed remaining"`, or `"— seconds"` instead.
   The family is never started, because a family cut off halfway
   spends calls on a number no verdict can be read off. **What starts,
   finishes (on the call meter)**, which is the only ceiling a preflight

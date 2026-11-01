@@ -55,7 +55,7 @@ https://bricelancasterwcp-sudo.github.io/assay/matrix/
 ## 30-second path (target after PyPI)
 
 ```bash
-pip install llm-assay   # distribute name TBD; see checklist
+pip install llm-assay   # distribute name TBD — see checklist
 assay probe http://127.0.0.1:11434 --model qwen2.5-coder:7b --quick --json profile.json
 assay cover floors/agent-edit.json profile.json
 ```

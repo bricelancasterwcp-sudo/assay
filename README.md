@@ -90,7 +90,7 @@ assay ceiling  http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
 assay envelope http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
 assay codecs   http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0
 
-# Offline, on profiles already written (neither touches an endpoint):
+# Offline, on profiles already written — neither touches an endpoint:
 assay diff   before.json after.json          # what moved beyond noise
 assay cover  floor.json candidate.json       # does candidate cover floor?
 assay report profile-*.json --out report.html  # N profiles as one matrix page
@@ -863,7 +863,7 @@ cannot happen quietly). Before each one starts, its **declared worst
 case** (`worst_case_calls`, plus the bisection a failing ceiling ladder
 would need) is checked against what is left. A family that does not fit
 is dropped by name. The recorded reason names the family, then
-`budget`, then `would exceed remaining`.
+`"<family>: budget — would exceed remaining"`.
 The family is never started, because a family cut off halfway spends calls on a
 number no verdict can be read off. **What starts, finishes (on the
 call meter)**, which is the only ceiling a preflight can reserve
@@ -878,7 +878,7 @@ cliff, so a cheaper family further down still runs. The wall clock cuts
 nothing at all. It is checked at family boundaries and between calls, never
 mid-call, so a run that runs out of time stops before the next call
 rather than leaving a half-measurement behind, and the families after it
-record a reason that names the family, then `budget`, then `seconds`.
+record a reason that names the family, then `"<family>: budget — seconds"`.
 Two families are not in the
 priority and say so as mode facts: `ceiling_shapes` (a capacity-planning
 question, not a settings-time one) and `parallel` (full mode measures

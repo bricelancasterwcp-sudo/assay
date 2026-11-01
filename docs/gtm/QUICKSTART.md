@@ -20,7 +20,7 @@ pip install -e /path/to/assay
 ## Probe one model
 
 ```bash
-# Ollama example: adjust URL/model
+# Ollama example — adjust URL/model
 assay probe http://127.0.0.1:11434 --model qwen2.5-coder:7b-instruct-q8_0 --quick --json profile.json
 ```
 
