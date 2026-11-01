@@ -1,4 +1,4 @@
-# assay v1 — design
+# assay v1: design
 
 2026-08-12. Approved direction: standalone public repo; Ollama-native +
 OpenAI-compatible backends; full probe suite (geometry + ceiling +
@@ -7,8 +7,8 @@ envelope + codec).
 ## §0 Purpose, positioning, non-goals
 
 **assay** is a stdlib-only Python library and CLI that measures what a
-locally-served LLM endpoint can *actually* do — context geometry, the
-daemon's real prompt ceiling, format discipline, and edit-codec landing —
+locally-served LLM endpoint can *actually* do (context geometry, the
+daemon's real prompt ceiling, format discipline, and edit-codec landing)
 and emits a versioned capability profile that applications consume
 before trusting the model with work.
 
@@ -23,17 +23,17 @@ instrument.
 
 Ancestry: assay ports probe designs and arithmetic from
 [robigo](https://github.com/bricelancasterwcp-sudo/robigo) (MIT, same
-author) — the window law, the KV arithmetic, the stage 1–2 probe shapes,
+author): the window law, the KV arithmetic, the stage 1–2 probe shapes,
 the error taxonomy, and the measurement discipline. It adds what robigo
 never had: an empirical ceiling probe (robigo's ~11.5k Ollama daemon
 ceiling was found *by hand*), graded-size codec fixtures (robigo's
-probes only measured ≤31-token files — a caveat recorded in its own
+probes only measured ≤31-token files, a caveat recorded in its own
 output), a `json_object` codec, an OpenAI-compatible backend, and a
 profile schema designed for third-party consumption.
 
 **Non-goals (v1):**
 
-- Not a server, proxy, or model manager. (That is "option B" — a
+- Not a server, proxy, or model manager. (That is "option B": a
   possible successor project that would wrap llama-server with honest
   contracts. assay is the instrument such a layer would embed.)
 - No repair-loop or agentic probes. Multi-turn repair measurement is
@@ -43,7 +43,7 @@ profile schema designed for third-party consumption.
   the earliest.
 - No grammar-constrained generation anywhere in the probes. Both robigo
   and Black Oxide independently measured that grammar constraints
-  *deform rather than reject* — a constrained probe measures the
+  *deform rather than reject*. A constrained probe measures the
   constraint, not the model. assay measures the model.
 - No community manifest registry in v1 (profile schema is designed so
   one could exist later).
@@ -53,7 +53,7 @@ profile schema designed for third-party consumption.
 
 1. **Castle VTT** (first application consumer): a "probe my model"
    action in AI settings runs assay against whatever base_url/model the
-   user configured, then adapts — output format choice by codec
+   user configured, then adapts: output format choice by codec
    landing, prompt caps by measured ceiling, and a user-facing warning
    when the configured model is `unusable` for extraction. (The VTT
    integration is its own spec under direction C; assay's obligation
@@ -62,7 +62,7 @@ profile schema designed for third-party consumption.
    avoid two drifting copies of the same probes. Not attempted in v1;
    robigo is mid-gate and its build order is frozen.
 3. **Humans via CLI**: "run `assay` against your setup and paste the
-   profile" — a reproducible, budget-capped diagnostic for the
+   profile": a reproducible, budget-capped diagnostic for the
    local-LLM community, and the public artifact that carries the
    findings (the 14× KiB/token spread, the ceiling failure modes).
 
@@ -126,7 +126,7 @@ class Backend(Protocol):
   truncate_control=True, metadata_access=True)`.
 - **OpenAICompat** (`/v1/chat/completions`): bare `{model, messages,
   max_tokens, seed}` (seed passed; honored by llama-server, ignored
-  elsewhere — recorded in provenance). Counts from `usage` when
+  elsewhere, recorded in provenance). Counts from `usage` when
   present; `reports_counts` is determined **empirically during
   calibration** (§5), not assumed.
 - **Auto-detect**: if `GET /api/tags` on the same host answers, the
@@ -136,7 +136,7 @@ class Backend(Protocol):
 **Response-contract validation lives here.** If `caps.reports_counts`
 and a 200 reply lacks counts or `stop_reason` (the exact signature of
 the Ollama ~11.5k bug: valid-looking content, `"done": false`, no
-`prompt_eval_count`), the backend raises `ContractViolation` — an
+`prompt_eval_count`), the backend raises `ContractViolation`: an
 `InfrastructureError`, never a model result. The ceiling probe catches
 it as evidence (§5); everything else propagates it. Error taxonomy:
 
@@ -156,7 +156,7 @@ user_cap)`, reported **with which term bound it**.
   bytes_per_element` (fp16 = 2; kv-8bit halves it).
 - Architecture numbers come from `metadata_access`: Ollama's
   `/api/show` `model_info` carries `*.context_length`, `*.block_count`,
-  attention head counts and embedding dims for GGUF models — so
+  attention head counts and embedding dims for GGUF models, so
   geometry works even against a *remote* Ollama. Weights size comes
   from `/api/tags` (robigo's measured gotcha: `/api/show` has no size).
   Direct GGUF blob parsing (robigo's reader) is ported as a fallback
@@ -165,7 +165,7 @@ user_cap)`, reported **with which term bound it**.
   No `nvidia-smi`, or OpenAI-compat with no metadata → `geometry:
   null` plus a `dropped`-style note naming exactly what was
   unavailable. **An unmeasurable geometry is reported as absent, never
-  guessed** — the OpenAI-compat backend without metadata yields
+  guessed**. The OpenAI-compat backend without metadata yields
   `geometry: null` and the profile says so.
 
 ## §5 Ceiling probe (new)
@@ -173,11 +173,11 @@ user_cap)`, reported **with which term bound it**.
 Empirically finds the largest prompt the *daemon serving path* handles
 correctly, and names the failure mode past it. This automates the
 manual discovery of robigo's Ollama ceiling (≤ ~11.5k fine; ≥ ~11.8k
-fails 100% with stats-free 200s) — a bug invisible to any
+fails 100% with stats-free 200s), a bug invisible to any
 documentation-driven approach.
 
-**Step 1 — calibration.** Build filler from a fixed word list (seeded,
-naturalistic — not one repeated token, which tokenizes
+**Step 1: calibration.** Build filler from a fixed word list (seeded,
+naturalistic, not one repeated token, which tokenizes
 unrepresentatively). Send one small probe (~500 estimated tokens); read
 `tokens_in`; derive empirical `chars_per_token`. This kills robigo's
 recorded ~45% stage-0 pessimism (its 3-chars/token estimate vs ~6
@@ -185,7 +185,7 @@ measured). If counts are unavailable, calibration records
 `chars_per_token: null`, a conservative 3.0 is used for sizing, and the
 profile marks all ceiling evidence **canary-only** (weaker, stated).
 
-**Step 2 — canary ladder.** For each size (1k tokens, doubling to
+**Step 2: canary ladder.** For each size (1k tokens, doubling to
 `min(training_ctx, user cap, budget)`), N seeds (default 2) of:
 
 ```
@@ -193,7 +193,7 @@ profile marks all ceiling evidence **canary-only** (weaker, stated).
 ASSAY-<seed>."] + filler(size)
 ```
 
-The instruction sits at the **front** because Ollama front-truncates —
+The instruction sits at the **front** because Ollama front-truncates:
 truncation eats the canary, and a reply that does not begin with it is
 the detection signal. Signals per call:
 
@@ -202,16 +202,16 @@ the detection signal. Signals per call:
 | HTTP error / explicit overflow error | `hard_error` (an honest server) |
 | `ContractViolation` | `missing_stats` (the 11.5k class) |
 | `tokens_in` < 80% of sent estimate (calibrated) | `silent_truncation` |
-| canary absent but `tokens_in` ≈ sent | `attention_loss` — a MODEL result, not a ceiling; recorded, does not stop the ladder |
+| canary absent but `tokens_in` ≈ sent | `attention_loss`: a MODEL result, not a ceiling; recorded, does not stop the ladder |
 | canary absent, counts unavailable | `canary_loss` (ambiguous, stated) |
 
-**Step 3 — bisection.** Between last-good and first-bad to ~10%
+**Step 3: bisection.** Between last-good and first-bad to ~10%
 resolution, within budget (`max_calls` default 12, `max_prompt_tokens`
-default 150k — the whole probe is bounded even at 32k contexts).
+default 150k, so the whole probe is bounded even at 32k contexts).
 
 Output: `{max_verified, first_failure, failure_mode, evidence: [per-call
 records], counts_available}`. If nothing fails up to the cap:
-`failure_mode: "none_up_to_cap"` with the cap named — *not* a claim
+`failure_mode: "none_up_to_cap"` with the cap named. That is *not* a claim
 about larger sizes.
 
 ## §6 Envelope probe
@@ -234,17 +234,17 @@ assay's applier accepts the reply AND the applied result equals the
 expected output exactly (a single trailing-newline difference is
 tolerated; nothing else is).
 
-- **Grades:** `tiny` (~30 tokens — robigo-comparable), `small` (~120),
+- **Grades:** `tiny` (~30 tokens, robigo-comparable), `small` (~120),
   `medium` (~400). The landing-vs-size curve is the deliverable;
   robigo's tiny-only probes are the recorded caveat this fixes.
 - **`search_replace`**: aider's SEARCH/REPLACE block format, applier
   semantics ported from robigo (exact match, whole lines). Chosen for
-  the pretraining prior — robigo law 12.
+  the pretraining prior (robigo law 12).
 - **`whole_file`**: full-content replacement; landing requires exact
   expected content.
 - **`json_object`** (new): given a small extraction task, reply must
   `json.loads`, contain the required keys (one nested), with correct
-  types. No `format: json`, no schema forcing — unforced landing is
+  types. No `format: json`, no schema forcing: unforced landing is
   the number an application can act on, because forcing *deforms* (§0).
   This is the codec the VTT importer consumes directly.
 
@@ -295,7 +295,7 @@ named reason, or provenance.
 }
 ```
 
-**Verdict rules (v1 defaults — applications may ignore them and read
+**Verdict rules (v1 defaults: applications may ignore them and read
 raw numbers):**
 
 - `structured_extraction`: `ready` if `json_object.small.lands ≥ 0.9`
@@ -328,11 +328,11 @@ assay geometry ... / assay ceiling ... / assay envelope ... / assay codecs ...
 `--quick` ≈ under ~90s of inference (calibration, geometry, short
 ceiling ladder, reduced-N probes); `--full` ≈ minutes (full seeds, full
 ladder). Exit codes: `0` profile produced (whatever it says), `2`
-budget exhausted before any family completed, `4` infrastructure — the
-robigo taxonomy, minus the model-outcome codes assay does not have.
+budget exhausted before any family completed, `4` infrastructure (the
+robigo taxonomy, minus the model-outcome codes assay does not have).
 
 Library: `assay.probe(base_url, model, *, budget: Budget, mode:
-"quick"|"full") -> Profile`. **`budget` is a required argument** — a
+"quick"|"full") -> Profile`. **`budget` is a required argument**: a
 library consumer burning a user's GPU time must say how much, no
 silent default (CLI supplies its own documented defaults).
 
@@ -340,17 +340,17 @@ silent default (CLI supplies its own documented defaults).
 
 - `replay.py` ports robigo's transcript design: `CallRecorder` wraps a
   backend, one JSONL row per call keyed on `(model, prompt, seed)`
-  (NUL-separated SHA-256, same as robigo); `CallReplayer` is **strict**
-  — a miss raises, never falls through to live (robigo's spec 5.3
+  (NUL-separated SHA-256, same as robigo); `CallReplayer` is **strict**:
+  a miss raises, never falls through to live (robigo's spec 5.3
   reasoning, kept verbatim).
 - The entire probe suite must run green from fakes and recorded
   transcripts with **no GPU and no daemon**. Live probing is a smoke
   path behind `ASSAY_LIVE=1`.
 - Every test is mutation-tested before it counts: a test that passes
   with the code deleted or inverted is a defect. The recurring robigo
-  bug class — **a value that looks like a measurement but is not** (a
+  bug class (**a value that looks like a measurement but is not**: a
   window reported past what was verified, a landing rate that measured
-  the prompt, a fidelity computed over zero probes) — is the named
+  the prompt, a fidelity computed over zero probes) is the named
   review item for every probe family.
 - Determinism: fixed seeds throughout; `random.Random(seed)` only, no
   ambient RNG; wall-clock only in provenance.
@@ -382,12 +382,12 @@ silent default (CLI supplies its own documented defaults).
    `failure_mode: missing_stats`; codec landings measured at all three
    grades.
 2. Family split reproduction: granite-code:8b `search_replace.tiny`
-   lands ≈ 0%, qwen ≥ 90% — matching robigo's independent stage-2
+   lands ≈ 0%, qwen ≥ 90%, matching robigo's independent stage-2
    measurements without consulting them.
 3. Full test suite green with no GPU, under 60 seconds.
 4. A written check that the profile JSON alone is sufficient for the
    VTT's three planned adaptations (format choice, prompt caps, user
-   warning) — the VTT-side spec is separate, but sufficiency is
+   warning). The VTT-side spec is separate, but sufficiency is
    assay's exit gate.
 
 Criterion 1–2 live runs are scheduled **after** the robigo gate run
@@ -395,18 +395,18 @@ releases the GPU; implementation starts on fakes/replay regardless.
 
 ## §13 Deferred, with rulings
 
-- **Cloud probing behind `--allow-paid` + token budget** — deferred to
+- **Cloud probing behind `--allow-paid` + token budget**: deferred to
   v2; ruled out of v1 because unmetered-vs-metered is a consent
   boundary, not a technical one.
-- **Community manifest registry** (profiles-by-family database) —
+- **Community manifest registry** (profiles-by-family database):
   deferred; schema versioning exists so it can happen without breaking
   changes.
-- **Serving-layer proxy ("option B")** — separate project if assay
+- **Serving-layer proxy ("option B")**: separate project if assay
   earns it; assay stays embeddable either way.
-- **robigo delegating stages 0–2 to assay** — only after robigo's gate
+- **robigo delegating stages 0–2 to assay**: only after robigo's gate
   outcome settles what robigo is; two implementations may coexist
   briefly, and that is acceptable drift for now (noted against the
   one-definition rule, deliberately).
-- **Deformation telemetry** (how hard grammar forcing steered) —
+- **Deformation telemetry** (how hard grammar forcing steered):
   belongs to the serving layer, where the sampler is visible; assay
   measures unforced behavior only.

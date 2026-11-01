@@ -1,4 +1,4 @@
-# Errata — tier-enthusiast-2026-08 profiles
+# Errata: tier-enthusiast-2026-08 profiles
 
 Corrections that apply to profiles committed in this directory. The
 profiles themselves are **left exactly as measured**: evidence is not
@@ -6,7 +6,7 @@ rewritten to suit a later fix. Read this file alongside them.
 
 ---
 
-## E2 — hybrid layer geometry: every block charged as an attention layer
+## E2: hybrid layer geometry: every block charged as an attention layer
 
 **Filed** 2026-08-27 · **Affects** `qwen3.8-27b.json` (probe 0.9.0,
 `assay_profile_version` 8) and, in the neighbouring directory,
@@ -22,7 +22,7 @@ set's `qwen3.8-27b` vector, which bans as `must_not_equal` the exact
 266240 bytes/token this erratum corrects
 
 Through probe 0.9.0, `kv_bytes_per_token` charged
-`block_count` attention layers — every block the file states. That is
+`block_count` attention layers, every block the file states. That is
 correct for a dense architecture and wrong for a **hybrid** one, which
 interleaves attention and recurrent layers and states its period in the
 metadata. `qwen3.8:27b` (architecture `qwen35`) is the one such model in
@@ -69,8 +69,8 @@ only variables changed are the layer count and the new recurrent charge.
 
 This one **under**-promises: the corrected window is ~3.4× the published
 one, because the over-charged cache term dominates the newly charged
-recurrent term. Wrong either way — E1's mistral-nemo row was the same
-shape — but this is not a direction that has cost anyone context they
+recurrent term. Wrong either way (E1's mistral-nemo row was the same
+shape), but this is not a direction that has cost anyone context they
 were promised.
 
 The conforming figures above are **derived, not hardware-verified**.
@@ -99,8 +99,8 @@ frozen gguf-geometry vectors in
 
 Nothing outside `geometry`, and nothing in any other profile in this
 directory. The other fourteen models here state no
-`full_attention_interval` — checked against the same verbatim captures,
-not assumed — so their kv figures are unchanged by this fix, and every
+`full_attention_interval` (checked against the same verbatim captures,
+not assumed), so their kv figures are unchanged by this fix, and every
 non-geometry family (codecs, envelope, ceiling, loop, speed,
 long_output, tools, parallel) was never computed from a layer count.
 
@@ -121,7 +121,7 @@ it would stop flagging things the day a heading moved.
 
 The page annotates and never substitutes. Writing 64 into the matrix
 would be the same edit this file exists to avoid, performed one layer
-out — where a reader comparing the page against the profile beside it
+out, where a reader comparing the page against the profile beside it
 could not see that it had happened.
 
 ### Decision provenance
@@ -143,7 +143,7 @@ under "Hold release + Tasks 8-10 (2026-08-27)":
 
 That ledger is deliberately untracked in its own repository (SDD
 workspaces stay local in public repos), which is why this is a quoted
-citation by path rather than a link — the same shape of citation that
+citation by path rather than a link, the same shape of citation that
 repository's `.gitignore` carries for the same reason.
 
 What the ruling settles: leave the profiles as measured, file the
@@ -151,37 +151,37 @@ correction beside them, do not rebuild the matrix, keep the work on a
 branch. What it does **not** settle, and what no ruling here can: the
 publication decisions. Rebuilding the matrix and pushing anything remain
 Brice's, and the same ledger's approval record of 2026-08-27 covers
-merging this branch to assay master — approving a merge is not
+merging this branch to assay master. Approving a merge is not
 approving a rebuild, and this file states the gap rather than closing
 it quietly.
 
 **Update, 2026-08-27, after the merge to master.** The rebuild was then
 directed as its own decision, which is the gap above being closed rather
-than the ruling being reinterpreted — the quoted ledger text stands as
+than the ruling being reinterpreted. The quoted ledger text stands as
 written, and it was written when no rebuild had been asked for. The
 matrix was regenerated with the errata-aware build described in "What is
 NOT wrong": every published figure is unchanged (a rebuild does not
 correct a profile, and this one was byte-identical to its predecessor
 outside the flags it added), and the two superseded figures now carry
-one. The Pages publish — pushing master — is not part of that change and
+one. The Pages publish (pushing master) is not part of that change and
 remains Brice's.
 
 **Update, 2026-08-27, live run under the corrected code.** The owed
 re-measurement happened: `qwen3.8:27b` was re-pulled (blob sha256
 `f5f1dd89…ad57d`, spot-verified equal to the manifest's model-layer
 digest) and the corrected instrument, at master `24420f2`, read its
-metadata live — `kv_kib_per_token` **64**, `attention_layer_count`
+metadata live: `kv_kib_per_token` **64**, `attention_layer_count`
 **16**, `serving_block_count` **64**, `recurrent_state_bytes`
 **156,893,184**, exactly the conforming terms tabled above. Verbatim
 captures and the run's own record:
 [`../qwen38-27b-live-2026-08-27/`](../qwen38-27b-live-2026-08-27/NOTE.md).
-The window figures stay what they always were — arithmetic under each
+The window figures stay what they always were: arithmetic under each
 profile's recorded conditions, which no later run can re-occupy (the
 live box's own window was vram-limited to 0 by 17.7 GB of weights
 against 15.1 GiB free). With the terms live-confirmed, the "withheld
 from the gguf-geometry v1 vector set" state above ends at v1: the
 upstream repo's v2 set is where the vector lands, per its own record.
 One stale phrase above is superseded rather than rewritten: "Fixed on
-branch `geometry-conformance`, unreleased (MERGE HOLD)" — the fix has
+branch `geometry-conformance`, unreleased (MERGE HOLD)". The fix has
 been on master since the 2026-08-27 merge this file's previous update
 describes.

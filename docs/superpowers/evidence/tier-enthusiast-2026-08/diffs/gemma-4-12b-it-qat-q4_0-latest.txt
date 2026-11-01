@@ -1,11 +1,11 @@
-# assay diff — gemma-4-12b-it-qat-q4_0-latest
+# assay diff: gemma-4-12b-it-qat-q4_0-latest
 # old: docs/superpowers/evidence/tier-enthusiast/gemma-4-12b-it-qat-q4_0-latest.json
 #      (provenance.started 2026-08-15T02:02:24Z, quick mode, schema v4, probe 0.5.0, fixtures codec-fixtures-v2, seeds (0,))
 # new: docs/superpowers/evidence/tier-enthusiast-2026-08/gemma-4-12b-it-qat-q4_0-latest.json
 #      (provenance.started 2026-08-17T14:09:42Z, full mode, schema v8, probe 0.9.0, fixtures codec-fixtures-v3, seeds (0, 1))
 # cmd: assay diff <old> <new>
 # exit: 1   (diff taxonomy: 0 clean, 1 drift, 2 not comparable, 4 unreadable)
-# read this beside README.md in this directory — the confounds are named there,
+# read this beside README.md in this directory: the confounds are named there,
 # and geometry is NOT a family this command compares.
 #
 ceiling.max_verified: 16384 -> 32768 (improvement, rung-change)

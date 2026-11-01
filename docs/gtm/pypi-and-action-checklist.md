@@ -1,4 +1,4 @@
-# Assay — PyPI publish + `cover` GitHub Action checklist
+# Assay: PyPI publish + `cover` GitHub Action checklist
 
 Draft 2026-09-20. Engineering next steps after positioning: admission control for local LLM endpoints.
 
@@ -17,7 +17,7 @@ Also reserve the matching GitHub Topics / docs URL slug.
 ## A. PyPI publish checklist
 
 ### Package shape
-- [ ] Decide distribute name (`llm-assay`) vs import name (`assay`) — keep import `assay` to avoid breaking bloomery `PYTHONPATH` consumers.
+- [ ] Decide distribute name (`llm-assay`) vs import name (`assay`). Keep import `assay` to avoid breaking bloomery `PYTHONPATH` consumers.
 - [ ] Bump / confirm `pyproject.toml`: name, version, description, `requires-python`, MIT, project.urls (Homepage, Matrix, Source, Changelog).
 - [ ] Add `[project.urls]` and long description from a **short** README section or `docs/gtm/QUICKSTART.md` (full README can stay deep).
 - [ ] Confirm `assay` console script entry point still works: `assay = "assay.cli:main"` (or equivalent).
@@ -32,7 +32,7 @@ Also reserve the matching GitHub Topics / docs URL slug.
 ### Release
 - [ ] Tag `v0.14.0` (or next) matching package version; CHANGELOG already narrates meaning.
 - [ ] GitHub Release with install one-liner and link to matrix.
-- [ ] Upload to real PyPI (Trusted Publisher / API token — prefer OIDC trusted publishing from GitHub Actions).
+- [ ] Upload to real PyPI (Trusted Publisher / API token; prefer OIDC trusted publishing from GitHub Actions).
 - [ ] Verify: `pip install llm-assay` then `python -c "import assay; print(assay.__version__)"`.
 
 ### Post-publish
@@ -45,7 +45,7 @@ Also reserve the matching GitHub Topics / docs URL slug.
 ## B. GitHub Action: `assay cover` gate
 
 ### Goal
-Fail CI when a **candidate** profile does not cover a committed **floor** profile — admission control in PRs / nightly hardware jobs.
+Fail CI when a **candidate** profile does not cover a committed **floor** profile: admission control in PRs / nightly hardware jobs.
 
 ### Non-goals
 - Running live `assay probe` on GitHub-hosted runners (no GPU / no local Ollama by default).
@@ -99,11 +99,11 @@ Keep this **separate** workflow so PRs don’t depend on GPU availability.
 
 ### Floor files to invent (product)
 Commit 1–3 floors under `floors/` with clear names, e.g.:
-- `floors/agent-search-replace.json` — patch_editing ready
-- `floors/tool-calling-min.json` — tool_calling ready
-- `floors/chat-usable.json` — chat_speed + envelope floor
+- `floors/agent-search-replace.json`: patch_editing ready
+- `floors/tool-calling-min.json`: tool_calling ready
+- `floors/chat-usable.json`: chat_speed + envelope floor
 
-Document how floors are produced (probe once on reference hardware, freeze, never silently rewrite — same errata discipline as the matrix).
+Document how floors are produced (probe once on reference hardware, freeze, never silently rewrite; same errata discipline as the matrix).
 
 ### Action checklist
 - [ ] Pin `llm-assay` version in the workflow.
@@ -126,4 +126,4 @@ Document how floors are produced (probe once on reference hardware, freeze, neve
 
 - Don’t paywall `probe`.
 - Don’t add cloud endpoint probing in v1.
-- Don’t rename the scientific README into marketing mush — add a short path *above* it.
+- Don’t rename the scientific README into marketing mush. Add a short path *above* it.

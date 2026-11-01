@@ -1,4 +1,4 @@
-# Infrastructure notes — mla-kv-2026-08-27 capture (Task 2)
+# Infrastructure notes: mla-kv-2026-08-27 capture (Task 2)
 
 ## Event 1: journalctl --since timezone mismatch (all 3 ctx points, first attempt)
 
@@ -12,7 +12,7 @@ This emits a UTC wall-clock string with no timezone marker. journalctl
 --since interprets a bare "YYYY-MM-DD HH:MM:SS" string as LOCAL time, not
 UTC. This host's local timezone is America/Chicago (CDT, UTC-5). So a T0
 of e.g. "2026-08-28 04:54:xx" (actual UTC time) was interpreted by
-journalctl as 2026-08-28 04:54:xx CDT == 2026-08-28 09:54:xx UTC — a
+journalctl as 2026-08-28 04:54:xx CDT == 2026-08-28 09:54:xx UTC, a
 window shifted ~5 hours into the future relative to the actual load
 events (confirmed circa 2026-08-27 23:54 CDT / 2026-08-28 04:54 UTC via
 `journalctl -u ollama --no-pager | tail`, which showed the real
@@ -37,6 +37,6 @@ zero, with T0 computed in local time (matching journalctl's default
 --since interpretation) instead of UTC, i.e.:
   T0=$(date '+%Y-%m-%d %H:%M:%S')
 No model-load data, VRAM readings, or log content from the first attempt
-were spliced into the final committed files — the second attempt's
+were spliced into the final committed files: the second attempt's
 vram-ctxN.txt / ps-ctxN.txt / raw-log-ctxN.txt are each a fresh, complete
 set from a single execution per ctx point.

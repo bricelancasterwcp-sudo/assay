@@ -35,6 +35,6 @@ CI example uses `floors/agent-edit.json` and `examples/cover-ci/candidate.json`.
 
 ## Read next
 
-- [ONEPAGER.md](./ONEPAGER.md) — positioning
-- [pypi-and-action-checklist.md](./pypi-and-action-checklist.md) — ship checklist
-- Root [README.md](../../README.md) — full instrument docs
+- [ONEPAGER.md](./ONEPAGER.md): positioning
+- [pypi-and-action-checklist.md](./pypi-and-action-checklist.md): ship checklist
+- Root [README.md](../../README.md): full instrument docs

@@ -1,4 +1,4 @@
-# Pre-registered protocol — deepseek2 KV bytes/token under ollama 0.32.13
+# Pre-registered protocol: deepseek2 KV bytes/token under ollama 0.32.13
 
 Written and committed BEFORE any capture. Subject: what this runtime
 actually allocates per KV-cache token for
@@ -31,7 +31,7 @@ infrastructure, recorded as such, never data.
 ## Instrument 1 (primary): server-log KV buffer lines
 
 Load with explicit options.num_ctx; slice journalctl for the load;
-quote VERBATIM every KV-cache buffer/size line (all backends — if the
+quote VERBATIM every KV-cache buffer/size line (all backends, if the
 cache splits across CUDA0/CPU, the reading is the SUM of the lines).
 bytes/token = summed KV bytes ÷ the n_ctx THE LOG REPORTS (not the
 requested one; parallel slots inflate effective n_ctx). Every "because"
@@ -49,7 +49,7 @@ of magnitude, slope ≥ instrument 1's figure).
 ## Contingency
 
 If ollama 0.32.13's logs surface no usable KV-buffer lines, fallback is
-the same blob under a standalone llama-server — a DIFFERENT NAMED LENS;
+the same blob under a standalone llama-server, a DIFFERENT NAMED LENS;
 whether a rule may be written from it is Brice's ruling, not a swap.
 
 ## Ambient record (filled at capture, committed with the evidence)
